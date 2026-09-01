@@ -216,7 +216,8 @@ export async function saveQuotation(
         name: i.name || null,
         part_number: i.part_number || null,
         detail: i.detail || null,
-        description: i.name || null, // keep legacy column populated
+        // legacy NOT NULL column — always provide a non-null value
+        description: i.name || i.detail || (i.kind === "labor" ? "Labour" : "Part"),
         quantity: i.quantity,
         unit_price: i.unit_price,
         labour_hours: i.labour_hours,

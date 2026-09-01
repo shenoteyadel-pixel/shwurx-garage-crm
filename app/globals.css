@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  /* Dark automotive workshop theme */
+  --background: oklch(0.16 0.005 285);
+  --foreground: oklch(0.97 0 0);
+
+  --card: oklch(0.21 0.006 285);
+  --card-foreground: oklch(0.97 0 0);
+
+  --popover: oklch(0.21 0.006 285);
+  --popover-foreground: oklch(0.97 0 0);
+
+  /* SHWURX red */
+  --primary: oklch(0.58 0.22 26);
+  --primary-foreground: oklch(0.99 0 0);
+
+  --secondary: oklch(0.27 0.006 285);
+  --secondary-foreground: oklch(0.97 0 0);
+
+  --muted: oklch(0.27 0.006 285);
+  --muted-foreground: oklch(0.68 0.01 285);
+
+  --accent: oklch(0.3 0.01 285);
+  --accent-foreground: oklch(0.97 0 0);
+
+  --border: oklch(0.3 0.006 285);
+  --input: oklch(0.3 0.006 285);
+  --ring: oklch(0.58 0.22 26);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin scrollbars for kanban columns */
+.scrollbar-thin::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}

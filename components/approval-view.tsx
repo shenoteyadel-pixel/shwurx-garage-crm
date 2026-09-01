@@ -19,13 +19,25 @@ type Data = {
   }
   photos: { url: string; kind: string; caption: string | null }[]
   quotation: null | {
+    description: string | null
     vat_rate: number
     parts_total: number
     labor_total: number
+    discount_total: number
     subtotal: number
     vat_amount: number
     total: number
-    items: { kind: string; description: string; quantity: number; unit_price: number; line_total: number }[]
+    items: {
+      kind: string
+      name: string | null
+      detail: string | null
+      description: string | null
+      quantity: number
+      unit_price: number
+      labor: number
+      discount: number
+      line_total: number
+    }[]
   }
 }
 
@@ -124,21 +136,56 @@ export function ApprovalView({ token, data }: { token: string; data: Data }) {
       {data.quotation && (
         <Card className="p-5">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Quotation</h2>
-          <div className="space-y-2">
+
+          {data.quotation.description && (
+            <div className="mb-4 rounded-lg border border-border bg-background/40 p-4">
+              <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Work description
+              </div>
+              <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground">
+                {data.quotation.description}
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-3">
             {data.quotation.items.map((it, i) => (
-              <div key={i} className="flex items-start justify-between gap-3 text-sm">
-                <div>
-                  <span className="text-foreground">{it.description}</span>
-                  <span className="ml-2 text-xs uppercase text-muted-foreground">{it.kind}</span>
-                  <div className="text-xs text-muted-foreground">
-                    {it.quantity} × {formatCurrency(it.unit_price)}
+              <div key={i} className="rounded-lg border border-border bg-background/40 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[15px] font-medium text-foreground">
+                        {it.name || it.description || "Item"}
+                      </span>
+                      <span className="rounded border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        {it.kind}
+                      </span>
+                    </div>
                   </div>
+                  <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(it.line_total)}</span>
                 </div>
-                <span className="tabular-nums">{formatCurrency(it.line_total)}</span>
+                {it.detail && (
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                    {it.detail}
+                  </p>
+                )}
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>
+                    {it.quantity} × {formatCurrency(it.unit_price)}
+                  </span>
+                  {it.labor > 0 && <span>Labor {formatCurrency(it.labor)}</span>}
+                  {it.discount > 0 && <span className="text-amber-500">Discount − {formatCurrency(it.discount)}</span>}
+                </div>
               </div>
             ))}
           </div>
+
           <div className="mt-4 space-y-1.5 border-t border-border pt-3 text-sm">
+            <Row label="Parts" value={formatCurrency(data.quotation.parts_total)} />
+            <Row label="Labor" value={formatCurrency(data.quotation.labor_total)} />
+            {data.quotation.discount_total > 0 && (
+              <Row label="Discount" value={`− ${formatCurrency(data.quotation.discount_total)}`} />
+            )}
             <Row label="Subtotal" value={formatCurrency(data.quotation.subtotal)} />
             <Row label={`VAT (${data.quotation.vat_rate}%)`} value={formatCurrency(data.quotation.vat_amount)} />
             <div className="flex items-center justify-between border-t border-border pt-2 text-lg font-bold">

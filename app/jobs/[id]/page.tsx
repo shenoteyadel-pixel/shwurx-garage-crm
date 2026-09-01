@@ -36,7 +36,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const { data: quotation } = await supabase
     .from("quotations")
-    .select("id, vat_rate, quotation_items(kind, description, quantity, unit_price)")
+    .select(
+      "id, vat_rate, description, internal_notes, quotation_items(kind, name, detail, description, quantity, unit_price, labor, discount)",
+    )
     .eq("job_id", id)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -56,10 +58,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const quoteItems =
     quotation?.quotation_items?.map((i: any) => ({
-      kind: i.kind,
-      description: i.description,
+      kind: (i.kind || "part") as "part" | "labor" | "service",
+      name: i.name || i.description || "",
+      detail: i.detail || "",
       quantity: Number(i.quantity),
       unit_price: Number(i.unit_price),
+      labor: Number(i.labor ?? 0),
+      discount: Number(i.discount ?? 0),
     })) ?? []
 
   const locked = job.approval_status === "approved"
@@ -104,6 +109,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             jobId={job.id}
             initialItems={quoteItems}
             initialVat={Number(quotation?.vat_rate ?? 5)}
+            initialDescription={quotation?.description ?? ""}
+            initialInternalNotes={quotation?.internal_notes ?? ""}
+            hasQuotation={!!quotation}
+            printHref={`/jobs/${job.id}/quotation/print`}
             locked={locked}
           />
           <PartsManager jobId={job.id} parts={(parts ?? []) as any} />

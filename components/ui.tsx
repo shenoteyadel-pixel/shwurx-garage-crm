@@ -68,6 +68,47 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
   },
 )
 
+/* ---------------- AutoTextarea (auto-expanding) ---------------- */
+export const AutoTextarea = React.forwardRef<
+  HTMLTextAreaElement,
+  React.TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number }
+>(function AutoTextarea({ className, minRows = 3, value, onChange, ...props }, ref) {
+  const innerRef = React.useRef<HTMLTextAreaElement | null>(null)
+
+  const resize = React.useCallback(() => {
+    const el = innerRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${el.scrollHeight}px`
+  }, [])
+
+  React.useEffect(() => {
+    resize()
+  }, [resize, value])
+
+  return (
+    <textarea
+      ref={(node) => {
+        innerRef.current = node
+        if (typeof ref === "function") ref(node)
+        else if (ref) (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current = node
+      }}
+      rows={minRows}
+      value={value}
+      onChange={(e) => {
+        onChange?.(e)
+        resize()
+      }}
+      onInput={resize}
+      className={cn(
+        "w-full resize-none overflow-hidden rounded-lg border border-input bg-background/60 px-3 py-2.5 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        className,
+      )}
+      {...props}
+    />
+  )
+})
+
 /* ---------------- Select ---------------- */
 export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(
   function Select({ className, children, ...props }, ref) {

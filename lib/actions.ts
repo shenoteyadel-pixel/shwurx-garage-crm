@@ -96,17 +96,46 @@ export async function deletePhoto(photoId: string, jobId: string) {
 }
 
 /* ---------------- Quotation ---------------- */
+export type QuoteItemInput = {
+  kind: "part" | "labor" | "service"
+  name: string
+  detail: string
+  quantity: number
+  unit_price: number
+  labor: number
+  discount: number
+}
+
 export async function saveQuotation(
   jobId: string,
-  items: { kind: "part" | "labor"; description: string; quantity: number; unit_price: number }[],
-  vatRate = VAT_RATE,
+  payload: {
+    description: string
+    internalNotes: string
+    vatRate: number
+    items: QuoteItemInput[]
+  },
 ) {
   const { supabase } = await requireUser()
 
-  const partsTotal = items.filter((i) => i.kind === "part").reduce((s, i) => s + i.quantity * i.unit_price, 0)
-  const laborTotal = items.filter((i) => i.kind === "labor").reduce((s, i) => s + i.quantity * i.unit_price, 0)
-  const subtotal = partsTotal + laborTotal
-  const vatAmount = (subtotal * vatRate) / 100
+  const vatRate = Number.isFinite(payload.vatRate) ? payload.vatRate : VAT_RATE
+  const items = payload.items
+
+  // Per-line computation
+  const computed = items.map((i) => {
+    const qty = Number(i.quantity) || 0
+    const unit = Number(i.unit_price) || 0
+    const labor = Number(i.labor) || 0
+    const discount = Number(i.discount) || 0
+    const base = Math.max(0, qty * unit + labor - discount)
+    const vat = (base * vatRate) / 100
+    return { ...i, quantity: qty, unit_price: unit, labor, discount, base, vat, line_total: base + vat }
+  })
+
+  const partsTotal = computed.reduce((s, i) => s + i.quantity * i.unit_price, 0)
+  const laborTotal = computed.reduce((s, i) => s + i.labor, 0)
+  const discountTotal = computed.reduce((s, i) => s + i.discount, 0)
+  const subtotal = partsTotal + laborTotal - discountTotal
+  const vatAmount = computed.reduce((s, i) => s + i.vat, 0)
   const total = subtotal + vatAmount
 
   // remove previous quotations for this job (single active quotation)
@@ -116,9 +145,12 @@ export async function saveQuotation(
     .from("quotations")
     .insert({
       job_id: jobId,
+      description: payload.description || null,
+      internal_notes: payload.internalNotes || null,
       vat_rate: vatRate,
       parts_total: partsTotal,
       labor_total: laborTotal,
+      discount_total: discountTotal,
       subtotal,
       vat_amount: vatAmount,
       total,
@@ -127,15 +159,20 @@ export async function saveQuotation(
     .single()
   if (error) throw new Error(error.message)
 
-  if (items.length) {
+  if (computed.length) {
     const { error: itemErr } = await supabase.from("quotation_items").insert(
-      items.map((i) => ({
+      computed.map((i) => ({
         quotation_id: quote.id,
         kind: i.kind,
-        description: i.description,
+        name: i.name || null,
+        detail: i.detail || null,
+        description: i.name || null, // keep legacy column populated
         quantity: i.quantity,
         unit_price: i.unit_price,
-        line_total: i.quantity * i.unit_price,
+        labor: i.labor,
+        discount: i.discount,
+        vat: i.vat,
+        line_total: i.line_total,
       })),
     )
     if (itemErr) throw new Error(itemErr.message)

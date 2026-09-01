@@ -27,6 +27,8 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
   if (!quotation) notFound()
 
   const items = (quotation.quotation_items ?? []) as any[]
+  const partItems = items.filter((it) => it.kind === "part")
+  const labourItems = items.filter((it) => it.kind !== "part")
   const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
 
   return (
@@ -67,6 +69,9 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
           <div>
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Vehicle</div>
             <div className="font-semibold">{vehicle}</div>
+            {(job.variant || job.color) && (
+              <div className="text-neutral-600">{[job.variant, job.color].filter(Boolean).join(" · ")}</div>
+            )}
             <div className="text-neutral-600">
               {job.plate_number ? `Plate ${job.plate_number}` : ""}
               {job.mileage ? ` · ${job.mileage.toLocaleString()} km` : ""}
@@ -85,58 +90,24 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
           </div>
         )}
 
-        {/* Items table */}
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-neutral-300 text-left text-[11px] uppercase tracking-wide text-neutral-500">
-              <th className="py-2 pr-2 font-semibold">Item</th>
-              <th className="py-2 px-2 text-right font-semibold">Qty</th>
-              <th className="py-2 px-2 text-right font-semibold">Unit</th>
-              <th className="py-2 px-2 text-right font-semibold">Labor</th>
-              <th className="py-2 px-2 text-right font-semibold">Disc.</th>
-              <th className="py-2 px-2 text-right font-semibold">VAT</th>
-              <th className="py-2 pl-2 text-right font-semibold">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it, i) => (
-              <tr key={i} className="border-b border-neutral-200 align-top">
-                <td className="py-3 pr-2">
-                  <div className="font-medium">
-                    {it.name || it.description || "Item"}
-                    <span className="ml-2 text-[10px] uppercase text-neutral-400">
-                      {KIND_LABEL[it.kind] || it.kind}
-                    </span>
-                  </div>
-                  {it.detail && (
-                    <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-neutral-500">{it.detail}</p>
-                  )}
-                </td>
-                <td className="py-3 px-2 text-right tabular-nums">{Number(it.quantity)}</td>
-                <td className="py-3 px-2 text-right tabular-nums">{formatCurrency(Number(it.unit_price))}</td>
-                <td className="py-3 px-2 text-right tabular-nums">{formatCurrency(Number(it.labor))}</td>
-                <td className="py-3 px-2 text-right tabular-nums">
-                  {Number(it.discount) > 0 ? `− ${formatCurrency(Number(it.discount))}` : "—"}
-                </td>
-                <td className="py-3 px-2 text-right tabular-nums">{formatCurrency(Number(it.vat))}</td>
-                <td className="py-3 pl-2 text-right font-medium tabular-nums">{formatCurrency(Number(it.line_total))}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* Parts table */}
+        {partItems.length > 0 && <PartsTable items={partItems} />}
+
+        {/* Labour table */}
+        {labourItems.length > 0 && <LabourTable items={labourItems} />}
 
         {/* Totals */}
-        <div className="mt-5 flex justify-end">
+        <div className="mt-6 flex justify-end">
           <div className="w-full max-w-xs space-y-1.5 text-sm">
-            <TotalRow label="Parts" value={formatCurrency(Number(quotation.parts_total))} />
-            <TotalRow label="Labor" value={formatCurrency(Number(quotation.labor_total))} />
+            <TotalRow label="Parts subtotal" value={formatCurrency(Number(quotation.parts_total))} />
+            <TotalRow label="Labour subtotal" value={formatCurrency(Number(quotation.labor_total))} />
             {Number(quotation.discount_total) > 0 && (
               <TotalRow label="Discount" value={`− ${formatCurrency(Number(quotation.discount_total))}`} />
             )}
             <TotalRow label="Subtotal" value={formatCurrency(Number(quotation.subtotal))} />
             <TotalRow label={`VAT (${quotation.vat_rate}%)`} value={formatCurrency(Number(quotation.vat_amount))} />
             <div className="flex items-center justify-between border-t-2 border-neutral-800 pt-2 text-base font-bold">
-              <span>Total</span>
+              <span>Grand total</span>
               <span className="tabular-nums">{formatCurrency(Number(quotation.total))}</span>
             </div>
           </div>
@@ -158,6 +129,97 @@ function TotalRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between text-neutral-600">
       <span>{label}</span>
       <span className="tabular-nums text-neutral-900">{value}</span>
+    </div>
+  )
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 mt-6 text-[11px] font-bold uppercase tracking-wider text-[#e51f2b]">{children}</div>
+  )
+}
+
+function ItemDetail({ name, detail }: { name: string; detail: string | null }) {
+  return (
+    <>
+      <div className="font-medium">{name}</div>
+      {detail && <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-neutral-500">{detail}</p>}
+    </>
+  )
+}
+
+function PartsTable({ items }: { items: any[] }) {
+  return (
+    <div>
+      <SectionTitle>Parts</SectionTitle>
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-neutral-300 text-left text-[11px] uppercase tracking-wide text-neutral-500">
+            <th className="py-2 pr-2 font-semibold">Part</th>
+            <th className="py-2 px-2 text-left font-semibold">Part no.</th>
+            <th className="py-2 px-2 text-right font-semibold">Qty</th>
+            <th className="py-2 px-2 text-right font-semibold">Unit</th>
+            <th className="py-2 px-2 text-right font-semibold">Disc.</th>
+            <th className="py-2 px-2 text-right font-semibold">VAT</th>
+            <th className="py-2 pl-2 text-right font-semibold">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => (
+            <tr key={i} className="border-b border-neutral-200 align-top">
+              <td className="py-3 pr-2">
+                <ItemDetail name={it.name || it.description || "Part"} detail={it.detail} />
+              </td>
+              <td className="py-3 px-2 font-mono text-xs text-neutral-500">{it.part_number || "—"}</td>
+              <td className="py-3 px-2 text-right tabular-nums">{Number(it.quantity)}</td>
+              <td className="py-3 px-2 text-right tabular-nums">{formatCurrency(Number(it.unit_price))}</td>
+              <td className="py-3 px-2 text-right tabular-nums">
+                {Number(it.discount) > 0 ? `− ${formatCurrency(Number(it.discount))}` : "—"}
+              </td>
+              <td className="py-3 px-2 text-right tabular-nums">{formatCurrency(Number(it.vat))}</td>
+              <td className="py-3 pl-2 text-right font-medium tabular-nums">{formatCurrency(Number(it.line_total))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function LabourTable({ items }: { items: any[] }) {
+  return (
+    <div>
+      <SectionTitle>Labour &amp; Services</SectionTitle>
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-neutral-300 text-left text-[11px] uppercase tracking-wide text-neutral-500">
+            <th className="py-2 pr-2 font-semibold">Service</th>
+            <th className="py-2 px-2 text-right font-semibold">Hours</th>
+            <th className="py-2 px-2 text-right font-semibold">Rate</th>
+            <th className="py-2 px-2 text-right font-semibold">Disc.</th>
+            <th className="py-2 px-2 text-right font-semibold">VAT</th>
+            <th className="py-2 pl-2 text-right font-semibold">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => (
+            <tr key={i} className="border-b border-neutral-200 align-top">
+              <td className="py-3 pr-2">
+                <ItemDetail name={it.name || it.description || "Service"} detail={it.detail} />
+              </td>
+              <td className="py-3 px-2 text-right tabular-nums">
+                {Number(it.labour_hours) > 0 ? Number(it.labour_hours) : "—"}
+              </td>
+              <td className="py-3 px-2 text-right tabular-nums">{formatCurrency(Number(it.labour_rate))}</td>
+              <td className="py-3 px-2 text-right tabular-nums">
+                {Number(it.discount) > 0 ? `− ${formatCurrency(Number(it.discount))}` : "—"}
+              </td>
+              <td className="py-3 px-2 text-right tabular-nums">{formatCurrency(Number(it.vat))}</td>
+              <td className="py-3 pl-2 text-right font-medium tabular-nums">{formatCurrency(Number(it.line_total))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

@@ -2,9 +2,9 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { STAGES, type Stage } from "@/lib/constants"
+import { STAGES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
-import { Car } from "lucide-react"
+import { VehicleVisual, BrandLogo } from "@/components/vehicle-visual"
 import type { JobCardData } from "@/components/job-card"
 
 export function WorkflowBoard({ jobs }: { jobs: JobCardData[] }) {
@@ -61,18 +61,18 @@ function MiniCard({ job }: { job: JobCardData }) {
       href={`/jobs/${job.id}`}
       className="group flex gap-2.5 rounded-lg border border-border bg-card p-2 transition hover:border-primary/50"
     >
-      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md bg-secondary">
-        {job.cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={job.cover || "/placeholder.svg"} alt={vehicle} className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-            <Car className="h-5 w-5" />
-          </div>
-        )}
-      </div>
+      <VehicleVisual
+        coverPhoto={job.cover}
+        make={job.vehicle_make}
+        model={job.vehicle_model}
+        bodyType={job.body_type}
+        className="h-12 w-12 shrink-0 rounded-md"
+      />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{vehicle}</div>
+        <div className="flex items-center gap-1.5">
+          <BrandLogo make={job.vehicle_make} size={16} className="shrink-0" />
+          <div className="truncate text-sm font-medium">{vehicle}</div>
+        </div>
         <div className="truncate text-xs text-muted-foreground">{job.customer_name}</div>
         <div className="mt-0.5 flex items-center gap-1.5">
           {job.plate_number && (

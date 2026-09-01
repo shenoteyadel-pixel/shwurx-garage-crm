@@ -23,7 +23,7 @@ export default async function DashboardPage() {
   const { data: jobsRaw } = await supabase
     .from("jobs")
     .select(
-      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, plate_number, stage, approval_status, created_at, updated_at, approved_at",
+      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, stage, approval_status, created_at, updated_at, approved_at",
     )
     .order("updated_at", { ascending: false })
 

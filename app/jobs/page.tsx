@@ -24,7 +24,7 @@ export default async function JobsPage({
   let query = supabase
     .from("jobs")
     .select(
-      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, plate_number, stage, approval_status, created_at, updated_at, vehicle_photos(url)",
+      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, stage, approval_status, created_at, updated_at, vehicle_photos(url)",
     )
     .order("updated_at", { ascending: false })
 

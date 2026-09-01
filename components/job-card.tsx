@@ -1,8 +1,9 @@
 import Link from "next/link"
 import { Badge } from "@/components/ui"
+import { VehicleVisual, BrandLogo } from "@/components/vehicle-visual"
 import { STAGE_MAP, type Stage } from "@/lib/constants"
 import { formatDate, relativeHours } from "@/lib/utils"
-import { Car, Phone, User, Clock } from "lucide-react"
+import { Phone, User, Clock } from "lucide-react"
 
 export interface JobCardData {
   id: string
@@ -12,6 +13,9 @@ export interface JobCardData {
   vehicle_make: string | null
   vehicle_model: string | null
   vehicle_year: number | null
+  variant?: string | null
+  color?: string | null
+  body_type?: string | null
   plate_number: string | null
   stage: Stage
   approval_status: "pending" | "approved" | "rejected"
@@ -33,18 +37,13 @@ export function JobCard({ job }: { job: JobCardData }) {
       className="group block overflow-hidden rounded-xl border border-border bg-card transition hover:border-primary/50 hover:shadow-lg hover:shadow-black/20"
     >
       <div className="relative aspect-[16/10] overflow-hidden bg-secondary">
-        {job.cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={job.cover || "/placeholder.svg"}
-            alt={vehicle}
-            className="h-full w-full object-cover transition group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-            <Car className="h-10 w-10" />
-          </div>
-        )}
+        <VehicleVisual
+          coverPhoto={job.cover}
+          make={job.vehicle_make}
+          model={job.vehicle_model}
+          bodyType={job.body_type}
+          className="h-full w-full transition group-hover:scale-105"
+        />
         <div className="absolute left-2 top-2">
           <Badge className={stage.chip}>
             <span className={`h-1.5 w-1.5 rounded-full ${stage.dot}`} />
@@ -65,9 +64,12 @@ export function JobCard({ job }: { job: JobCardData }) {
 
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h3 className="truncate font-semibold">{vehicle}</h3>
-            <p className="font-mono text-xs text-muted-foreground">{job.job_number}</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <BrandLogo make={job.vehicle_make} size={22} className="shrink-0" />
+            <div className="min-w-0">
+              <h3 className="truncate font-semibold">{vehicle}</h3>
+              <p className="font-mono text-xs text-muted-foreground">{job.job_number}</p>
+            </div>
           </div>
           {job.plate_number && (
             <span className="shrink-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs">

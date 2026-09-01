@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Badge } from "@/components/ui"
+import { Badge, UAEPlate } from "@/components/ui"
 import { VehicleVisual, BrandLogo } from "@/components/vehicle-visual"
 import { STAGE_MAP, type Stage } from "@/lib/constants"
 import { formatDate, relativeHours } from "@/lib/utils"
@@ -45,6 +45,7 @@ export function JobCard({ job }: { job: JobCardData }) {
           make={job.vehicle_make}
           model={job.vehicle_model}
           bodyType={job.body_type}
+          color={job.color}
           className="h-full w-full transition group-hover:scale-105"
         />
         <div className="absolute left-2 top-2">
@@ -74,11 +75,19 @@ export function JobCard({ job }: { job: JobCardData }) {
               <p className="font-mono text-xs text-muted-foreground">{job.job_number}</p>
             </div>
           </div>
-          {job.plate_number && (
-            <span className="shrink-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs">
-              {job.plate_number}
-            </span>
-          )}
+          {(job.plate_emirate || job.plate_code || job.plate_number) &&
+            (job.plate_emirate || job.plate_code ? (
+              <UAEPlate
+                emirate={job.plate_emirate}
+                code={job.plate_code}
+                number={job.plate_number}
+                className="h-7 shrink-0 text-xs"
+              />
+            ) : (
+              <span className="shrink-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs">
+                {job.plate_number}
+              </span>
+            ))}
         </div>
 
         <div className="mt-3 space-y-1.5 text-sm">

@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { brandLogoUrl, brandInitials, resolveSilhouette } from "@/lib/vehicle"
+import { brandLogoUrl, brandInitials, inferBodyType, BODY_TYPES, type BodyType } from "@/lib/vehicle"
+import { CarSilhouette } from "@/components/car-silhouette"
 import { cn } from "@/lib/utils"
 
 /* ---------------- Brand Logo ---------------- */
@@ -59,6 +60,7 @@ export function VehicleVisual({
   make,
   model,
   bodyType,
+  color,
   className,
   alt,
 }: {
@@ -66,32 +68,32 @@ export function VehicleVisual({
   make?: string | null
   model?: string | null
   bodyType?: string | null
+  color?: string | null
   className?: string
   alt?: string
 }) {
   const [coverFailed, setCoverFailed] = useState(false)
   const showCover = coverPhoto && !coverFailed
-  const silhouette = resolveSilhouette(bodyType, make, model)
+
+  // Prefer an explicit stored body type, else infer from make + model.
+  const stored = bodyType as BodyType | null | undefined
+  const bt: BodyType = stored && BODY_TYPES.some((b) => b.value === stored) ? stored : inferBodyType(make, model)
+  const label = `${make ?? ""} ${model ?? ""}`.trim() || "Vehicle"
 
   return (
-    <div className={cn("relative overflow-hidden bg-gradient-to-b from-secondary/60 to-background", className)}>
+    <div className={cn("relative overflow-hidden bg-gradient-to-b from-muted/50 to-card", className)}>
       {showCover ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={coverPhoto || "/placeholder.svg"}
-          alt={alt || `${make ?? ""} ${model ?? ""}`.trim() || "Vehicle"}
+          alt={alt || label}
           className="h-full w-full object-cover"
           onError={() => setCoverFailed(true)}
           crossOrigin="anonymous"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center p-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={silhouette || "/placeholder.svg"}
-            alt={`${make ?? ""} ${model ?? ""}`.trim() + " silhouette" || "Vehicle silhouette"}
-            className="h-full max-h-full w-full max-w-full object-contain opacity-80"
-          />
+        <div className="flex h-full w-full items-center justify-center p-1.5">
+          <CarSilhouette bodyType={bt} color={color} title={`${label} — ${color || "unspecified"}`} />
         </div>
       )}
     </div>

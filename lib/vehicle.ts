@@ -147,6 +147,80 @@ export function silhouetteUrl(bodyType: BodyType): string {
   return `/silhouettes/${bodyType}.png`
 }
 
+/* ---------------- Paint color resolution ---------------- */
+// Maps a free-text color from the job card to a realistic paint hex.
+// Keyword substring match (normalized), then raw hex, then neutral fallback.
+const COLOR_KEYWORDS: [string, string][] = [
+  ["pearlwhite", "#eef1f4"],
+  ["pearl", "#e9edf2"],
+  ["obsidian", "#17181c"],
+  ["gunmetal", "#4b5058"],
+  ["graphite", "#3b3f45"],
+  ["charcoal", "#31353b"],
+  ["white", "#f1f3f5"],
+  ["black", "#191b1f"],
+  ["silver", "#cbd0d6"],
+  ["grey", "#9198a1"],
+  ["gray", "#9198a1"],
+  ["navy", "#1e3356"],
+  ["skyblue", "#5aa9e6"],
+  ["blue", "#2f6fe0"],
+  ["crimson", "#c62236"],
+  ["red", "#d62f2f"],
+  ["maroon", "#7c1f2b"],
+  ["burgundy", "#6d1f2e"],
+  ["green", "#1f9d55"],
+  ["brown", "#6f4522"],
+  ["bronze", "#8a6a3b"],
+  ["beige", "#d9c9a6"],
+  ["champagne", "#d8c9a3"],
+  ["gold", "#c8a53a"],
+  ["orange", "#e8681f"],
+  ["yellow", "#e8c018"],
+  ["purple", "#7b46d1"],
+  ["violet", "#7b46d1"],
+  ["pink", "#dd6aa0"],
+  ["teal", "#1f9a99"],
+]
+
+const HEX_RE = /^#?[0-9a-f]{6}$|^#?[0-9a-f]{3}$/i
+
+export function resolvePaint(color: string | null | undefined): { paint: string; isLight: boolean } {
+  const raw = (color || "").trim()
+  let paint = "#8b9199" // neutral default when no color is provided
+  if (raw) {
+    const n = normalize(raw)
+    const hit = COLOR_KEYWORDS.find(([k]) => n.includes(k))
+    if (hit) {
+      paint = hit[1]
+    } else if (HEX_RE.test(raw)) {
+      paint = raw.startsWith("#") ? raw : `#${raw}`
+    }
+  }
+  return { paint, isLight: luminance(paint) > 0.6 }
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  let h = hex.replace("#", "")
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("")
+  const num = Number.parseInt(h, 16)
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255]
+}
+
+function luminance(hex: string): number {
+  const [r, g, b] = hexToRgb(hex)
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+}
+
+// Mix a hex color toward black (amount<0) or white (amount>0), amount in -1..1.
+export function shade(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex)
+  const t = amount < 0 ? 0 : 255
+  const p = Math.abs(amount)
+  const mix = (c: number) => Math.round((t - c) * p + c)
+  return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, "0")).join("")}`
+}
+
 // Resolve the best silhouette for a job from stored body_type or make/model.
 export function resolveSilhouette(
   bodyType: string | null | undefined,

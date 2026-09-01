@@ -112,6 +112,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             make={job.vehicle_make}
             model={job.vehicle_model}
             bodyType={job.body_type}
+            color={job.color}
             className="hidden h-20 w-32 shrink-0 rounded-lg border border-border sm:block"
           />
           <div>

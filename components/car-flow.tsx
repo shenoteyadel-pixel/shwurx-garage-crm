@@ -383,30 +383,32 @@ function FlowCard({
   return (
     <DragHandleCard job={job} pending={pending} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="rounded-lg border border-border bg-card p-2 transition hover:border-primary/50">
-        <div className="flex gap-2.5">
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <BrandLogo make={job.vehicle_make} size={18} className="shrink-0" />
+          <span className="truncate text-sm font-medium">{vehicle}</span>
+        </div>
+        {/* Vehicle image with the real plate attached directly beneath it */}
+        <div className="relative rounded-md bg-gradient-to-b from-muted/40 to-card">
           <VehicleVisual
             coverPhoto={job.cover}
             make={job.vehicle_make}
             model={job.vehicle_model}
             bodyType={job.body_type}
-            className="h-14 w-20 shrink-0 rounded-md"
+            color={job.color}
+            className="h-20 w-full rounded-md"
           />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <BrandLogo make={job.vehicle_make} size={16} className="shrink-0" />
-              <span className="truncate text-sm font-medium">{vehicle}</span>
-            </div>
-            <div className="truncate text-xs text-muted-foreground">{job.customer_name}</div>
-            <div className="mt-1 flex items-center gap-1.5">
+          {(job.plate_emirate || job.plate_code || job.plate_number) && (
+            <div className="flex justify-center pb-1">
               <UAEPlate
                 emirate={job.plate_emirate}
                 code={job.plate_code}
                 number={job.plate_number}
-                className="h-5 text-[10px]"
+                className="h-6 text-[11px]"
               />
             </div>
-          </div>
+          )}
         </div>
+        <div className="mt-1 truncate text-xs text-muted-foreground">{job.customer_name}</div>
         <div className="mt-1.5 flex items-center justify-between">
           <span className={cn("rounded-full border px-1.5 py-0.5 text-[10px]", stage.chip)}>{stage.short}</span>
           <Link
@@ -442,8 +444,19 @@ function BayCard({
           make={job.vehicle_make}
           model={job.vehicle_model}
           bodyType={job.body_type}
+          color={job.color}
           className="h-12 w-full rounded"
         />
+        {(job.plate_emirate || job.plate_code || job.plate_number) && (
+          <div className="flex justify-center">
+            <UAEPlate
+              emirate={job.plate_emirate}
+              code={job.plate_code}
+              number={job.plate_number}
+              className="h-5 text-[9px]"
+            />
+          </div>
+        )}
         <div className="flex items-center gap-1">
           <BrandLogo make={job.vehicle_make} size={14} className="shrink-0" />
           <span className="truncate text-[11px] font-medium">{vehicle}</span>

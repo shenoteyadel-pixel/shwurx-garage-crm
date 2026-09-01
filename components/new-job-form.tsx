@@ -77,7 +77,7 @@ export function NewJobForm({ staff }: { staff: Staff[] }) {
 
         {/* Live vehicle visual preview */}
         <div className="mb-5 flex flex-wrap items-center gap-4 rounded-lg border border-border bg-background/40 p-3">
-          <VehicleVisual make={make} model={model} bodyType={effectiveBody} className="h-20 w-32 rounded-md" />
+          <VehicleVisual make={make} model={model} bodyType={effectiveBody} color={color} className="h-20 w-32 rounded-md" />
           <div className="text-sm">
             <div className="font-medium text-foreground">
               {[make || "Make", model || "Model", variant].filter(Boolean).join(" ")}

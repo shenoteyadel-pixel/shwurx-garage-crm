@@ -2,29 +2,58 @@
 
 import * as React from "react"
 import { saveQuotation, type QuoteItemInput } from "@/lib/actions"
-import { Button, Card, Input, Select, AutoTextarea, Label } from "@/components/ui"
+import { Button, Card, Input, AutoTextarea, Label } from "@/components/ui"
 import { VAT_RATE } from "@/lib/constants"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Trash2, Save, Pencil, Printer, FileText, X, Lock } from "lucide-react"
+import { Plus, Trash2, Save, Pencil, Printer, FileText, X, Lock, Wrench, Package } from "lucide-react"
 
-type Item = {
-  kind: "part" | "labor" | "service"
+export type Item = {
+  kind: "part" | "labor"
   name: string
+  part_number: string
   detail: string
   quantity: number
   unit_price: number
-  labor: number
+  labour_hours: number
+  labour_rate: number
   discount: number
 }
 
-const KIND_LABEL: Record<Item["kind"], string> = { part: "Part", labor: "Labor", service: "Service" }
+function emptyItem(kind: Item["kind"]): Item {
+  return {
+    kind,
+    name: "",
+    part_number: "",
+    detail: "",
+    quantity: 1,
+    unit_price: 0,
+    labour_hours: 0,
+    labour_rate: 0,
+    discount: 0,
+  }
+}
 
-function emptyItem(kind: Item["kind"] = "part"): Item {
-  return { kind, name: "", detail: "", quantity: 1, unit_price: 0, labor: 0, discount: 0 }
+function lineGross(i: Item) {
+  if (i.kind === "labor") {
+    const hours = Number(i.labour_hours) || 0
+    const rate = Number(i.labour_rate) || 0
+    return hours > 0 ? hours * rate : rate
+  }
+  return (Number(i.quantity) || 0) * (Number(i.unit_price) || 0)
 }
 
 function lineBase(i: Item) {
-  return Math.max(0, (Number(i.quantity) || 0) * (Number(i.unit_price) || 0) + (Number(i.labor) || 0) - (Number(i.discount) || 0))
+  return Math.max(0, lineGross(i) - (Number(i.discount) || 0))
+}
+
+function totals(items: Item[], vat: number) {
+  const partsTotal = items.filter((i) => i.kind === "part").reduce((s, i) => s + lineGross(i), 0)
+  const laborTotal = items.filter((i) => i.kind === "labor").reduce((s, i) => s + lineGross(i), 0)
+  const discountTotal = items.reduce((s, i) => s + (Number(i.discount) || 0), 0)
+  const subtotal = partsTotal + laborTotal - discountTotal
+  const vatAmount = items.reduce((s, i) => s + (lineBase(i) * vat) / 100, 0)
+  const total = subtotal + vatAmount
+  return { partsTotal, laborTotal, discountTotal, subtotal, vatAmount, total }
 }
 
 export function QuotationBuilder({
@@ -49,12 +78,9 @@ export function QuotationBuilder({
   const [open, setOpen] = React.useState(false)
   const vat = initialVat || VAT_RATE
 
-  const partsTotal = initialItems.reduce((s, i) => s + i.quantity * i.unit_price, 0)
-  const laborTotal = initialItems.reduce((s, i) => s + i.labor, 0)
-  const discountTotal = initialItems.reduce((s, i) => s + i.discount, 0)
-  const subtotal = partsTotal + laborTotal - discountTotal
-  const vatAmount = (subtotal * vat) / 100
-  const total = subtotal + vatAmount
+  const parts = initialItems.filter((i) => i.kind === "part")
+  const labour = initialItems.filter((i) => i.kind === "labor")
+  const t = totals(initialItems, vat)
 
   return (
     <Card className="p-5">
@@ -102,49 +128,31 @@ export function QuotationBuilder({
             </div>
           )}
 
-          <div className="space-y-2">
-            {initialItems.map((it, idx) => {
-              const base = lineBase(it)
-              const lineVat = (base * vat) / 100
-              return (
-                <div key={idx} className="rounded-lg border border-border bg-background/40 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="rounded border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                          {KIND_LABEL[it.kind]}
-                        </span>
-                        <span className="font-medium">{it.name || "Untitled item"}</span>
-                      </div>
-                      {it.detail && (
-                        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-                          {it.detail}
-                        </p>
-                      )}
-                    </div>
-                    <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(base + lineVat)}</span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    <span>Qty {it.quantity}</span>
-                    <span>Unit {formatCurrency(it.unit_price)}</span>
-                    {it.labor > 0 && <span>Labor {formatCurrency(it.labor)}</span>}
-                    {it.discount > 0 && <span className="text-amber-400">− {formatCurrency(it.discount)}</span>}
-                    <span>VAT {formatCurrency(lineVat)}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          {parts.length > 0 && (
+            <SummarySection icon={<Package className="h-4 w-4" />} title="Parts">
+              {parts.map((it, idx) => (
+                <SummaryLine key={idx} it={it} vat={vat} />
+              ))}
+            </SummarySection>
+          )}
+
+          {labour.length > 0 && (
+            <SummarySection icon={<Wrench className="h-4 w-4" />} title="Labour / Services">
+              {labour.map((it, idx) => (
+                <SummaryLine key={idx} it={it} vat={vat} />
+              ))}
+            </SummarySection>
+          )}
 
           <div className="space-y-1.5 border-t border-border pt-4 text-sm">
-            <SummaryRow label="Parts" value={formatCurrency(partsTotal)} />
-            <SummaryRow label="Labor" value={formatCurrency(laborTotal)} />
-            {discountTotal > 0 && <SummaryRow label="Discount" value={`− ${formatCurrency(discountTotal)}`} />}
-            <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
-            <SummaryRow label={`VAT (${vat}%)`} value={formatCurrency(vatAmount)} />
+            <SummaryRow label="Parts subtotal" value={formatCurrency(t.partsTotal)} />
+            <SummaryRow label="Labour subtotal" value={formatCurrency(t.laborTotal)} />
+            {t.discountTotal > 0 && <SummaryRow label="Discount" value={`− ${formatCurrency(t.discountTotal)}`} />}
+            <SummaryRow label="Subtotal" value={formatCurrency(t.subtotal)} />
+            <SummaryRow label={`VAT (${vat}%)`} value={formatCurrency(t.vatAmount)} />
             <div className="flex items-center justify-between border-t border-border pt-2 text-base font-bold">
-              <span>Total</span>
-              <span className="tabular-nums text-primary">{formatCurrency(total)}</span>
+              <span>Grand total</span>
+              <span className="tabular-nums text-primary">{formatCurrency(t.total)}</span>
             </div>
           </div>
 
@@ -170,6 +178,65 @@ export function QuotationBuilder({
         />
       )}
     </Card>
+  )
+}
+
+function SummarySection({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {icon} {title}
+      </div>
+      <div className="space-y-2">{children}</div>
+    </div>
+  )
+}
+
+function SummaryLine({ it, vat }: { it: Item; vat: number }) {
+  const base = lineBase(it)
+  const lineVat = (base * vat) / 100
+  return (
+    <div className="rounded-lg border border-border bg-background/40 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">{it.name || "Untitled item"}</span>
+            {it.part_number && (
+              <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
+                #{it.part_number}
+              </span>
+            )}
+          </div>
+          {it.detail && (
+            <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{it.detail}</p>
+          )}
+        </div>
+        <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(base + lineVat)}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {it.kind === "part" ? (
+          <>
+            <span>Qty {it.quantity}</span>
+            <span>Unit {formatCurrency(it.unit_price)}</span>
+          </>
+        ) : (
+          <>
+            {it.labour_hours > 0 && <span>{it.labour_hours} hrs</span>}
+            <span>Rate {formatCurrency(it.labour_rate)}</span>
+          </>
+        )}
+        {it.discount > 0 && <span className="text-amber-400">− {formatCurrency(it.discount)}</span>}
+        <span>VAT {formatCurrency(lineVat)}</span>
+      </div>
+    </div>
   )
 }
 
@@ -201,7 +268,9 @@ function QuotationEditor({
   const [description, setDescription] = React.useState(initialDescription)
   const [internalNotes, setInternalNotes] = React.useState(initialInternalNotes)
   const [vat, setVat] = React.useState(initialVat)
-  const [items, setItems] = React.useState<Item[]>(initialItems.length ? initialItems : [emptyItem()])
+  const [items, setItems] = React.useState<Item[]>(
+    initialItems.length ? initialItems : [emptyItem("part"), emptyItem("labor")],
+  )
   const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
@@ -214,21 +283,16 @@ function QuotationEditor({
     }
   }, [onClose])
 
-  const partsTotal = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
-  const laborTotal = items.reduce((s, i) => s + (Number(i.labor) || 0), 0)
-  const discountTotal = items.reduce((s, i) => s + (Number(i.discount) || 0), 0)
-  const subtotal = partsTotal + laborTotal - discountTotal
-  const vatAmount = (subtotal * vat) / 100
-  const total = subtotal + vatAmount
+  const t = totals(items, vat)
 
-  function update(idx: number, patch: Partial<Item>) {
-    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)))
+  function update(id: number, patch: Partial<Item>) {
+    setItems((prev) => prev.map((it, i) => (i === id ? { ...it, ...patch } : it)))
   }
   function add(kind: Item["kind"]) {
     setItems((prev) => [...prev, emptyItem(kind)])
   }
-  function remove(idx: number) {
-    setItems((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== idx)))
+  function remove(id: number) {
+    setItems((prev) => prev.filter((_, i) => i !== id))
   }
 
   async function save() {
@@ -239,14 +303,16 @@ function QuotationEditor({
         internalNotes,
         vatRate: vat,
         items: items
-          .filter((i) => i.name.trim() || i.detail.trim() || i.unit_price > 0 || i.labor > 0)
+          .filter((i) => i.name.trim() || i.detail.trim() || lineGross(i) > 0)
           .map<QuoteItemInput>((i) => ({
             kind: i.kind,
             name: i.name,
+            part_number: i.part_number,
             detail: i.detail,
             quantity: Number(i.quantity) || 0,
             unit_price: Number(i.unit_price) || 0,
-            labor: Number(i.labor) || 0,
+            labour_hours: Number(i.labour_hours) || 0,
+            labour_rate: Number(i.labour_rate) || 0,
             discount: Number(i.discount) || 0,
           })),
       })
@@ -255,6 +321,11 @@ function QuotationEditor({
       setSaving(false)
     }
   }
+
+  // Keep stable indices for update/remove while rendering grouped sections
+  const indexed = items.map((it, index) => ({ it, index }))
+  const partRows = indexed.filter((r) => r.it.kind === "part")
+  const labourRows = indexed.filter((r) => r.it.kind === "labor")
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background/95 backdrop-blur">
@@ -284,7 +355,7 @@ function QuotationEditor({
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-3">
+        <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-3">
           <div className="space-y-6 lg:col-span-2">
             {/* Customer work description */}
             <section>
@@ -297,104 +368,64 @@ function QuotationEditor({
               />
             </section>
 
-            {/* Line items */}
+            {/* PARTS */}
             <section>
               <div className="mb-2 flex items-center justify-between">
-                <Label className="mb-0">Line items</Label>
-                <span className="text-xs text-muted-foreground">{items.length} item(s)</span>
+                <Label className="mb-0 flex items-center gap-1.5">
+                  <Package className="h-3.5 w-3.5" /> Parts
+                </Label>
+                <span className="text-xs text-muted-foreground">{partRows.length} part(s)</span>
               </div>
               <div className="space-y-4">
-                {items.map((it, idx) => {
-                  const base = lineBase(it)
-                  const lineVat = (base * vat) / 100
-                  return (
-                    <div key={idx} className="rounded-xl border border-border bg-card/60 p-4">
-                      <div className="mb-3 flex items-center gap-2">
-                        <Select
-                          value={it.kind}
-                          onChange={(e) => update(idx, { kind: e.target.value as Item["kind"] })}
-                          className="h-9 w-32"
-                        >
-                          <option value="part">Part</option>
-                          <option value="service">Service</option>
-                          <option value="labor">Labor</option>
-                        </Select>
-                        <Input
-                          value={it.name}
-                          onChange={(e) => update(idx, { name: e.target.value })}
-                          placeholder="Part / service name"
-                          className="h-9 flex-1"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => remove(idx)}
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-red-400"
-                          aria-label="Remove line item"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      <div className="mb-3">
-                        <Label>Detailed description</Label>
-                        <AutoTextarea
-                          minRows={4}
-                          value={it.detail}
-                          onChange={(e) => update(idx, { detail: e.target.value })}
-                          placeholder="Diagnosis, repair procedure, parts required, customer notes, warranty notes…"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        <NumField
-                          label="Quantity"
-                          value={it.quantity}
-                          step="0.5"
-                          onChange={(v) => update(idx, { quantity: v })}
-                        />
-                        <NumField
-                          label="Unit price"
-                          value={it.unit_price}
-                          step="0.01"
-                          onChange={(v) => update(idx, { unit_price: v })}
-                        />
-                        <NumField
-                          label="Labor"
-                          value={it.labor}
-                          step="0.01"
-                          onChange={(v) => update(idx, { labor: v })}
-                        />
-                        <NumField
-                          label="Discount"
-                          value={it.discount}
-                          step="0.01"
-                          onChange={(v) => update(idx, { discount: v })}
-                        />
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-sm">
-                        <span className="text-muted-foreground">
-                          VAT ({vat}%): <span className="tabular-nums text-foreground">{formatCurrency(lineVat)}</span>
-                        </span>
-                        <span className="font-semibold">
-                          Line total:{" "}
-                          <span className="tabular-nums text-primary">{formatCurrency(base + lineVat)}</span>
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
+                {partRows.map(({ it, index }) => (
+                  <PartRow
+                    key={index}
+                    it={it}
+                    vat={vat}
+                    onChange={(patch) => update(index, patch)}
+                    onRemove={() => remove(index)}
+                  />
+                ))}
+                {partRows.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-border py-4 text-center text-xs text-muted-foreground">
+                    No parts added.
+                  </p>
+                )}
               </div>
-
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3">
                 <Button type="button" variant="outline" size="sm" onClick={() => add("part")}>
-                  <Plus className="h-3.5 w-3.5" /> Part
+                  <Plus className="h-3.5 w-3.5" /> Add part
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => add("service")}>
-                  <Plus className="h-3.5 w-3.5" /> Service
-                </Button>
+              </div>
+            </section>
+
+            {/* LABOUR */}
+            <section>
+              <div className="mb-2 flex items-center justify-between">
+                <Label className="mb-0 flex items-center gap-1.5">
+                  <Wrench className="h-3.5 w-3.5" /> Labour / Services
+                </Label>
+                <span className="text-xs text-muted-foreground">{labourRows.length} item(s)</span>
+              </div>
+              <div className="space-y-4">
+                {labourRows.map(({ it, index }) => (
+                  <LabourRow
+                    key={index}
+                    it={it}
+                    vat={vat}
+                    onChange={(patch) => update(index, patch)}
+                    onRemove={() => remove(index)}
+                  />
+                ))}
+                {labourRows.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-border py-4 text-center text-xs text-muted-foreground">
+                    No labour lines added.
+                  </p>
+                )}
+              </div>
+              <div className="mt-3">
                 <Button type="button" variant="outline" size="sm" onClick={() => add("labor")}>
-                  <Plus className="h-3.5 w-3.5" /> Labor
+                  <Plus className="h-3.5 w-3.5" /> Add labour / service
                 </Button>
               </div>
             </section>
@@ -419,10 +450,10 @@ function QuotationEditor({
             <div className="sticky top-0 space-y-4 rounded-xl border border-border bg-card p-5">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Summary</h3>
               <div className="space-y-1.5 text-sm">
-                <SummaryRow label="Parts" value={formatCurrency(partsTotal)} />
-                <SummaryRow label="Labor" value={formatCurrency(laborTotal)} />
-                {discountTotal > 0 && <SummaryRow label="Discount" value={`− ${formatCurrency(discountTotal)}`} />}
-                <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
+                <SummaryRow label="Parts subtotal" value={formatCurrency(t.partsTotal)} />
+                <SummaryRow label="Labour subtotal" value={formatCurrency(t.laborTotal)} />
+                {t.discountTotal > 0 && <SummaryRow label="Discount" value={`− ${formatCurrency(t.discountTotal)}`} />}
+                <SummaryRow label="Subtotal" value={formatCurrency(t.subtotal)} />
               </div>
               <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -437,11 +468,11 @@ function QuotationEditor({
                   />
                   <span>%</span>
                 </div>
-                <span className="tabular-nums">{formatCurrency(vatAmount)}</span>
+                <span className="tabular-nums">{formatCurrency(t.vatAmount)}</span>
               </div>
               <div className="flex items-center justify-between border-t border-border pt-3 text-lg font-bold">
-                <span>Total</span>
-                <span className="tabular-nums text-primary">{formatCurrency(total)}</span>
+                <span>Grand total</span>
+                <span className="tabular-nums text-primary">{formatCurrency(t.total)}</span>
               </div>
               <Button type="button" className="w-full" onClick={save} disabled={saving}>
                 <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save quotation"}
@@ -450,6 +481,147 @@ function QuotationEditor({
           </aside>
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ---------------- Part row ---------------- */
+function PartRow({
+  it,
+  vat,
+  onChange,
+  onRemove,
+}: {
+  it: Item
+  vat: number
+  onChange: (patch: Partial<Item>) => void
+  onRemove: () => void
+}) {
+  const base = lineBase(it)
+  const lineVat = (base * vat) / 100
+  return (
+    <div className="rounded-xl border border-border bg-card/60 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Input
+          value={it.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+          placeholder="Part name"
+          className="h-9 flex-1"
+        />
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-red-400"
+          aria-label="Remove part"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mb-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label>Part number</Label>
+          <Input
+            value={it.part_number}
+            onChange={(e) => onChange({ part_number: e.target.value })}
+            placeholder="e.g. 04465-60320"
+            className="h-9 font-mono"
+          />
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <Label>Description</Label>
+        <AutoTextarea
+          minRows={3}
+          value={it.detail}
+          onChange={(e) => onChange({ detail: e.target.value })}
+          placeholder="Part specification, brand, fitment notes, warranty…"
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <NumField label="Quantity" value={it.quantity} step="1" onChange={(v) => onChange({ quantity: v })} />
+        <NumField label="Unit price" value={it.unit_price} step="0.01" onChange={(v) => onChange({ unit_price: v })} />
+        <NumField label="Discount" value={it.discount} step="0.01" onChange={(v) => onChange({ discount: v })} />
+      </div>
+
+      <LineFooter vat={vat} lineVat={lineVat} total={base + lineVat} />
+    </div>
+  )
+}
+
+/* ---------------- Labour row ---------------- */
+function LabourRow({
+  it,
+  vat,
+  onChange,
+  onRemove,
+}: {
+  it: Item
+  vat: number
+  onChange: (patch: Partial<Item>) => void
+  onRemove: () => void
+}) {
+  const base = lineBase(it)
+  const lineVat = (base * vat) / 100
+  return (
+    <div className="rounded-xl border border-border bg-card/60 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Input
+          value={it.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+          placeholder="Labour / service name"
+          className="h-9 flex-1"
+        />
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-red-400"
+          aria-label="Remove labour line"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mb-3">
+        <Label>Detailed work description</Label>
+        <AutoTextarea
+          minRows={4}
+          value={it.detail}
+          onChange={(e) => onChange({ detail: e.target.value })}
+          placeholder="Diagnosis, repair procedure, labour steps, warranty notes…"
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <NumField
+          label="Labour hours"
+          value={it.labour_hours}
+          step="0.5"
+          onChange={(v) => onChange({ labour_hours: v })}
+        />
+        <NumField label="Labour rate" value={it.labour_rate} step="0.01" onChange={(v) => onChange({ labour_rate: v })} />
+        <NumField label="Discount" value={it.discount} step="0.01" onChange={(v) => onChange({ discount: v })} />
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        If hours are set, the line = hours × rate. Leave hours at 0 to use the rate as a flat labour charge.
+      </p>
+
+      <LineFooter vat={vat} lineVat={lineVat} total={base + lineVat} />
+    </div>
+  )
+}
+
+function LineFooter({ vat, lineVat, total }: { vat: number; lineVat: number; total: number }) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-sm">
+      <span className="text-muted-foreground">
+        VAT ({vat}%): <span className="tabular-nums text-foreground">{formatCurrency(lineVat)}</span>
+      </span>
+      <span className="font-semibold">
+        Line total: <span className="tabular-nums text-primary">{formatCurrency(total)}</span>
+      </span>
     </div>
   )
 }

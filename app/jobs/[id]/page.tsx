@@ -9,9 +9,12 @@ import { PartsManager } from "@/components/parts-manager"
 import { ApprovalSender } from "@/components/approval-sender"
 import { JobPhotos } from "@/components/job-photos"
 import { StaffAssign } from "@/components/staff-assign"
-import { STAGE_MAP, type Stage } from "@/lib/constants"
+import { RepairDetails } from "@/components/repair-details"
+import { TechnicianJobCard } from "@/components/technician-job-card"
+import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
+import { STAGE_MAP, QC_STATUSES, canViewPrices, type Stage } from "@/lib/constants"
 import { formatDate } from "@/lib/utils"
-import { ArrowLeft, Phone, Gauge, Hash, Fingerprint } from "lucide-react"
+import { ArrowLeft, Phone, Gauge, Hash, Fingerprint, Palette, Car, CalendarClock } from "lucide-react"
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -37,7 +40,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const { data: quotation } = await supabase
     .from("quotations")
     .select(
-      "id, vat_rate, description, internal_notes, quotation_items(kind, name, detail, description, quantity, unit_price, labor, discount)",
+      "id, vat_rate, description, internal_notes, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount)",
     )
     .eq("job_id", id)
     .order("created_at", { ascending: false })
@@ -56,16 +59,40 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const vehicle =
     [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
 
+  const rawItems = quotation?.quotation_items ?? []
   const quoteItems =
-    quotation?.quotation_items?.map((i: any) => ({
-      kind: (i.kind || "part") as "part" | "labor" | "service",
+    rawItems.map((i: any) => ({
+      kind: (i.kind === "labor" || i.kind === "service" ? "labor" : "part") as "part" | "labor",
       name: i.name || i.description || "",
+      part_number: i.part_number || "",
       detail: i.detail || "",
-      quantity: Number(i.quantity),
-      unit_price: Number(i.unit_price),
-      labor: Number(i.labor ?? 0),
+      quantity: Number(i.quantity ?? 0),
+      unit_price: Number(i.unit_price ?? 0),
+      labour_hours: Number(i.labour_hours ?? 0),
+      labour_rate: Number(i.labour_rate ?? 0),
       discount: Number(i.discount ?? 0),
     })) ?? []
+
+  const role = profile?.role || "advisor"
+  const showPrices = canViewPrices(role)
+
+  // Cover photo for the vehicle visual = first vehicle-kind photo
+  const coverPhoto = (photos ?? []).find((p: any) => p.kind === "vehicle")?.url ?? (photos ?? [])[0]?.url ?? null
+
+  // Prices-free lists for the technician job card
+  const techLabour = quoteItems
+    .filter((i) => i.kind === "labor")
+    .map((i) => ({ name: i.name, detail: i.detail }))
+  const techParts = [
+    ...quoteItems.filter((i) => i.kind === "part").map((i) => ({
+      name: i.name,
+      part_number: i.part_number,
+      quantity: i.quantity,
+    })),
+    ...(parts ?? []).map((p: any) => ({ name: p.part_name, part_number: null, quantity: p.quantity })),
+  ]
+
+  const qcMeta = QC_STATUSES.find((q) => q.value === (job.qc_status || "pending"))
 
   const locked = job.approval_status === "approved"
 
@@ -79,17 +106,32 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       </Link>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">{vehicle}</h1>
-            <Badge className={stageMeta.chip}>
-              <span className={`h-1.5 w-1.5 rounded-full ${stageMeta.dot}`} />
-              {stageMeta.label}
-            </Badge>
+        <div className="flex items-start gap-4">
+          <VehicleVisual
+            coverPhoto={coverPhoto}
+            make={job.vehicle_make}
+            model={job.vehicle_model}
+            bodyType={job.body_type}
+            className="hidden h-20 w-32 shrink-0 rounded-lg border border-border sm:block"
+          />
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <BrandLogo make={job.vehicle_make} size={36} />
+              <h1 className="text-2xl font-bold tracking-tight">{vehicle}</h1>
+              <Badge className={stageMeta.chip}>
+                <span className={`h-1.5 w-1.5 rounded-full ${stageMeta.dot}`} />
+                {stageMeta.label}
+              </Badge>
+            </div>
+            <p className="mt-1 font-mono text-sm text-muted-foreground">
+              {job.job_number} · opened {formatDate(job.created_at)}
+            </p>
+            {(job.variant || job.color) && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {[job.variant, job.color].filter(Boolean).join(" · ")}
+              </p>
+            )}
           </div>
-          <p className="mt-1 font-mono text-sm text-muted-foreground">
-            {job.job_number} · opened {formatDate(job.created_at)}
-          </p>
         </div>
         {job.plate_number && (
           <span className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm">
@@ -105,17 +147,33 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <JobPhotos jobId={job.id} photos={(photos ?? []) as any} />
-          <QuotationBuilder
-            jobId={job.id}
-            initialItems={quoteItems}
-            initialVat={Number(quotation?.vat_rate ?? 5)}
-            initialDescription={quotation?.description ?? ""}
-            initialInternalNotes={quotation?.internal_notes ?? ""}
-            hasQuotation={!!quotation}
-            printHref={`/jobs/${job.id}/quotation/print`}
-            locked={locked}
-          />
-          <PartsManager jobId={job.id} parts={(parts ?? []) as any} />
+
+          {showPrices ? (
+            <>
+              <RepairDetails job={job as any} />
+              <QuotationBuilder
+                jobId={job.id}
+                initialItems={quoteItems}
+                initialVat={Number(quotation?.vat_rate ?? 5)}
+                initialDescription={quotation?.description ?? ""}
+                initialInternalNotes={quotation?.internal_notes ?? ""}
+                hasQuotation={!!quotation}
+                printHref={`/jobs/${job.id}/quotation/print`}
+                locked={locked}
+              />
+              <PartsManager jobId={job.id} parts={(parts ?? []) as any} />
+            </>
+          ) : (
+            <>
+              <TechnicianJobCard
+                complaint={job.complaint}
+                approved={locked}
+                labour={techLabour}
+                parts={techParts}
+              />
+              <RepairDetails job={job as any} />
+            </>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -131,10 +189,29 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               </a>
             </div>
             <div className="mt-4 space-y-2 border-t border-border pt-4 text-sm">
+              <Detail icon={Car} label="Variant" value={job.variant || "—"} />
+              <Detail icon={Palette} label="Color" value={job.color || "—"} />
+              <Detail icon={Gauge} label="Year" value={job.vehicle_year ? String(job.vehicle_year) : "—"} />
               <Detail icon={Hash} label="Mileage" value={job.mileage ? `${job.mileage.toLocaleString()} km` : "—"} />
               <Detail icon={Fingerprint} label="VIN" value={job.vin || "—"} mono />
-              <Detail icon={Gauge} label="Year" value={job.vehicle_year ? String(job.vehicle_year) : "—"} />
             </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm">
+              <span className="text-muted-foreground">QC</span>
+              <Badge className={qcMeta?.chip}>{qcMeta?.label}</Badge>
+              {job.estimated_completion && (
+                <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <CalendarClock className="h-3.5 w-3.5" /> ETA {formatDate(job.estimated_completion)}
+                </span>
+              )}
+            </div>
+            {job.complaint && (
+              <div className="mt-4 border-t border-border pt-4">
+                <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Customer complaint
+                </div>
+                <p className="whitespace-pre-wrap text-sm text-muted-foreground">{job.complaint}</p>
+              </div>
+            )}
             {job.notes && (
               <div className="mt-4 border-t border-border pt-4">
                 <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</div>
@@ -150,14 +227,16 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             technicianId={job.technician_id}
           />
 
-          <ApprovalSender
-            jobId={job.id}
-            token={job.approval_token}
-            hasQuotation={!!quotation}
-            approvalStatus={job.approval_status}
-            customerName={job.customer_name}
-            vehicle={vehicle}
-          />
+          {showPrices && (
+            <ApprovalSender
+              jobId={job.id}
+              token={job.approval_token}
+              hasQuotation={!!quotation}
+              approvalStatus={job.approval_status}
+              customerName={job.customer_name}
+              vehicle={vehicle}
+            />
+          )}
 
           {job.approval_comment && (
             <Card className="p-5">

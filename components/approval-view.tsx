@@ -30,10 +30,13 @@ type Data = {
     items: {
       kind: string
       name: string | null
+      part_number: string | null
       detail: string | null
       description: string | null
       quantity: number
       unit_price: number
+      labour_hours: number
+      labour_rate: number
       labor: number
       discount: number
       line_total: number
@@ -148,48 +151,39 @@ export function ApprovalView({ token, data }: { token: string; data: Data }) {
             </div>
           )}
 
-          <div className="space-y-3">
-            {data.quotation.items.map((it, i) => (
-              <div key={i} className="rounded-lg border border-border bg-background/40 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[15px] font-medium text-foreground">
-                        {it.name || it.description || "Item"}
-                      </span>
-                      <span className="rounded border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        {it.kind}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(it.line_total)}</span>
-                </div>
-                {it.detail && (
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-                    {it.detail}
-                  </p>
+          {(() => {
+            const parts = data.quotation!.items.filter((i) => i.kind === "part")
+            const labour = data.quotation!.items.filter((i) => i.kind !== "part")
+            return (
+              <div className="space-y-5">
+                {parts.length > 0 && (
+                  <ItemSection title="Parts">
+                    {parts.map((it, i) => (
+                      <QuoteItem key={i} it={it} />
+                    ))}
+                  </ItemSection>
                 )}
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <span>
-                    {it.quantity} × {formatCurrency(it.unit_price)}
-                  </span>
-                  {it.labor > 0 && <span>Labor {formatCurrency(it.labor)}</span>}
-                  {it.discount > 0 && <span className="text-amber-500">Discount − {formatCurrency(it.discount)}</span>}
-                </div>
+                {labour.length > 0 && (
+                  <ItemSection title="Labour / Services">
+                    {labour.map((it, i) => (
+                      <QuoteItem key={i} it={it} />
+                    ))}
+                  </ItemSection>
+                )}
               </div>
-            ))}
-          </div>
+            )
+          })()}
 
           <div className="mt-4 space-y-1.5 border-t border-border pt-3 text-sm">
-            <Row label="Parts" value={formatCurrency(data.quotation.parts_total)} />
-            <Row label="Labor" value={formatCurrency(data.quotation.labor_total)} />
+            <Row label="Parts subtotal" value={formatCurrency(data.quotation.parts_total)} />
+            <Row label="Labour subtotal" value={formatCurrency(data.quotation.labor_total)} />
             {data.quotation.discount_total > 0 && (
               <Row label="Discount" value={`− ${formatCurrency(data.quotation.discount_total)}`} />
             )}
             <Row label="Subtotal" value={formatCurrency(data.quotation.subtotal)} />
             <Row label={`VAT (${data.quotation.vat_rate}%)`} value={formatCurrency(data.quotation.vat_amount)} />
             <div className="flex items-center justify-between border-t border-border pt-2 text-lg font-bold">
-              <span>Total</span>
+              <span>Grand total</span>
               <span className="tabular-nums text-primary">{formatCurrency(data.quotation.total)}</span>
             </div>
           </div>
@@ -265,6 +259,56 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between text-muted-foreground">
       <span>{label}</span>
       <span className="tabular-nums text-foreground">{value}</span>
+    </div>
+  )
+}
+
+function ItemSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="space-y-3">{children}</div>
+    </div>
+  )
+}
+
+function QuoteItem({
+  it,
+}: {
+  it: Data["quotation"] extends null ? never : NonNullable<Data["quotation"]>["items"][number]
+}) {
+  const isPart = it.kind === "part"
+  return (
+    <div className="rounded-lg border border-border bg-background/40 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[15px] font-medium text-foreground">{it.name || it.description || "Item"}</span>
+            {it.part_number && (
+              <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                #{it.part_number}
+              </span>
+            )}
+          </div>
+        </div>
+        <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(it.line_total)}</span>
+      </div>
+      {it.detail && (
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{it.detail}</p>
+      )}
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {isPart ? (
+          <span>
+            {it.quantity} × {formatCurrency(it.unit_price)}
+          </span>
+        ) : (
+          <>
+            {it.labour_hours > 0 && <span>{it.labour_hours} hrs</span>}
+            <span>Rate {formatCurrency(it.labour_rate)}</span>
+          </>
+        )}
+        {it.discount > 0 && <span className="text-amber-500">Discount − {formatCurrency(it.discount)}</span>}
+      </div>
     </div>
   )
 }

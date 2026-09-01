@@ -66,3 +66,19 @@ export const PART_STATUSES = [
 ]
 
 export const VAT_RATE = 5
+
+// Roles allowed to see financial values (prices, totals, profit).
+// Technicians are intentionally excluded — they see repair info only.
+export const PRICE_ROLES = ["admin", "management", "advisor", "accounts", "parts"]
+
+export function canViewPrices(role: string | null | undefined): boolean {
+  if (!role) return false
+  return role !== "technician"
+}
+
+export const QC_STATUSES = [
+  { value: "pending", label: "Pending", chip: "bg-neutral-500/15 text-neutral-300 border-neutral-500/30" },
+  { value: "in_progress", label: "In Progress", chip: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
+  { value: "passed", label: "Passed", chip: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
+  { value: "failed", label: "Failed", chip: "bg-red-500/15 text-red-300 border-red-500/30" },
+]

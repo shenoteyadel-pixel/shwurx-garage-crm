@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { VAT_RATE, type Stage } from "@/lib/constants"
+import { inferBodyType } from "@/lib/vehicle"
 
 async function requireUser() {
   const supabase = await createClient()
@@ -25,16 +26,25 @@ function genJobNumber() {
 export async function createJob(formData: FormData) {
   const { supabase, user } = await requireUser()
 
+  const make = String(formData.get("vehicle_make") || "") || null
+  const model = String(formData.get("vehicle_model") || "") || null
+  const bodyTypeInput = String(formData.get("body_type") || "")
+  const bodyType = bodyTypeInput || inferBodyType(make, model)
+
   const payload = {
     job_number: genJobNumber(),
     customer_name: String(formData.get("customer_name") || ""),
     customer_mobile: String(formData.get("customer_mobile") || ""),
-    vehicle_make: String(formData.get("vehicle_make") || "") || null,
-    vehicle_model: String(formData.get("vehicle_model") || "") || null,
+    vehicle_make: make,
+    vehicle_model: model,
+    variant: String(formData.get("variant") || "") || null,
+    color: String(formData.get("color") || "") || null,
+    body_type: bodyType,
     vehicle_year: formData.get("vehicle_year") ? Number(formData.get("vehicle_year")) : null,
     plate_number: String(formData.get("plate_number") || "") || null,
     vin: String(formData.get("vin") || "") || null,
     mileage: formData.get("mileage") ? Number(formData.get("mileage")) : null,
+    complaint: String(formData.get("complaint") || "") || null,
     advisor_id: String(formData.get("advisor_id") || "") || null,
     technician_id: String(formData.get("technician_id") || "") || null,
     notes: String(formData.get("notes") || "") || null,
@@ -79,6 +89,31 @@ export async function assignStaff(jobId: string, field: "advisor_id" | "technici
   revalidatePath(`/jobs/${jobId}`)
 }
 
+export async function updateJobDetails(jobId: string, formData: FormData) {
+  const { supabase } = await requireUser()
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  const textFields = [
+    "variant",
+    "color",
+    "body_type",
+    "complaint",
+    "diagnosis",
+    "repair_instructions",
+    "technician_notes",
+    "qc_status",
+  ]
+  for (const f of textFields) {
+    if (formData.has(f)) patch[f] = String(formData.get(f) || "") || null
+  }
+  if (formData.has("estimated_completion")) {
+    patch.estimated_completion = String(formData.get("estimated_completion") || "") || null
+  }
+  const { error } = await supabase.from("jobs").update(patch).eq("id", jobId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/")
+}
+
 export async function addPhotos(jobId: string, urls: string[], kind: "vehicle" | "damage") {
   const { supabase } = await requireUser()
   if (!urls.length) return
@@ -97,12 +132,14 @@ export async function deletePhoto(photoId: string, jobId: string) {
 
 /* ---------------- Quotation ---------------- */
 export type QuoteItemInput = {
-  kind: "part" | "labor" | "service"
+  kind: "part" | "labor"
   name: string
+  part_number?: string
   detail: string
   quantity: number
   unit_price: number
-  labor: number
+  labour_hours: number
+  labour_rate: number
   discount: number
 }
 
@@ -120,19 +157,31 @@ export async function saveQuotation(
   const vatRate = Number.isFinite(payload.vatRate) ? payload.vatRate : VAT_RATE
   const items = payload.items
 
-  // Per-line computation
+  // Per-line computation. Parts use qty*unit_price; labour uses hours*rate (or a flat rate).
   const computed = items.map((i) => {
     const qty = Number(i.quantity) || 0
     const unit = Number(i.unit_price) || 0
-    const labor = Number(i.labor) || 0
+    const hours = Number(i.labour_hours) || 0
+    const rate = Number(i.labour_rate) || 0
     const discount = Number(i.discount) || 0
-    const base = Math.max(0, qty * unit + labor - discount)
+    const gross = i.kind === "labor" ? (hours > 0 ? hours * rate : rate) : qty * unit
+    const base = Math.max(0, gross - discount)
     const vat = (base * vatRate) / 100
-    return { ...i, quantity: qty, unit_price: unit, labor, discount, base, vat, line_total: base + vat }
+    return {
+      ...i,
+      quantity: qty,
+      unit_price: unit,
+      labour_hours: hours,
+      labour_rate: rate,
+      discount,
+      gross,
+      vat,
+      line_total: base + vat,
+    }
   })
 
-  const partsTotal = computed.reduce((s, i) => s + i.quantity * i.unit_price, 0)
-  const laborTotal = computed.reduce((s, i) => s + i.labor, 0)
+  const partsTotal = computed.filter((i) => i.kind === "part").reduce((s, i) => s + i.gross, 0)
+  const laborTotal = computed.filter((i) => i.kind === "labor").reduce((s, i) => s + i.gross, 0)
   const discountTotal = computed.reduce((s, i) => s + i.discount, 0)
   const subtotal = partsTotal + laborTotal - discountTotal
   const vatAmount = computed.reduce((s, i) => s + i.vat, 0)
@@ -165,11 +214,14 @@ export async function saveQuotation(
         quotation_id: quote.id,
         kind: i.kind,
         name: i.name || null,
+        part_number: i.part_number || null,
         detail: i.detail || null,
         description: i.name || null, // keep legacy column populated
         quantity: i.quantity,
         unit_price: i.unit_price,
-        labor: i.labor,
+        labour_hours: i.labour_hours,
+        labour_rate: i.labour_rate,
+        labor: 0,
         discount: i.discount,
         vat: i.vat,
         line_total: i.line_total,

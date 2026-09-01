@@ -3,8 +3,6 @@ import { createClient } from "@/lib/supabase/server"
 import { PrintButton } from "@/components/print-button"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
-const KIND_LABEL: Record<string, string> = { part: "Part", labor: "Labor", service: "Service" }
-
 export default async function QuotationPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
@@ -19,7 +17,7 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
   const { data: quotation } = await supabase
     .from("quotations")
     .select(
-      "id, vat_rate, description, parts_total, labor_total, discount_total, subtotal, vat_amount, total, created_at, quotation_items(kind, name, detail, description, quantity, unit_price, labor, discount, vat, line_total)",
+      "id, vat_rate, description, parts_total, labor_total, discount_total, subtotal, vat_amount, total, created_at, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, vat, line_total)",
     )
     .eq("job_id", id)
     .order("created_at", { ascending: false })

@@ -74,7 +74,7 @@ export function RevenueAreaChart({ data }: { data: { label: string; revenue: num
               color: "#fff",
               fontSize: 12,
             }}
-            formatter={(v: number) => [`AED ${v.toLocaleString()}`, "Revenue"]}
+            formatter={(v) => [`AED ${Number(v).toLocaleString()}`, "Revenue"]}
           />
           <Area type="monotone" dataKey="revenue" stroke={RED} strokeWidth={2} fill="url(#rev)" />
         </AreaChart>

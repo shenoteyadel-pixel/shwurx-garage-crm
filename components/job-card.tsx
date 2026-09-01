@@ -17,6 +17,9 @@ export interface JobCardData {
   color?: string | null
   body_type?: string | null
   plate_number: string | null
+  plate_emirate?: string | null
+  plate_code?: string | null
+  lift_bay?: string | null
   stage: Stage
   approval_status: "pending" | "approved" | "rejected"
   created_at: string

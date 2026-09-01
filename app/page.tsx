@@ -1,8 +1,9 @@
+import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { AppShell } from "@/components/app-shell"
 import { StatCard } from "@/components/stat-card"
 import { StageBarChart, RevenueAreaChart } from "@/components/dashboard-charts"
-import { WorkflowBoard } from "@/components/workflow-board"
+import { CarFlow } from "@/components/car-flow"
 import { STAGES, STAGE_MAP, type Stage } from "@/lib/constants"
 import { formatCurrency, relativeHours } from "@/lib/utils"
 import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardCheck, ThumbsUp } from "lucide-react"
@@ -23,7 +24,7 @@ export default async function DashboardPage() {
   const { data: jobsRaw } = await supabase
     .from("jobs")
     .select(
-      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, stage, approval_status, created_at, updated_at, approved_at",
+      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, stage, approval_status, created_at, updated_at, approved_at",
     )
     .order("updated_at", { ascending: false })
 
@@ -152,10 +153,15 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Workflow board */}
+      {/* Car Flow board */}
       <div className="mt-8">
-        <h2 className="mb-3 text-lg font-semibold">Car Workflow</h2>
-        <WorkflowBoard jobs={jobCards} />
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Car Flow</h2>
+          <Link href="/flow" className="text-sm text-primary hover:underline">
+            Open full board →
+          </Link>
+        </div>
+        <CarFlow jobs={jobCards.filter((j) => j.stage !== "delivered")} />
       </div>
     </AppShell>
   )
@@ -172,6 +178,7 @@ function stageColor(stage: Stage) {
     parts_received: "#a3e635",
     repair: "#e879f9",
     quality_control: "#c084fc",
+    washing: "#2dd4bf",
     ready_for_delivery: "#34d399",
     delivered: "#a1a1aa",
   }

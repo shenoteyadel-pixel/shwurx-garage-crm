@@ -2,10 +2,11 @@
 
 import * as React from "react"
 import { createJob } from "@/lib/actions"
-import { Button, Card, Input, Label, Select, Textarea } from "@/components/ui"
+import { Button, Card, Combo, Input, Label, Select, Textarea, UAEPlate } from "@/components/ui"
 import { PhotoUploader } from "@/components/photo-uploader"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
-import { BODY_TYPES, inferBodyType } from "@/lib/vehicle"
+import { BODY_TYPES, inferBodyType, MODEL_SUGGESTIONS } from "@/lib/vehicle"
+import { COMMON_MAKES, COMMON_COLORS, UAE_EMIRATES } from "@/lib/constants"
 
 type Staff = { id: string; full_name: string | null; role: string }
 
@@ -16,7 +17,13 @@ export function NewJobForm({ staff }: { staff: Staff[] }) {
 
   const [make, setMake] = React.useState("")
   const [model, setModel] = React.useState("")
+  const [variant, setVariant] = React.useState("")
+  const [color, setColor] = React.useState("")
   const [bodyType, setBodyType] = React.useState("") // "" = auto
+
+  const [plateEmirate, setPlateEmirate] = React.useState("Dubai")
+  const [plateCode, setPlateCode] = React.useState("")
+  const [plateNumber, setPlateNumber] = React.useState("")
 
   const effectiveBody = bodyType || inferBodyType(make, model)
 
@@ -69,43 +76,56 @@ export function NewJobForm({ staff }: { staff: Staff[] }) {
         </div>
 
         {/* Live vehicle visual preview */}
-        <div className="mb-5 flex items-center gap-4 rounded-lg border border-border bg-background/40 p-3">
+        <div className="mb-5 flex flex-wrap items-center gap-4 rounded-lg border border-border bg-background/40 p-3">
           <VehicleVisual make={make} model={model} bodyType={effectiveBody} className="h-20 w-32 rounded-md" />
           <div className="text-sm">
             <div className="font-medium text-foreground">
-              {make || "Make"} {model || "Model"}
+              {[make || "Make", model || "Model", variant].filter(Boolean).join(" ")}
             </div>
             <div className="text-xs text-muted-foreground">
-              Auto visual: {BODY_TYPES.find((b) => b.value === effectiveBody)?.label ?? "Sedan"}
+              {color ? `${color} · ` : ""}
+              {BODY_TYPES.find((b) => b.value === effectiveBody)?.label ?? "Sedan"}
               {!bodyType && " (detected)"}
             </div>
+          </div>
+          <div className="ml-auto">
+            <UAEPlate emirate={plateEmirate} code={plateCode} number={plateNumber} className="h-11 text-base" />
           </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <Label htmlFor="vehicle_make">Make</Label>
-            <Input
+            <Combo
               id="vehicle_make"
               name="vehicle_make"
-              placeholder="e.g. Toyota"
+              placeholder="Type or pick — e.g. Toyota"
+              options={COMMON_MAKES}
               value={make}
               onChange={(e) => setMake(e.target.value)}
             />
           </div>
           <div>
             <Label htmlFor="vehicle_model">Model</Label>
-            <Input
+            <Combo
               id="vehicle_model"
               name="vehicle_model"
-              placeholder="e.g. Land Cruiser"
+              placeholder="Type freely — e.g. Land Cruiser"
+              options={MODEL_SUGGESTIONS[make] ?? []}
               value={model}
               onChange={(e) => setModel(e.target.value)}
             />
           </div>
           <div>
-            <Label htmlFor="variant">Variant</Label>
-            <Input id="variant" name="variant" placeholder="e.g. VXR / GT / Sport" />
+            <Label htmlFor="variant">Variant / trim</Label>
+            <Combo
+              id="variant"
+              name="variant"
+              placeholder="e.g. VXR / GT / Sport"
+              options={["VXR", "GXR", "GT", "GTS", "Sport", "AMG", "M Sport", "S-Line", "Limited", "Platinum"]}
+              value={variant}
+              onChange={(e) => setVariant(e.target.value)}
+            />
           </div>
           <div>
             <Label htmlFor="vehicle_year">Year</Label>
@@ -113,7 +133,14 @@ export function NewJobForm({ staff }: { staff: Staff[] }) {
           </div>
           <div>
             <Label htmlFor="color">Color</Label>
-            <Input id="color" name="color" placeholder="e.g. Pearl White" />
+            <Combo
+              id="color"
+              name="color"
+              placeholder="Type or pick — e.g. Pearl White"
+              options={COMMON_COLORS}
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+            />
           </div>
           <div>
             <Label htmlFor="body_type">Body type</Label>
@@ -127,16 +154,46 @@ export function NewJobForm({ staff }: { staff: Staff[] }) {
             </Select>
           </div>
           <div>
-            <Label htmlFor="plate_number">Plate number</Label>
-            <Input id="plate_number" name="plate_number" placeholder="e.g. Dubai A 12345" />
-          </div>
-          <div>
             <Label htmlFor="vin">VIN</Label>
             <Input id="vin" name="vin" placeholder="17-digit VIN" />
           </div>
           <div>
             <Label htmlFor="mileage">Mileage / km</Label>
             <Input id="mileage" name="mileage" type="number" min="0" placeholder="e.g. 84000" />
+          </div>
+        </div>
+
+        {/* Structured UAE plate */}
+        <div className="mt-4">
+          <Label>Number plate (UAE)</Label>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Select
+              name="plate_emirate"
+              value={plateEmirate}
+              onChange={(e) => setPlateEmirate(e.target.value)}
+              aria-label="Emirate"
+            >
+              {UAE_EMIRATES.map((em) => (
+                <option key={em.value} value={em.value}>
+                  {em.label}
+                </option>
+              ))}
+            </Select>
+            <Input
+              name="plate_code"
+              placeholder="Code — e.g. A"
+              value={plateCode}
+              onChange={(e) => setPlateCode(e.target.value.toUpperCase())}
+              aria-label="Plate code"
+            />
+            <Input
+              name="plate_number"
+              placeholder="Number — e.g. 12345"
+              value={plateNumber}
+              onChange={(e) => setPlateNumber(e.target.value)}
+              inputMode="numeric"
+              aria-label="Plate number"
+            />
           </div>
         </div>
       </Card>

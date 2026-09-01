@@ -80,6 +80,28 @@ function normalize(s: string | null | undefined): string {
   return (s || "").toLowerCase().replace(/[^a-z0-9]/g, "")
 }
 
+// Optional model suggestions per make for the intake combobox (free text still allowed).
+export const MODEL_SUGGESTIONS: Record<string, string[]> = {
+  Toyota: ["Land Cruiser", "Prado", "Camry", "Corolla", "Hilux", "RAV4", "Fortuner", "Yaris", "Supra"],
+  Nissan: ["Patrol", "Altima", "Sunny", "X-Trail", "Kicks", "Maxima", "Navara", "GT-R"],
+  "Mercedes-Benz": ["C-Class", "E-Class", "S-Class", "G-Class", "GLE", "GLC", "GLS", "A-Class", "AMG GT"],
+  BMW: ["3 Series", "5 Series", "7 Series", "X3", "X5", "X6", "X7", "M4", "i7"],
+  Audi: ["A4", "A6", "A8", "Q5", "Q7", "Q8", "RS7", "e-tron"],
+  Lexus: ["LX", "GX", "RX", "NX", "ES", "LS", "IS", "LC"],
+  "Land Rover": ["Range Rover", "Range Rover Sport", "Defender", "Discovery", "Evoque", "Velar"],
+  Porsche: ["911", "Cayenne", "Macan", "Panamera", "Taycan", "718 Cayman"],
+  Ford: ["F-150", "Mustang", "Explorer", "Expedition", "Ranger", "Edge"],
+  Chevrolet: ["Tahoe", "Suburban", "Silverado", "Camaro", "Corvette", "Malibu"],
+  GMC: ["Yukon", "Sierra", "Acadia", "Terrain"],
+  Honda: ["Accord", "Civic", "CR-V", "Pilot", "Odyssey"],
+  Hyundai: ["Sonata", "Elantra", "Tucson", "Santa Fe", "Palisade"],
+  Kia: ["Sportage", "Sorento", "Seltos", "Carnival", "Telluride"],
+  Ferrari: ["488", "F8", "Roma", "SF90", "812", "Purosangue"],
+  Lamborghini: ["Urus", "Huracan", "Aventador", "Revuelto"],
+  "Rolls-Royce": ["Cullinan", "Ghost", "Phantom", "Wraith", "Spectre"],
+  Bentley: ["Bentayga", "Continental GT", "Flying Spur"],
+}
+
 export function brandLogoUrl(make: string | null | undefined): string | null {
   const slug = BRAND_SLUGS[normalize(make)]
   return slug ? `${LOGO_BASE}/${slug}/default.svg` : null

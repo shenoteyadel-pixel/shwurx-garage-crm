@@ -127,6 +127,69 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
   },
 )
 
+/* ---------------- Combo (free-text input with suggestions) ---------------- */
+export const Combo = React.forwardRef<
+  HTMLInputElement,
+  React.InputHTMLAttributes<HTMLInputElement> & { options?: string[]; listId?: string }
+>(function Combo({ className, options = [], listId, id, ...props }, ref) {
+  const generatedId = React.useId()
+  const dataListId = listId || `${id || "combo"}-${generatedId}`
+  return (
+    <>
+      <input
+        ref={ref}
+        id={id}
+        list={dataListId}
+        autoComplete="off"
+        className={cn(
+          "h-10 w-full rounded-lg border border-input bg-background/60 px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          className,
+        )}
+        {...props}
+      />
+      <datalist id={dataListId}>
+        {options.map((o) => (
+          <option key={o} value={o} />
+        ))}
+      </datalist>
+    </>
+  )
+})
+
+/* ---------------- UAEPlate (visual number plate) ---------------- */
+export function UAEPlate({
+  emirate,
+  code,
+  number,
+  className,
+}: {
+  emirate?: string | null
+  code?: string | null
+  number?: string | null
+  className?: string
+}) {
+  if (!emirate && !code && !number) return null
+  return (
+    <span
+      className={cn(
+        "inline-flex items-stretch overflow-hidden rounded-md border-2 border-neutral-300 bg-white font-semibold text-neutral-900 shadow-sm",
+        className,
+      )}
+    >
+      {emirate && (
+        <span className="flex flex-col items-center justify-center border-r border-neutral-300 px-2 py-1 text-center leading-tight">
+          <span className="text-[8px] uppercase tracking-wide text-red-600">UAE</span>
+          <span className="text-[10px] leading-none">{emirate}</span>
+        </span>
+      )}
+      <span className="flex items-center gap-1.5 px-2.5 py-1 tabular-nums">
+        {code && <span className="text-sm">{code}</span>}
+        {number && <span className="text-base tracking-wide">{number}</span>}
+      </span>
+    </span>
+  )
+}
+
 /* ---------------- Label ---------------- */
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return (

@@ -41,6 +41,8 @@ export async function createJob(formData: FormData) {
     color: String(formData.get("color") || "") || null,
     body_type: bodyType,
     vehicle_year: formData.get("vehicle_year") ? Number(formData.get("vehicle_year")) : null,
+    plate_emirate: String(formData.get("plate_emirate") || "") || null,
+    plate_code: String(formData.get("plate_code") || "") || null,
     plate_number: String(formData.get("plate_number") || "") || null,
     vin: String(formData.get("vin") || "") || null,
     mileage: formData.get("mileage") ? Number(formData.get("mileage")) : null,
@@ -76,6 +78,19 @@ export async function updateStage(jobId: string, stage: Stage) {
     .eq("id", jobId)
   if (error) throw new Error(error.message)
   revalidatePath("/")
+  revalidatePath(`/jobs/${jobId}`)
+}
+
+// Car Flow drag & drop: move a job to a new stage (workshop zone) and optionally a lift bay.
+export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: string | null) {
+  const { supabase } = await requireUser()
+  const patch: Record<string, unknown> = { stage, updated_at: new Date().toISOString() }
+  // Lift bay only applies to the repair/workshop zone; clear it otherwise.
+  patch.lift_bay = stage === "repair" ? liftBay || null : null
+  const { error } = await supabase.from("jobs").update(patch).eq("id", jobId)
+  if (error) throw new Error(error.message)
+  revalidatePath("/")
+  revalidatePath("/flow")
   revalidatePath(`/jobs/${jobId}`)
 }
 

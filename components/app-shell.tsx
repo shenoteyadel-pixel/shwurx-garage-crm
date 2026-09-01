@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { signOut } from "@/lib/actions"
-import { LayoutDashboard, Package, Plus, Wrench, LogOut, Menu, X, Car } from "lucide-react"
+import { LayoutDashboard, Package, Plus, Wrench, LogOut, Menu, X, Car, Workflow } from "lucide-react"
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/flow", label: "Car Flow", icon: Workflow },
   { href: "/jobs", label: "Job Cards", icon: Car },
   { href: "/parts", label: "Parts", icon: Package },
 ]

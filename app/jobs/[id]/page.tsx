@@ -2,7 +2,7 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { AppShell } from "@/components/app-shell"
-import { Badge, Card } from "@/components/ui"
+import { Badge, Card, UAEPlate } from "@/components/ui"
 import { StageStepper } from "@/components/stage-stepper"
 import { QuotationBuilder } from "@/components/quotation-builder"
 import { PartsManager } from "@/components/parts-manager"
@@ -133,11 +133,19 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             )}
           </div>
         </div>
-        {job.plate_number && (
-          <span className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm">
-            {job.plate_number}
-          </span>
-        )}
+        {(job.plate_emirate || job.plate_code || job.plate_number) &&
+          (job.plate_emirate || job.plate_code ? (
+            <UAEPlate
+              emirate={job.plate_emirate}
+              code={job.plate_code}
+              number={job.plate_number}
+              className="h-11 text-base"
+            />
+          ) : (
+            <span className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm">
+              {job.plate_number}
+            </span>
+          ))}
       </div>
 
       <Card className="mb-6 p-4">

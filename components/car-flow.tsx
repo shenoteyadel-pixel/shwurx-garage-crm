@@ -9,7 +9,10 @@ import { VehicleVisual, BrandLogo } from "@/components/vehicle-visual"
 import { UAEPlate } from "@/components/ui"
 import { moveJobLocation } from "@/lib/actions"
 import type { JobCardData } from "@/components/job-card"
-import { Wrench, Loader2 } from "lucide-react"
+import { Wrench, Loader2, MoveRight } from "lucide-react"
+
+type MoveHandler = (job: Job, stage: Stage, liftBay?: string | null) => void
+const MoveContext = React.createContext<MoveHandler>(() => {})
 
 type Job = JobCardData
 
@@ -42,10 +45,11 @@ export function CarFlow({ jobs }: { jobs: Job[] }) {
   const activeCount = items.filter((j) => j.stage !== "delivered").length
 
   return (
+    <MoveContext.Provider value={(job, stage, liftBay) => place(job, stage, liftBay)}>
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Drag any vehicle between workshop zones. Drop a car onto a lift in the Workshop zone to assign a bay.
+          Drag a vehicle between zones, or use the move menu on each card. Drop a car onto a lift to assign a bay.
         </p>
         <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
           {activeCount} active {activeCount === 1 ? "vehicle" : "vehicles"}
@@ -73,6 +77,7 @@ export function CarFlow({ jobs }: { jobs: Job[] }) {
         ))}
       </div>
     </div>
+    </MoveContext.Provider>
   )
 }
 
@@ -274,12 +279,90 @@ function DragHandleCard({
       onDragEnd={onDragEnd}
       className={cn("group relative cursor-grab active:cursor-grabbing", pending && "opacity-50")}
     >
-      {pending && (
+      {pending ? (
         <div className="absolute right-1.5 top-1.5 z-10">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
         </div>
+      ) : (
+        <MoveMenu job={job} />
       )}
       {children}
+    </div>
+  )
+}
+
+function MoveMenu({ job }: { job: Job }) {
+  const move = React.useContext(MoveContext)
+  const [open, setOpen] = React.useState(false)
+  const ref = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onDoc)
+    return () => document.removeEventListener("mousedown", onDoc)
+  }, [open])
+
+  return (
+    <div ref={ref} className="absolute right-1 top-1 z-20">
+      <button
+        type="button"
+        aria-label="Move vehicle"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+        className="rounded-md border border-border bg-card/90 p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100 aria-expanded:opacity-100"
+        aria-expanded={open}
+      >
+        <MoveRight className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-7 max-h-72 w-52 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-xl scrollbar-thin">
+          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Move to zone
+          </div>
+          {ZONES.map((z) => (
+            <button
+              key={z.key}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setOpen(false)
+                move(job, z.stages[0])
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            >
+              <span className={cn("h-2 w-2 rounded-full", z.bar)} />
+              {z.label}
+            </button>
+          ))}
+          <div className="mt-1 border-t border-border px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Assign lift bay
+          </div>
+          <div className="grid grid-cols-3 gap-1 px-1 pb-1">
+            {LIFT_BAYS.map((bay) => (
+              <button
+                key={bay}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setOpen(false)
+                  move(job, "repair", bay)
+                }}
+                className={cn(
+                  "rounded-md border px-1 py-1 text-[10px] hover:bg-muted",
+                  job.lift_bay === bay ? "border-primary text-primary" : "border-border text-muted-foreground",
+                )}
+              >
+                {bay.replace("Bay ", "B")}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

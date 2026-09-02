@@ -1,13 +1,38 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
+// Routes that must be reachable WITHOUT authentication.
+function isPublicPath(path: string): boolean {
+  return (
+    path.startsWith("/auth") || // login, set-password, callback, error
+    path.startsWith("/approve") || // customer quotation approval
+    path.startsWith("/api/approve") ||
+    path.startsWith("/portal/t/") || // public customer job-tracking links
+    path === "/manifest.webmanifest" ||
+    path === "/favicon.ico"
+  )
+}
+
 export async function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname
+  const isPublic = isPublicPath(path)
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  // If Supabase env is somehow unavailable at the edge, never crash the request.
+  // Allow public routes through and send everything else to login.
+  if (!supabaseUrl || !supabaseKey) {
+    if (isPublic) return NextResponse.next({ request })
+    const url = request.nextUrl.clone()
+    url.pathname = "/auth/login"
+    return NextResponse.redirect(url)
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  try {
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
         getAll() {
           return request.cookies.getAll()
@@ -18,27 +43,27 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options))
         },
       },
-    },
-  )
+    })
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
 
-  const path = request.nextUrl.pathname
-  const isPublic =
-    path.startsWith("/auth") ||
-    path.startsWith("/approve") ||
-    path.startsWith("/api/approve") ||
-    path === "/manifest.webmanifest"
+    if (!user && !isPublic) {
+      const url = request.nextUrl.clone()
+      url.pathname = "/auth/login"
+      return NextResponse.redirect(url)
+    }
 
-  if (!user && !isPublic) {
+    return supabaseResponse
+  } catch (error) {
+    // A transient auth/network error must never produce a 500 in production.
+    console.log("[v0] middleware auth check failed:", (error as Error)?.message)
+    if (isPublic) return supabaseResponse
     const url = request.nextUrl.clone()
     url.pathname = "/auth/login"
     return NextResponse.redirect(url)
   }
-
-  return supabaseResponse
 }
 
 export const config = {

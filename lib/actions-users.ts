@@ -23,6 +23,11 @@ export type CredentialLinkResult = {
   emailSent: boolean
   emailError?: string
   userId: string
+  /** enrichment for the success popup + WhatsApp message */
+  fullName?: string
+  mobile?: string | null
+  roleLabel?: string
+  jobTitle?: string | null
 }
 
 export type DuplicateMatch = {
@@ -97,6 +102,11 @@ export async function inviteStaffUser(formData: FormData): Promise<CredentialLin
   const department = str(formData.get("department"))
   const branch = str(formData.get("branch"))
   const employeeId = str(formData.get("employee_id"))
+  const jobTitle = str(formData.get("job_title"))
+  const skills = String(formData.get("skills") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
   const allowDuplicate = str(formData.get("allow_duplicate")) === "true"
 
   if (!email) throw new Error("Email is required.")
@@ -156,6 +166,8 @@ export async function inviteStaffUser(formData: FormData): Promise<CredentialLin
       mobile: mobile || null,
       phone: mobile || null,
       role,
+      job_title: jobTitle || null,
+      skills: skills.length ? skills : [],
       department: department || null,
       branch: branch || null,
       employee_id: employeeId || null,
@@ -183,7 +195,17 @@ export async function inviteStaffUser(formData: FormData): Promise<CredentialLin
   }).catch(() => {})
 
   revalidatePath("/users")
-  return { userId, email, link, emailSent: send.sent, emailError: send.error }
+  return {
+    userId,
+    email,
+    link,
+    emailSent: send.sent,
+    emailError: send.error,
+    fullName,
+    mobile: mobile || null,
+    roleLabel: meta.label,
+    jobTitle: jobTitle || null,
+  }
 }
 
 /** Resend a set-password invite for a user who hasn't set their password yet. */
@@ -322,6 +344,118 @@ export async function setPermissionOverride(userId: string, permission: Permissi
   }
   await logAction(ctx, "permission.override", "user", userId, { permission, allowed })
   revalidatePath("/users")
+}
+
+/**
+ * Update a staff member's HR/profile fields (job title, department, skills,
+ * mobile, employee id, branch, full name). Owner/GM control. Does NOT change
+ * role or security — role has its own dedicated action.
+ */
+export async function updateStaffProfile(userId: string, formData: FormData) {
+  const ctx = await requirePermission("users.manage")
+  const svc = createServiceClient()
+
+  const patch: Record<string, unknown> = {}
+  const fullName = str(formData.get("full_name"))
+  if (fullName) patch.full_name = fullName
+  if (formData.has("job_title")) patch.job_title = str(formData.get("job_title")) || null
+  if (formData.has("department")) patch.department = str(formData.get("department")) || null
+  if (formData.has("branch")) patch.branch = str(formData.get("branch")) || null
+  if (formData.has("employee_id")) patch.employee_id = str(formData.get("employee_id")) || null
+  if (formData.has("mobile")) {
+    const mobile = str(formData.get("mobile"))
+    patch.mobile = mobile || null
+    patch.phone = mobile || null
+  }
+  if (formData.has("skills")) {
+    patch.skills = String(formData.get("skills") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  }
+
+  if (Object.keys(patch).length === 0) return
+  const { error } = await svc.from("profiles").update(patch).eq("id", userId)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "user.update_profile", "user", userId, { fields: Object.keys(patch) })
+  revalidatePath("/users")
+}
+
+/**
+ * Permanently delete a staff user (owner only).
+ * History-safe: audit logs, jobs and other records reference the profile by id
+ * but survive because we first NULL out live assignment pointers, then remove
+ * the auth account and profile. Past job cards keep their denormalized names.
+ */
+export async function deleteStaffUser(userId: string): Promise<{ ok: true }> {
+  const ctx = await requirePermission("users.manage")
+  // Deleting users is the most destructive action — restrict to owner.
+  if (ctx.role !== "owner") throw new ForbiddenError("users.manage")
+  if (userId === ctx.userId) throw new Error("You cannot delete your own account.")
+
+  const svc = createServiceClient()
+  const { data: target } = await svc
+    .from("profiles")
+    .select("email, full_name, role")
+    .eq("id", userId)
+    .maybeSingle()
+  if (!target) throw new Error("User not found.")
+  if (target.role === "owner") throw new Error("Owner accounts cannot be deleted.")
+
+  // Detach live assignment pointers so active work isn't orphaned to a missing id.
+  // Denormalized name columns on jobs are left intact for historical accuracy.
+  await svc.from("jobs").update({ assigned_to: null }).eq("assigned_to", userId)
+  await svc.from("jobs").update({ technician_id: null }).eq("technician_id", userId)
+
+  // Revoke sessions, then remove auth user and profile.
+  await signOutUserEverywhere(userId).catch(() => {})
+  await deleteAuthUser(userId).catch(() => {})
+  const { error } = await svc.from("profiles").delete().eq("id", userId)
+  if (error) throw new Error(error.message)
+
+  await logAction(ctx, "user.delete", "user", userId, { email: target.email, role: target.role })
+  await notifyOwners({
+    title: "Staff account deleted",
+    body: `${target.full_name ?? target.email} was deleted by ${ctx.name ?? "an admin"}.`,
+    type: "user",
+    link: "/users",
+  }).catch(() => {})
+  revalidatePath("/users")
+  return { ok: true }
+}
+
+/**
+ * Generate a fresh secure link for a user WITHOUT sending an email — used by
+ * the "Copy login link" action so an admin can share it via WhatsApp/manually.
+ * kind "set" for first-time setup, "reset" for a password reset.
+ */
+export async function getLoginLink(
+  userId: string,
+  kind: "set" | "reset" = "set",
+): Promise<{ link: string; email: string; fullName: string; mobile: string | null; roleLabel: string; jobTitle: string | null }> {
+  const ctx = await requirePermission("users.manage")
+  const svc = createServiceClient()
+  const { data: profile, error } = await svc
+    .from("profiles")
+    .select("email, full_name, mobile, phone, role, job_title")
+    .eq("id", userId)
+    .maybeSingle()
+  if (error || !profile?.email) throw new Error("User not found.")
+
+  const link = await generateActionLink({
+    email: profile.email,
+    type: kind === "reset" ? "recovery" : "invite",
+    redirectPath: "/auth/set-password",
+  })
+  await logAction(ctx, "user.copy_link", "user", userId, { kind })
+  return {
+    link,
+    email: profile.email,
+    fullName: profile.full_name ?? "",
+    mobile: profile.mobile ?? profile.phone ?? null,
+    roleLabel: ROLE_MAP[profile.role as Role]?.label ?? profile.role,
+    jobTitle: profile.job_title ?? null,
+  }
 }
 
 /** Toggle a base role-permission in the editable matrix. */

@@ -48,9 +48,10 @@ function pickImageUrl(json: unknown): string | null {
   }
   // Drop obvious non-vehicle junk (parts/accessories/logos) that sometimes rank in.
   const JUNK =
-    /coilover|wheel|rim|tyre|tire|brake|spoiler|logo|badge|keychain|part|accessor|shopify|d2racing|\/promo\/|promotion|banner|dealer-?logo/i
-  const filtered = urls.filter((u) => !JUNK.test(u))
-  urls = filtered.length ? filtered : urls
+    /coilover|wheel|rim|tyre|tire|brake|spoiler|logo|badge|keychain|part|accessor|shopify|d2racing|\/promo\/|promotion|banner|dealer-?logo|coming[-_]?soon|comingsoon|no[-_]?image|placeholder|photo.?coming/i
+  // If every candidate is junk/placeholder, return null so the caller falls
+  // back to the clean SVG silhouette instead of showing a "Coming Soon" banner.
+  urls = urls.filter((u) => !JUNK.test(u))
   if (!urls.length) return null
   // Prefer clean studio/stock renders (EVOX/Capital One, cstatic, netcarshow,
   // stock media). Otherwise trust CarsXE's own ranking and take the first.

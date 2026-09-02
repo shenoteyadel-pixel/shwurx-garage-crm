@@ -46,9 +46,13 @@ function pickImageUrl(json: unknown): string | null {
     }
   }
   if (!urls.length) return null
-  // Prefer clean studio/stock PNGs (transparent-friendly) over dealer JPEGs.
-  const studio = urls.find((u) => /stock_photos|cstatic-images|\.png(\?|$)/i.test(u))
-  return studio ?? urls[0]
+  // Prefer clean studio/stock renders (EVOX/Capital One, cstatic, stock media,
+  // transparent PNGs) over noisy dealer-lot JPEGs.
+  const studio = urls.find((u) =>
+    /autoimage\.capitalone\.com|\/evox\/|stock-media|stock_photos|cstatic-images/i.test(u),
+  )
+  const png = urls.find((u) => /\.png(\?|$)/i.test(u))
+  return studio ?? png ?? urls[0]
 }
 
 /**
@@ -72,8 +76,6 @@ export async function resolveVehicleImage(params: {
   if (params.year) qs.set("year", String(params.year))
   if (params.trim) qs.set("trim", String(params.trim))
   if (params.color) qs.set("color", String(params.color))
-  // Prefer clean studio-style angles when the API supports it.
-  qs.set("angle", "front")
 
   try {
     const controller = new AbortController()

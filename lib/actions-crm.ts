@@ -3,6 +3,8 @@
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
+import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import type { Permission } from "@/lib/rbac/roles"
 
 async function requireUser() {
   const supabase = await createClient()
@@ -13,6 +15,12 @@ async function requireUser() {
   return { supabase, user }
 }
 
+async function guard(perm: Permission): Promise<{ supabase: Awaited<ReturnType<typeof createClient>>; ctx: SessionContext; user: { id: string } }> {
+  const ctx = await requirePermission(perm)
+  const supabase = await createClient()
+  return { supabase, ctx, user: { id: ctx.userId } }
+}
+
 const num = (v: FormDataEntryValue | null, d = 0) => {
   const n = Number(v)
   return Number.isFinite(n) ? n : d
@@ -21,7 +29,7 @@ const str = (v: FormDataEntryValue | null) => (v ? String(v) : "") || null
 
 /* ============================ Settings ============================ */
 export async function saveSettings(formData: FormData) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("settings.manage")
   const patch = {
     company_name: String(formData.get("company_name") || "SHWURX Garage"),
     legal_name: str(formData.get("legal_name")),
@@ -43,7 +51,7 @@ export async function saveSettings(formData: FormData) {
 
 /* ============================ Suppliers ============================ */
 export async function saveSupplier(formData: FormData) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user } = await guard("parts.manage")
   const id = str(formData.get("id"))
   const payload = {
     name: String(formData.get("name") || ""),
@@ -70,14 +78,14 @@ export async function saveSupplier(formData: FormData) {
 }
 
 export async function deleteSupplier(id: string) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("parts.manage")
   await supabase.from("suppliers").delete().eq("id", id)
   revalidatePath("/suppliers")
 }
 
 /* ============================ Inventory ============================ */
 export async function saveInventoryItem(formData: FormData) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("parts.manage")
   const id = str(formData.get("id"))
   const payload = {
     sku: str(formData.get("sku")),
@@ -119,14 +127,14 @@ export async function saveInventoryItem(formData: FormData) {
 }
 
 export async function deleteInventoryItem(id: string) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("parts.manage")
   await supabase.from("inventory_items").delete().eq("id", id)
   revalidatePath("/inventory")
 }
 
 // Record a stock movement and adjust the item quantity atomically-ish.
 export async function recordStockMovement(formData: FormData) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user } = await guard("parts.manage")
   const itemId = String(formData.get("item_id") || "")
   const kind = String(formData.get("kind") || "in") as "in" | "out" | "adjust"
   const qty = num(formData.get("quantity"))
@@ -173,7 +181,7 @@ export async function createPurchaseOrder(payload: {
   notes: string
   items: POLine[]
 }) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user } = await guard("purchase_orders.manage")
   const vatRate = Number.isFinite(payload.vatRate) ? payload.vatRate : 5
   const lines = payload.items.filter((l) => l.description.trim())
   const subtotal = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0)
@@ -219,7 +227,7 @@ export async function createPurchaseOrder(payload: {
 
 // Mark a PO received: sets status, records supplier invoice, and adds stock for linked items.
 export async function receivePurchaseOrder(poId: string, formData: FormData) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user } = await guard("purchase_orders.manage")
   const supplierInvoiceNo = str(formData.get("supplier_invoice_no"))
 
   const { data: items } = await supabase
@@ -252,7 +260,7 @@ export async function receivePurchaseOrder(poId: string, formData: FormData) {
 }
 
 export async function payPurchaseOrder(poId: string, formData: FormData) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user } = await guard("payments.record")
   const amount = num(formData.get("amount"))
   if (amount <= 0) throw new Error("Amount must be positive")
   await supabase.from("payments").insert({
@@ -301,7 +309,7 @@ export async function createInvoice(payload: {
   notes: string
   items: InvLine[]
 }) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user, ctx } = await guard("invoices.create")
   const vatRate = Number.isFinite(payload.vatRate) ? payload.vatRate : 5
   const lines = payload.items.filter((l) => l.description.trim())
   const t = computeInvoice(lines, payload.discount || 0, vatRate)
@@ -347,6 +355,7 @@ export async function createInvoice(payload: {
       })),
     )
   }
+  await logAction(ctx, "invoice.create", "invoice", inv.id, { invoice_number: invNum, total: t.total })
   revalidatePath("/invoices")
   redirect(`/invoices/${inv.id}`)
 }

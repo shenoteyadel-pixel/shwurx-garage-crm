@@ -6,6 +6,8 @@ import { redirect } from "next/navigation"
 import { VAT_RATE, type Stage } from "@/lib/constants"
 import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
+import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import type { Permission } from "@/lib/rbac/roles"
 
 async function requireUser() {
   const supabase = await createClient()
@@ -14,6 +16,14 @@ async function requireUser() {
   } = await supabase.auth.getUser()
   if (!user) redirect("/auth/login")
   return { supabase, user }
+}
+
+// Guard a mutating action by permission. Returns the RLS-bound client plus the
+// resolved RBAC context. Throws ForbiddenError (audited) when not allowed.
+async function guard(perm: Permission): Promise<{ supabase: Awaited<ReturnType<typeof createClient>>; ctx: SessionContext }> {
+  const ctx = await requirePermission(perm)
+  const supabase = await createClient()
+  return { supabase, ctx }
 }
 
 function genJobNumber() {
@@ -25,7 +35,8 @@ function genJobNumber() {
 
 /* ---------------- Jobs ---------------- */
 export async function createJob(formData: FormData) {
-  const { supabase, user } = await requireUser()
+  const { supabase, ctx } = await guard("jobs.create")
+  const user = { id: ctx.userId }
 
   const make = String(formData.get("vehicle_make") || "") || null
   const model = String(formData.get("vehicle_model") || "") || null
@@ -75,24 +86,26 @@ export async function createJob(formData: FormData) {
   ]
   if (rows.length) await supabase.from("vehicle_photos").insert(rows)
 
+  await logAction(ctx, "job.create", "job", data.id, { job_number: payload.job_number })
   revalidatePath("/")
   redirect(`/jobs/${data.id}`)
 }
 
 export async function updateStage(jobId: string, stage: Stage) {
-  const { supabase } = await requireUser()
+  const { supabase, ctx } = await guard("jobs.update_status")
   const { error } = await supabase
     .from("jobs")
     .update({ stage, updated_at: new Date().toISOString() })
     .eq("id", jobId)
   if (error) throw new Error(error.message)
+  await logAction(ctx, "job.update_stage", "job", jobId, { stage })
   revalidatePath("/")
   revalidatePath(`/jobs/${jobId}`)
 }
 
 // Car Flow drag & drop: move a job to a new stage (workshop zone) and optionally a lift bay.
 export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: string | null) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("jobs.update_status")
   const patch: Record<string, unknown> = { stage, updated_at: new Date().toISOString() }
   // Lift bay only applies to the repair/workshop zone; clear it otherwise.
   patch.lift_bay = stage === "repair" ? liftBay || null : null
@@ -105,7 +118,7 @@ export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: str
 
 // Re-resolve the CarsXE reference image for a job (manual admin/advisor refresh).
 export async function refreshVehicleImage(jobId: string) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("jobs.edit")
   const { data: job, error: readErr } = await supabase
     .from("jobs")
     .select("vehicle_make, vehicle_model, vehicle_year, color, variant")
@@ -141,7 +154,7 @@ export async function refreshVehicleImage(jobId: string) {
 // Re-resolve reference images for every active job at once (bulk visual sync).
 // Runs the improved make+model mapping across all cards and caches new images.
 export async function refreshAllVehicleImages() {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("jobs.edit")
   const { data: jobs, error: readErr } = await supabase
     .from("jobs")
     .select("id, vehicle_make, vehicle_model, vehicle_year, color, variant")
@@ -179,17 +192,18 @@ export async function refreshAllVehicleImages() {
 }
 
 export async function assignStaff(jobId: string, field: "advisor_id" | "technician_id", value: string) {
-  const { supabase } = await requireUser()
+  const { supabase, ctx } = await guard("jobs.assign")
   const { error } = await supabase
     .from("jobs")
     .update({ [field]: value || null, updated_at: new Date().toISOString() })
     .eq("id", jobId)
   if (error) throw new Error(error.message)
+  await logAction(ctx, "job.assign", "job", jobId, { field, value: value || null })
   revalidatePath(`/jobs/${jobId}`)
 }
 
 export async function updateJobDetails(jobId: string, formData: FormData) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("jobs.update_status")
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
   const textFields = [
     "variant",
@@ -214,7 +228,7 @@ export async function updateJobDetails(jobId: string, formData: FormData) {
 }
 
 export async function addPhotos(jobId: string, urls: string[], kind: "vehicle" | "damage") {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("jobs.update_status")
   if (!urls.length) return
   const { error } = await supabase
     .from("vehicle_photos")
@@ -224,7 +238,7 @@ export async function addPhotos(jobId: string, urls: string[], kind: "vehicle" |
 }
 
 export async function deletePhoto(photoId: string, jobId: string) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("jobs.update_status")
   await supabase.from("vehicle_photos").delete().eq("id", photoId)
   revalidatePath(`/jobs/${jobId}`)
 }
@@ -251,7 +265,7 @@ export async function saveQuotation(
     items: QuoteItemInput[]
   },
 ) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("quotations.create")
 
   const vatRate = Number.isFinite(payload.vatRate) ? payload.vatRate : VAT_RATE
   const items = payload.items
@@ -342,7 +356,7 @@ export async function saveQuotation(
 
 /* ---------------- Send approval to customer ---------------- */
 export async function sendApproval(jobId: string) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("quotations.edit")
   const { error } = await supabase
     .from("jobs")
     .update({ stage: "customer_approval", approval_status: "pending", updated_at: new Date().toISOString() })
@@ -354,7 +368,7 @@ export async function sendApproval(jobId: string) {
 
 /* ---------------- Parts ---------------- */
 export async function addPart(jobId: string, formData: FormData) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("jobs.update_status")
   const { error } = await supabase.from("parts_requests").insert({
     job_id: jobId,
     part_name: String(formData.get("part_name") || ""),
@@ -370,7 +384,7 @@ export async function addPart(jobId: string, formData: FormData) {
 }
 
 export async function updatePart(partId: string, jobId: string, formData: FormData) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("jobs.update_status")
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (formData.get("status")) patch.status = String(formData.get("status"))
   if (formData.has("supplier")) patch.supplier = String(formData.get("supplier") || "") || null
@@ -382,7 +396,7 @@ export async function updatePart(partId: string, jobId: string, formData: FormDa
 }
 
 export async function deletePart(partId: string, jobId: string) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("jobs.update_status")
   await supabase.from("parts_requests").delete().eq("id", partId)
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/parts")

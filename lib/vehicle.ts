@@ -147,6 +147,81 @@ export function silhouetteUrl(bodyType: BodyType): string {
   return `/silhouettes/${bodyType}.png`
 }
 
+/* ---------------- Vehicle profile (model-accurate silhouette) ---------------- */
+// A profile is a finer-grained silhouette class than body type. The renderer
+// draws a distinct shape per profile, so a C-Class reads as a compact sedan,
+// a G63 as a boxy SUV, and a 911 as a low sports coupe.
+export type VehicleProfile =
+  | "sedan"
+  | "sedan_luxury"
+  | "coupe"
+  | "sports"
+  | "hatchback"
+  | "suv"
+  | "suv_large"
+  | "suv_boxy"
+  | "pickup"
+  | "van"
+  | "convertible"
+
+// Ordered model rules matched against "make model" (normalized, spaces kept).
+// First match wins. This is the reusable make+model mapping system.
+const PROFILE_RULES: [RegExp, VehicleProfile][] = [
+  // --- Exotic / sports ---
+  [/\b(911|cayman|boxster|718)\b/, "sports"],
+  [/(ferrari|lamborghini|mclaren|bugatti)\b/, "sports"],
+  [/\b(amg ?gt|r8|gt-?r|gtr|supra|corvette|huracan|aventador|revuelto|f8|488|458|720s|765|roma|sf90|812)\b/, "sports"],
+  // --- SUVs that must not read as sedans ---
+  [/(g-?class|g\s?wagon|\bg\s?\d{2,3}\b|\bg63\b|\bg500\b|\bg550\b|defender|wrangler|jimny|land ?cruiser|\blc\s?\d{2,3}\b|patrol|\blx\b|\bgx\b|g-?wagen)/, "suv_boxy"],
+  [/(range ?rover|rangerover|\bx7\b|\bq8\b|\bgls\b|escalade|navigator|suburban|\blx\b|expedition|bentayga|cullinan|urus|purosangue|\bgv80\b|\bqx80\b|armada|sequoia|\bgx\b|\bgle\s?coupe\b)/, "suv_large"],
+  [/(cayenne|macan|\bx[1-6]\b|\bq[3-7]\b|\bgl[abce]\b|glc|gle|gla|glb|\brx\b|\bnx\b|\bux\b|rav4|highlander|\bcr-?v\b|tucson|santa ?fe|sorento|sportage|tiguan|touareg|\bcx-?\d\b|discovery|evoque|velar|grand ?cherokee|explorer|pathfinder|x-?trail|xtrail|4runner|prado|kona|seltos|\bek\b|\betron\b|e-?tron|\bev\b ?suv|outlander|\bxc(40|60|90)\b|\bqx\d0\b)/, "suv"],
+  // --- Pickups ---
+  [/(hilux|ranger|f-?150|f-?250|f-?350|silverado|sierra|tundra|tacoma|navara|d-?max|amarok|gladiator|colorado|frontier|ram ?\d?|ridgeline)/, "pickup"],
+  // --- Vans ---
+  [/(hiace|transit|sprinter|caravan|sienna|odyssey|carnival|vito|viano|transporter|caddy|starex|h-?1|urvan)/, "van"],
+  // --- Convertibles / roadsters ---
+  [/(spider|spyder|cabrio|cabriolet|convertible|roadster|\bz4\b|\bslk\b|\bslc\b|\bsl\s?\d{2,3}\b|miata|mx-?5|124 ?spider|\bts\s?roadster\b)/, "convertible"],
+  // --- Coupes ---
+  [/(coupe|coup\b|\b2 ?series\b|\b4 ?series\b|\b8 ?series\b|\bcls\b|\btt\b|mustang|challenger|camaro|\brc\b|\blc\s?500\b|continental ?gt|\bm2\b|\bm4\b|\bm8\b|brz|gr86|\b86\b)/, "coupe"],
+  // --- Luxury full-size sedans ---
+  [/(s-?class|\bs\s?\d{3}\b|\bmaybach\b|7 ?series|\b7\d0[a-z]?i?\b|\bi7\b|\ba8\b|panamera|taycan|flying ?spur|ghost|phantom|\bls\s?\d{3}\b|\bls\b\b|\bes\s?\d{3}\b|\bct6\b|\bg90\b)/, "sedan_luxury"],
+  // --- Hatchbacks ---
+  [/(golf|polo|\ba3\b|\b1 ?series\b|\bi3\b|yaris|swift|\bfit\b|jazz|\bi20\b|\bi10\b|micra|fiesta|clio|\b208\b|corolla ?hatch|mazda ?2|\bup\b|picanto|\brio\b)/, "hatchback"],
+  // --- Regular sedans (C/E, 3/5, A4/A6, Camry, etc.) ---
+  [/(c-?class|\bc\s?\d{3}\b|e-?class|\be\s?\d{3}\b|\bcla\b|\ba4\b|\ba5\b|\ba6\b|\ba7\b|3 ?series|5 ?series|\b3\d0[a-z]?i?\b|\b5\d0[a-z]?i?\b|\bm3\b|\bm5\b|camry|corolla|accord|civic|altima|sonata|elantra|\bis\s?\d{3}\b|\bis\b|\bgs\b|malibu|sentra|maxima|jetta|passat|mazda ?[36]|charger|\ba\d ?sedan\b)/, "sedan"],
+]
+
+const PROFILE_FROM_BODY: Record<BodyType, VehicleProfile> = {
+  sedan: "sedan",
+  suv: "suv",
+  coupe: "coupe",
+  convertible: "convertible",
+  hatchback: "hatchback",
+  pickup: "pickup",
+  van: "van",
+  sports: "sports",
+}
+
+// Resolve the most accurate silhouette profile.
+// Priority: explicit make+model rule → stored body type → make heuristic → sedan.
+export function resolveVehicleProfile(
+  make: string | null | undefined,
+  model: string | null | undefined,
+  bodyType?: string | null,
+): VehicleProfile {
+  const hay = `${(make || "").toLowerCase()} ${(model || "").toLowerCase()}`.replace(/\s+/g, " ").trim()
+  if (hay) {
+    for (const [re, profile] of PROFILE_RULES) {
+      if (re.test(hay)) return profile
+    }
+  }
+  // Stored body type from the job card, if valid.
+  const bt = bodyType as BodyType | null | undefined
+  if (bt && BODY_TYPES.some((b) => b.value === bt)) return PROFILE_FROM_BODY[bt]
+  // Fall back to the make/model body heuristic.
+  return PROFILE_FROM_BODY[inferBodyType(make, model)]
+}
+
 /* ---------------- Paint color resolution ---------------- */
 // Maps a free-text color from the job card to a realistic paint hex.
 // Keyword substring match (normalized), then raw hex, then neutral fallback.

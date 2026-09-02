@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { brandLogoUrl, brandInitials, inferBodyType, BODY_TYPES, type BodyType } from "@/lib/vehicle"
+import { brandLogoUrl, brandInitials, resolveVehicleProfile } from "@/lib/vehicle"
 import { CarSilhouette } from "@/components/car-silhouette"
 import { cn } from "@/lib/utils"
 
@@ -75,9 +75,8 @@ export function VehicleVisual({
   const [coverFailed, setCoverFailed] = useState(false)
   const showCover = coverPhoto && !coverFailed
 
-  // Prefer an explicit stored body type, else infer from make + model.
-  const stored = bodyType as BodyType | null | undefined
-  const bt: BodyType = stored && BODY_TYPES.some((b) => b.value === stored) ? stored : inferBodyType(make, model)
+  // Model-accurate profile: make+model rule first, then stored body type.
+  const profile = resolveVehicleProfile(make, model, bodyType)
   const label = `${make ?? ""} ${model ?? ""}`.trim() || "Vehicle"
 
   return (
@@ -93,7 +92,7 @@ export function VehicleVisual({
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center p-1.5">
-          <CarSilhouette bodyType={bt} color={color} title={`${label} — ${color || "unspecified"}`} />
+          <CarSilhouette profile={profile} color={color} title={`${label} — ${color || "unspecified"}`} />
         </div>
       )}
     </div>

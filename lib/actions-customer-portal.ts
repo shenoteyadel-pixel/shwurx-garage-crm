@@ -82,5 +82,67 @@ export async function inviteCustomerToPortal(customerId: string): Promise<Creden
 
   await logAction(ctx, "customer.portal_invite", "customer", customerId, { email, emailSent: send.sent })
   revalidatePath(`/customers/${customerId}`)
-  return { email, link, emailSent: send.sent, emailError: send.error }
+  return { userId: userId!, email, link, emailSent: send.sent, emailError: send.error }
+}
+
+/**
+ * Best-effort auto-provisioning of a customer portal account, called when a
+ * customer gets their FIRST job card. Never throws — a failure here must not
+ * block job creation. Skips silently when the customer has no email or already
+ * has a linked portal account. Not permission-guarded because it runs inside an
+ * already-authorized job-creation action.
+ */
+export async function autoProvisionCustomerPortal(customerId: string): Promise<void> {
+  try {
+    const svc = createServiceClient()
+    const { data: customer } = await svc
+      .from("customers")
+      .select("id, full_name, email, mobile")
+      .eq("id", customerId)
+      .maybeSingle()
+    if (!customer?.email) return
+
+    const { data: existing } = await svc
+      .from("profiles")
+      .select("id")
+      .eq("customer_id", customerId)
+      .maybeSingle()
+    if (existing) return
+
+    const email = customer.email.trim().toLowerCase()
+    const { userId, alreadyExisted } = await createManagedAuthUser({
+      email,
+      metadata: { full_name: customer.full_name, must_set_password: true, is_customer: true },
+    })
+
+    const { error: pErr } = await svc.from("profiles").upsert(
+      {
+        id: userId,
+        email,
+        full_name: customer.full_name || email,
+        phone: customer.mobile || null,
+        role: "customer",
+        is_active: true,
+        customer_id: customerId,
+        must_set_password: true,
+        invited_at: new Date().toISOString(),
+        invite_status: "invited",
+      },
+      { onConflict: "id" },
+    )
+    if (pErr) {
+      if (!alreadyExisted) await deleteAuthUser(userId).catch(() => {})
+      return
+    }
+
+    const link = await generateActionLink({ email, type: "invite", redirectPath: "/portal" })
+    await sendEmail({
+      to: email,
+      subject: "Track your vehicle with Shwurx Garage",
+      html: customerWelcomeEmail({ name: customer.full_name ?? "", url: link }),
+      idempotencyKey: `customer-autoinvite/${userId}`,
+    })
+  } catch (e) {
+    console.log("[v0] autoProvisionCustomerPortal skipped:", (e as Error).message)
+  }
 }

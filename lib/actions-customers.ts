@@ -481,6 +481,17 @@ export async function createJobFromMaster(fd: FormData) {
   if (rows.length) await supabase.from("vehicle_photos").insert(rows)
 
   await logAction(ctx, "job.create", "job", job.id, { job_number: payload.job_number })
+
+  // First job for this customer? Auto-provision their portal account (best-effort, never blocks).
+  const { count: jobCount } = await supabase
+    .from("jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("customer_id", customerId)
+  if ((jobCount ?? 0) <= 1) {
+    const { autoProvisionCustomerPortal } = await import("@/lib/actions-customer-portal")
+    await autoProvisionCustomerPortal(customerId)
+  }
+
   revalidatePath("/")
   revalidatePath(`/customers/${customerId}`)
   revalidatePath(`/vehicles/${vehicleId}`)

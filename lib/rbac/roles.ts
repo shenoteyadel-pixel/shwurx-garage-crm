@@ -6,10 +6,15 @@
 export type Role =
   | "owner"
   | "general_manager"
-  | "service_advisor"
+  | "workshop_manager"
   | "workshop_supervisor"
+  | "service_advisor"
+  | "reception"
   | "technician"
+  | "qc"
+  | "parts_manager"
   | "parts"
+  | "parts_staff"
   | "finance"
   | "washing"
   | "viewer"
@@ -28,10 +33,15 @@ export interface RoleMeta {
 export const ROLE_LIST: RoleMeta[] = [
   { value: "owner", label: "Owner / Super Admin", description: "Full access to everything, including users, permissions and settings.", home: "/", staff: true },
   { value: "general_manager", label: "General Manager", description: "Full operational access; cannot edit the permission matrix.", home: "/", staff: true },
-  { value: "service_advisor", label: "Service Advisor", description: "Front desk: customers, vehicles, job cards, quotations and invoicing.", home: "/", staff: true },
+  { value: "workshop_manager", label: "Workshop Manager", description: "Runs the workshop: creates and assigns job cards, manages technicians and job flow.", home: "/flow", staff: true },
   { value: "workshop_supervisor", label: "Workshop Supervisor", description: "Assigns and manages workshop jobs and technicians.", home: "/flow", staff: true },
-  { value: "technician", label: "Technician", description: "Works on assigned jobs and updates their status. No prices or invoices.", home: "/", staff: true },
+  { value: "service_advisor", label: "Service Advisor", description: "Front desk: customers, vehicles, job cards, quotations and invoicing.", home: "/", staff: true },
+  { value: "reception", label: "Reception", description: "Front desk intake: registers customers, vehicles and opens job cards.", home: "/", staff: true },
+  { value: "technician", label: "Technician", description: "Works on assigned jobs and updates their status. No prices or invoices.", home: "/jobs", staff: true },
+  { value: "qc", label: "Quality Control (QC)", description: "Inspects completed work and updates job status. No prices.", home: "/flow", staff: true },
+  { value: "parts_manager", label: "Parts Manager", description: "Full parts control: inventory, parts requests and purchase orders.", home: "/parts", staff: true },
   { value: "parts", label: "Parts / Store", description: "Manages inventory, parts requests and purchase orders.", home: "/parts", staff: true },
+  { value: "parts_staff", label: "Parts Staff", description: "Handles parts and inventory. No purchasing or reports.", home: "/parts", staff: true },
   { value: "finance", label: "Finance / Accounts", description: "Invoices, payments and financial reports. No workshop edits.", home: "/invoices", staff: true },
   { value: "washing", label: "Washing / Detailing", description: "Works on assigned wash jobs and updates their status.", home: "/", staff: true },
   { value: "viewer", label: "Viewer (Read-only)", description: "Read-only visibility across the CRM.", home: "/", staff: true },
@@ -151,3 +161,26 @@ export const PERMISSION_CATALOG: PermGroup[] = [
 ]
 
 export const ALL_PERMISSIONS: Permission[] = PERMISSION_CATALOG.flatMap((g) => g.perms.map((p) => p.key))
+
+// ---------------- Invite lifecycle ----------------
+
+export type InviteStatus = "not_sent" | "invited" | "email_failed" | "accepted" | "active"
+
+export interface InviteStatusMeta {
+  label: string
+  /** Tailwind tone key used by the badge in the UI */
+  tone: "muted" | "amber" | "destructive" | "sky" | "emerald"
+  description: string
+}
+
+export const INVITE_STATUS_META: Record<InviteStatus, InviteStatusMeta> = {
+  not_sent: { label: "Not sent", tone: "muted", description: "Account created but no invite sent yet." },
+  invited: { label: "Invited", tone: "amber", description: "Invite link generated; awaiting password setup." },
+  email_failed: { label: "Email failed", tone: "destructive", description: "Automatic email failed — share the link manually." },
+  accepted: { label: "Password set", tone: "sky", description: "User set their password but hasn't signed in yet." },
+  active: { label: "Active", tone: "emerald", description: "User has signed in and is active." },
+}
+
+export function inviteStatusMeta(status: string | null | undefined): InviteStatusMeta {
+  return INVITE_STATUS_META[(status ?? "not_sent") as InviteStatus] ?? INVITE_STATUS_META.not_sent
+}

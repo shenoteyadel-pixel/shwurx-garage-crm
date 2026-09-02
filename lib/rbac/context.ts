@@ -13,6 +13,10 @@ export interface SessionContext {
   isActive: boolean
   isStaff: boolean
   customerId: string | null
+  /** true until the invited user chooses their own password */
+  mustSetPassword: boolean
+  /** invite lifecycle status from profiles.invite_status */
+  inviteStatus: string
   /** resolved effective permission set (role defaults + per-user overrides) */
   permissions: Set<Permission>
 }
@@ -31,7 +35,7 @@ export const getSessionContext = cache(async (): Promise<SessionContext | null> 
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, role, is_active, customer_id, email")
+    .select("full_name, role, is_active, customer_id, email, must_set_password, invite_status")
     .eq("id", user.id)
     .maybeSingle()
 
@@ -69,6 +73,8 @@ export const getSessionContext = cache(async (): Promise<SessionContext | null> 
     isActive,
     isStaff: isActive && role !== "customer",
     customerId: profile?.customer_id ?? null,
+    mustSetPassword: profile?.must_set_password ?? false,
+    inviteStatus: profile?.invite_status ?? "not_sent",
     permissions: perms,
   }
 })

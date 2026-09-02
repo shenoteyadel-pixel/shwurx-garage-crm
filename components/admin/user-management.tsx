@@ -1,8 +1,15 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useRef } from "react"
 import { Card, Button, Input, Label, Select, Badge } from "@/components/ui"
-import { ROLE_LIST, PERMISSION_CATALOG, roleLabel, type Permission, type Role } from "@/lib/rbac/roles"
+import {
+  ROLE_LIST,
+  PERMISSION_CATALOG,
+  roleLabel,
+  inviteStatusMeta,
+  type Permission,
+  type Role,
+} from "@/lib/rbac/roles"
 import {
   inviteStaffUser,
   resendStaffInvite,
@@ -10,10 +17,25 @@ import {
   updateUserRole,
   setUserActive,
   setPermissionOverride,
+  forceLogoutUser,
+  searchExistingUsers,
   type CredentialLinkResult,
+  type DuplicateMatch,
 } from "@/lib/actions-users"
 import { CredentialLinkPanel } from "@/components/admin/credential-link-panel"
-import { UserPlus, Loader2, SlidersHorizontal, X, Check, Ban, KeyRound, Send } from "lucide-react"
+import {
+  UserPlus,
+  Loader2,
+  SlidersHorizontal,
+  X,
+  Check,
+  Ban,
+  KeyRound,
+  Send,
+  LogOut,
+  AlertTriangle,
+  Clock,
+} from "lucide-react"
 
 interface UserRow {
   id: string
@@ -24,7 +46,15 @@ interface UserRow {
   customer_id: string | null
   created_at: string
   phone?: string | null
+  mobile?: string | null
   must_set_password?: boolean
+  department?: string | null
+  branch?: string | null
+  employee_id?: string | null
+  invite_status?: string | null
+  invite_sent_at?: string | null
+  invite_error?: string | null
+  last_login_at?: string | null
 }
 interface Override {
   user_id: string
@@ -32,7 +62,21 @@ interface Override {
   allowed: boolean
 }
 
-const STAFF_ROLES = ROLE_LIST.filter((r) => r.staff)
+const STAFF_ROLES = ROLE_LIST.filter((r) => r.staff && r.value !== "owner")
+const ALL_STAFF_ROLES = ROLE_LIST.filter((r) => r.staff)
+
+const TONE_CLASS: Record<string, string> = {
+  muted: "bg-secondary text-muted-foreground",
+  amber: "bg-amber-500/10 text-amber-400",
+  destructive: "bg-destructive/10 text-destructive",
+  sky: "bg-sky-500/10 text-sky-400",
+  emerald: "bg-emerald-500/10 text-emerald-400",
+}
+
+function fmtDate(v?: string | null) {
+  if (!v) return "—"
+  return new Date(v).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })
+}
 
 export function UserManagement({
   users,
@@ -52,7 +96,6 @@ export function UserManagement({
   const [cred, setCred] = useState<{ result: CredentialLinkResult; purpose: "invite" | "reset"; phone?: string | null } | null>(
     null,
   )
-  const staff = users.filter((u) => u.role !== "customer")
 
   const overrideCount = (userId: string) => overrides.filter((o) => o.user_id === userId).length
 
@@ -73,13 +116,14 @@ export function UserManagement({
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3 font-medium">User</th>
                 <th className="px-4 py-3 font-medium">Role</th>
-                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Account status</th>
+                <th className="px-4 py-3 font-medium">Last login</th>
                 <th className="px-4 py-3 font-medium">Overrides</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {staff.map((u) => (
+              {users.map((u) => (
                 <UserRowItem
                   key={u.id}
                   user={u}
@@ -91,9 +135,9 @@ export function UserManagement({
                   onCredential={(result, purpose, phone) => setCred({ result, purpose, phone })}
                 />
               ))}
-              {staff.length === 0 && (
+              {users.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                     No staff users yet.
                   </td>
                 </tr>
@@ -131,6 +175,26 @@ export function UserManagement({
   )
 }
 
+function StatusBadge({ user }: { user: UserRow }) {
+  if (!user.is_active) {
+    return (
+      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${TONE_CLASS.destructive}`}>
+        <Ban className="h-3 w-3" /> Deactivated
+      </span>
+    )
+  }
+  const meta = inviteStatusMeta(user.invite_status)
+  const Icon = meta.tone === "emerald" ? Check : meta.tone === "destructive" ? AlertTriangle : KeyRound
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${TONE_CLASS[meta.tone]}`}
+      title={meta.description}
+    >
+      <Icon className="h-3 w-3" /> {meta.label}
+    </span>
+  )
+}
+
 function UserRowItem({
   user,
   isSelf,
@@ -150,6 +214,9 @@ function UserRowItem({
 }) {
   const [pending, start] = useTransition()
   const [credPending, startCred] = useTransition()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const phone = user.mobile ?? user.phone
+  const needsSetup = user.must_set_password || user.invite_status === "invited" || user.invite_status === "email_failed"
 
   return (
     <tr className="border-b border-border last:border-0">
@@ -163,18 +230,23 @@ function UserRowItem({
               {user.full_name || "—"} {isSelf && <span className="text-xs text-muted-foreground">(you)</span>}
             </div>
             <div className="truncate text-xs text-muted-foreground">{user.email}</div>
+            {(user.department || user.employee_id) && (
+              <div className="truncate text-xs text-muted-foreground">
+                {[user.employee_id, user.department, user.branch].filter(Boolean).join(" · ")}
+              </div>
+            )}
           </div>
         </div>
       </td>
       <td className="px-4 py-3">
-        {canManageUsers ? (
+        {canManageUsers && !isSelf ? (
           <Select
             defaultValue={user.role}
             disabled={pending}
             onChange={(e) => start(() => updateUserRole(user.id, e.target.value as Role))}
             className="h-9 w-44"
           >
-            {STAFF_ROLES.map((r) => (
+            {ALL_STAFF_ROLES.map((r) => (
               <option key={r.value} value={r.value}>
                 {r.label}
               </option>
@@ -185,19 +257,17 @@ function UserRowItem({
         )}
       </td>
       <td className="px-4 py-3">
-        {!user.is_active ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-1 text-xs font-medium text-destructive">
-            <Ban className="h-3 w-3" /> Inactive
-          </span>
-        ) : user.must_set_password ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-400">
-            <KeyRound className="h-3 w-3" /> Pending setup
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-400">
-            <Check className="h-3 w-3" /> Active
-          </span>
+        <StatusBadge user={user} />
+        {user.invite_status === "email_failed" && user.invite_error && (
+          <div className="mt-1 max-w-[180px] truncate text-xs text-destructive" title={user.invite_error}>
+            {user.invite_error}
+          </div>
         )}
+      </td>
+      <td className="px-4 py-3 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <Clock className="h-3 w-3" /> {fmtDate(user.last_login_at)}
+        </span>
       </td>
       <td className="px-4 py-3">
         {overrideCount > 0 ? (
@@ -209,7 +279,7 @@ function UserRowItem({
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-2">
           {canManageUsers &&
-            (user.must_set_password ? (
+            (needsSetup ? (
               <Button
                 variant="ghost"
                 size="sm"
@@ -217,12 +287,11 @@ function UserRowItem({
                 onClick={() =>
                   startCred(async () => {
                     const r = await resendStaffInvite(user.id)
-                    onCredential(r, "invite", user.phone)
+                    onCredential(r, "invite", phone)
                   })
                 }
               >
-                {credPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Resend
-                invite
+                {credPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Resend invite
               </Button>
             ) : (
               <Button
@@ -232,7 +301,7 @@ function UserRowItem({
                 onClick={() =>
                   startCred(async () => {
                     const r = await sendPasswordReset(user.id)
-                    onCredential(r, "reset", user.phone)
+                    onCredential(r, "reset", phone)
                   })
                 }
               >
@@ -246,26 +315,54 @@ function UserRowItem({
             </Button>
           )}
           {canManageUsers && !isSelf && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={pending}
-              onClick={() => start(() => setUserActive(user.id, !user.is_active))}
-            >
-              {pending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : user.is_active ? (
-                "Deactivate"
-              ) : (
-                "Activate"
+            <div className="relative">
+              <Button variant="ghost" size="sm" onClick={() => setMenuOpen((v) => !v)} aria-label="More actions">
+                •••
+              </Button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} aria-hidden />
+                  <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-border bg-card shadow-xl">
+                    <button
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50"
+                      disabled={pending}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        start(() => forceLogoutUser(user.id))
+                      }}
+                    >
+                      <LogOut className="h-4 w-4" /> Force logout
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50"
+                      disabled={pending}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        start(() => setUserActive(user.id, !user.is_active))
+                      }}
+                    >
+                      {user.is_active ? (
+                        <>
+                          <Ban className="h-4 w-4" /> Deactivate
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4" /> Activate
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
               )}
-            </Button>
+            </div>
           )}
         </div>
       </td>
     </tr>
   )
 }
+
+/* ---------------- Add / invite staff user ---------------- */
 
 function CreateUserDialog({
   onClose,
@@ -276,20 +373,49 @@ function CreateUserDialog({
 }) {
   const [pending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [dupes, setDupes] = useState<DuplicateMatch[]>([])
+  const [checking, setChecking] = useState(false)
+  const [acknowledged, setAcknowledged] = useState(false)
+  const formRef = useRef<HTMLFormElement>(null)
+
+  // Live duplicate pre-check on blur of the identifying fields.
+  function runDuplicateCheck() {
+    const fd = new FormData(formRef.current!)
+    const email = String(fd.get("email") || "").trim()
+    const mobile = String(fd.get("mobile") || "").trim()
+    const employeeId = String(fd.get("employee_id") || "").trim()
+    if (!email && !mobile && !employeeId) {
+      setDupes([])
+      return
+    }
+    setChecking(true)
+    searchExistingUsers({ email, mobile, employeeId })
+      .then((m) => {
+        setDupes(m)
+        if (m.length === 0) setAcknowledged(false)
+      })
+      .catch(() => setDupes([]))
+      .finally(() => setChecking(false))
+  }
+
+  const blocked = dupes.length > 0 && !acknowledged
 
   return (
-    <Dialog title="Invite staff user" onClose={onClose}>
+    <Dialog title="Add staff user" onClose={onClose} wide>
       <p className="mb-4 text-sm text-muted-foreground">
-        We&apos;ll create the account and generate a secure set-password link. No password is set here — the user
-        chooses their own.
+        Create the account and generate a secure set-password link. No password is set here — the user chooses their
+        own. The link is emailed automatically and also shown for manual sharing.
       </p>
       <form
+        ref={formRef}
         action={(fd) =>
           start(async () => {
             setError(null)
+            if (blocked) fd.set("allow_duplicate", "false")
+            else if (dupes.length > 0) fd.set("allow_duplicate", "true")
             try {
               const result = await inviteStaffUser(fd)
-              onInvited(result, String(fd.get("phone") || ""))
+              onInvited(result, String(fd.get("mobile") || ""))
             } catch (e) {
               setError((e as Error).message)
             }
@@ -297,34 +423,75 @@ function CreateUserDialog({
         }
         className="flex flex-col gap-4"
       >
-        <div>
-          <Label htmlFor="full_name">Full name</Label>
-          <Input id="full_name" name="full_name" required placeholder="e.g. Ahmed Khan" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="full_name">Full name *</Label>
+            <Input id="full_name" name="full_name" required placeholder="e.g. Ahmed Khan" />
+          </div>
+          <div>
+            <Label htmlFor="role">Role *</Label>
+            <Select id="role" name="role" defaultValue="reception">
+              {STAFF_ROLES.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="email">Email *</Label>
+            <Input id="email" name="email" type="email" required placeholder="staff@shwurx.com" onBlur={runDuplicateCheck} />
+          </div>
+          <div>
+            <Label htmlFor="mobile">Mobile (for WhatsApp share)</Label>
+            <Input id="mobile" name="mobile" placeholder="+971 50 000 0000" onBlur={runDuplicateCheck} />
+          </div>
+          <div>
+            <Label htmlFor="employee_id">Employee ID</Label>
+            <Input id="employee_id" name="employee_id" placeholder="e.g. SG-014" onBlur={runDuplicateCheck} />
+          </div>
+          <div>
+            <Label htmlFor="department">Department</Label>
+            <Input id="department" name="department" placeholder="e.g. Workshop" />
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="branch">Branch / Location</Label>
+            <Input id="branch" name="branch" placeholder="e.g. Al Quoz" />
+          </div>
         </div>
-        <div>
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" required placeholder="staff@shwurx.com" />
-        </div>
-        <div>
-          <Label htmlFor="phone">Phone (for WhatsApp share)</Label>
-          <Input id="phone" name="phone" placeholder="+971 50 000 0000" />
-        </div>
-        <div>
-          <Label htmlFor="role">Role</Label>
-          <Select id="role" name="role" defaultValue="service_advisor">
-            {STAFF_ROLES.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        {checking && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking for existing staff…
+          </p>
+        )}
+
+        {dupes.length > 0 && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+            <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-amber-400">
+              <AlertTriangle className="h-4 w-4" /> Possible duplicate{dupes.length > 1 ? "s" : ""} found
+            </p>
+            <ul className="mb-2 space-y-1 text-xs text-foreground">
+              {dupes.map((d) => (
+                <li key={d.id}>
+                  <span className="font-medium">{d.full_name || d.email}</span> — {roleLabel(d.role)} (matches {d.match_on})
+                </li>
+              ))}
+            </ul>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
+              Invite anyway — this is a different person
+            </label>
+          </div>
+        )}
+
+        {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || blocked}>
             {pending && <Loader2 className="h-4 w-4 animate-spin" />} Create &amp; generate link
           </Button>
         </div>
@@ -332,6 +499,8 @@ function CreateUserDialog({
     </Dialog>
   )
 }
+
+/* ---------------- Permission overrides ---------------- */
 
 function OverridesDialog({
   user,

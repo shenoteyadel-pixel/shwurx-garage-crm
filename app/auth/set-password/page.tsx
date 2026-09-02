@@ -4,6 +4,7 @@ import type React from "react"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { markPasswordSet } from "@/lib/actions-users"
 import { Button, Input, Label } from "@/components/ui"
 import { Wrench, CheckCircle2 } from "lucide-react"
 
@@ -43,8 +44,16 @@ export default function SetPasswordPage() {
       setLoading(false)
       return
     }
+    // Record acceptance server-side and get the user's role landing page.
+    let home = "/"
+    try {
+      const res = await markPasswordSet()
+      home = res.home
+    } catch {
+      /* non-fatal: fall back to root, which re-routes by role */
+    }
     setDone(true)
-    setTimeout(() => router.replace("/"), 1400)
+    setTimeout(() => router.replace(home), 1400)
   }
 
   return (

@@ -57,6 +57,26 @@ export async function notifyByPermission(
   )
 }
 
+// Notify every active owner / general manager (management alerts).
+export async function notifyOwners(payload: { title: string; body?: string; type?: string; link?: string }) {
+  const svc = createServiceClient()
+  const { data: users } = await svc
+    .from("profiles")
+    .select("id")
+    .in("role", ["owner", "general_manager"])
+    .eq("is_active", true)
+  if (!users?.length) return
+  await svc.from("notifications").insert(
+    users.map((u) => ({
+      user_id: u.id,
+      title: payload.title,
+      body: payload.body ?? null,
+      type: payload.type ?? "info",
+      link: payload.link ?? null,
+    })),
+  )
+}
+
 // Notify one specific user.
 export async function notifyUser(
   userId: string,

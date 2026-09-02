@@ -103,3 +103,27 @@ export async function deleteAuthUser(userId: string): Promise<void> {
   const sb = admin()
   await sb.auth.admin.deleteUser(userId)
 }
+
+/**
+ * Revokes all active sessions for a user (force logout everywhere).
+ * The user must sign in again on their next request.
+ */
+export async function signOutUserEverywhere(userId: string): Promise<void> {
+  const sb = admin()
+  const { error } = await sb.auth.admin.signOut(userId, "global")
+  if (error) throw new Error(error.message)
+}
+
+/** Returns the auth user's metadata and confirmation/sign-in timestamps. */
+export async function getAuthUserState(
+  userId: string,
+): Promise<{ lastSignInAt: string | null; hasPassword: boolean } | null> {
+  const sb = admin()
+  const { data, error } = await sb.auth.admin.getUserById(userId)
+  if (error || !data?.user) return null
+  return {
+    lastSignInAt: data.user.last_sign_in_at ?? null,
+    // A managed user starts with no password; once set, providers include "email".
+    hasPassword: (data.user.app_metadata?.providers as string[] | undefined)?.includes("email") ?? false,
+  }
+}

@@ -7,6 +7,8 @@ import { StageStepper } from "@/components/stage-stepper"
 import { QuotationBuilder } from "@/components/quotation-builder"
 import { PartsManager } from "@/components/parts-manager"
 import { ApprovalSender } from "@/components/approval-sender"
+import { ApprovalsPanel } from "@/components/approvals-panel"
+import { getJobApprovals } from "@/lib/actions-approvals"
 import { JobPhotos } from "@/components/job-photos"
 import { StaffAssign } from "@/components/staff-assign"
 import { JobCustomerAccess } from "@/components/job-customer-access"
@@ -28,6 +30,7 @@ import {
   FileText,
   ReceiptText,
   ShoppingCart,
+  FolderOpen,
 } from "lucide-react"
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -60,6 +63,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  const approvals = await getJobApprovals(id)
 
   const { data: parts } = await supabase
     .from("parts_requests")
@@ -306,6 +311,16 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           {job.customer_id && <JobCustomerAccess jobId={job.id} />}
 
           {showPrices && (
+            <ApprovalsPanel
+              jobId={job.id}
+              approvals={approvals}
+              hasQuotation={!!quotation}
+              vatRate={Number(quotation?.vat_rate ?? 5)}
+              vatInclusive={Boolean(quotation?.vat_inclusive)}
+            />
+          )}
+
+          {showPrices && (
             <ApprovalSender
               jobId={job.id}
               token={job.approval_token}
@@ -322,6 +337,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 Documents
               </h2>
               <div className="flex flex-col gap-2">
+                <Link
+                  href={`/jobs/${job.id}/documents`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
+                >
+                  <FolderOpen className="h-4 w-4 text-muted-foreground" /> Document Center
+                </Link>
                 <Link
                   href={`/jobs/${job.id}/quotation/print`}
                   className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"

@@ -324,6 +324,49 @@ export async function createAdditionalWorkRequest(
   return { ok: true, token: inserted.token as string, url, emailed }
 }
 
+export type JobApproval = {
+  id: string
+  token: string
+  version: number
+  kind: ApprovalKind
+  mode: ApprovalMode
+  status: string
+  title: string | null
+  itemCount: number
+  total: number
+  approvedTotal: number | null
+  signerName: string | null
+  sentAt: string | null
+  decidedAt: string | null
+}
+
+/** List all approval requests for a job (newest first), for the staff panel + document center. */
+export async function getJobApprovals(jobId: string): Promise<JobApproval[]> {
+  const svc = createServiceClient()
+  const { data } = await svc
+    .from("approval_requests")
+    .select(
+      "id, token, version, kind, mode, status, title, snapshot, total, approved_total, signer_name, sent_at, decided_at, created_at",
+    )
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false })
+  return ((data as any[]) ?? []).map((r) => ({
+    id: r.id,
+    token: r.token,
+    version: Number(r.version ?? 1),
+    kind: r.kind,
+    mode: r.mode,
+    status: r.status,
+    title: r.title,
+    itemCount: Array.isArray(r.snapshot?.items) ? r.snapshot.items.length : 0,
+    total: Number(r.total ?? 0),
+    approvedTotal: r.approved_total == null ? null : Number(r.approved_total),
+    signerName: r.signer_name,
+    sentAt: r.sent_at,
+    decidedAt: r.decided_at,
+  }))
+}
+
 /** Re-send the email for an existing pending request without changing the snapshot. */
 export async function resendApprovalEmail(
   requestId: string,

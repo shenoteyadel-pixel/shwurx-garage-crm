@@ -39,13 +39,18 @@ export function VehicleActions({
   const [transferOpen, setTransferOpen] = useState(false)
   const [pending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   function onEdit(fd: FormData) {
     setError(null)
     start(async () => {
       try {
-        await updateVehicle(vehicle.id, fd)
+        const res = await updateVehicle(vehicle.id, fd)
         setEditOpen(false)
+        if (res?.identityChanged) {
+          setNotice("Vehicle information changed — re-resolving the reference photo.")
+          setTimeout(() => setNotice(null), 4000)
+        }
         router.refresh()
       } catch (e: any) {
         setError(e.message ?? "Failed to save")
@@ -74,6 +79,11 @@ export function VehicleActions({
   return (
     <>
       <Card className="p-4">
+        {notice ? (
+          <p className="mb-3 rounded-md border border-primary/30 bg-primary/10 p-2 text-xs font-medium text-primary">
+            {notice}
+          </p>
+        ) : null}
         <div className="flex flex-col gap-2">
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} className="justify-start">
             <Pencil className="h-4 w-4" /> Edit vehicle

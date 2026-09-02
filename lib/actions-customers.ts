@@ -36,6 +36,11 @@ function s(fd: FormData, key: string): string | null {
   return v || null
 }
 
+// Normalize a value for identity comparison (case/space/punctuation-insensitive).
+function norm(v: string | null | undefined): string {
+  return (v || "").toLowerCase().replace(/[^a-z0-9]/g, "")
+}
+
 /* ---------------- Customer lookups (dedupe) ---------------- */
 
 // Live search for the intake wizard: match on name, mobile, company.
@@ -321,8 +326,41 @@ async function syncVehicleToJobs(
 
 export async function updateVehicle(id: string, fd: FormData) {
   const { supabase } = await guard("vehicles.edit")
+
+  // Read the current identity so we can detect a make/model/variant/year/color change.
+  const { data: before } = await supabase
+    .from("vehicles")
+    .select("make, model, variant, year, color, image_source")
+    .eq("id", id)
+    .single()
+
   const patch = vehiclePayloadFromForm(fd)
   patch.updated_at = new Date().toISOString()
+
+  const identityChanged =
+    !!before &&
+    (norm(before.make) !== norm(patch.make as string) ||
+      norm(before.model) !== norm(patch.model as string) ||
+      norm(before.variant) !== norm(patch.variant as string) ||
+      String(before.year ?? "") !== String(patch.year ?? "") ||
+      norm(before.color) !== norm(patch.color as string))
+
+  // Custom (manually uploaded) reference photos are never auto-overwritten.
+  const isCustom = before?.image_source === "custom"
+
+  if (identityChanged && !isCustom) {
+    const image = await resolveVehicleImage({
+      make: patch.make as string,
+      model: patch.model as string,
+      year: patch.year as number,
+      color: patch.color as string,
+      trim: patch.variant as string,
+    })
+    patch.reference_image_url = image?.url ?? null
+    patch.image_source = image?.source ?? null
+    patch.image_resolved_at = new Date().toISOString()
+  }
+
   const { data: updated, error } = await supabase
     .from("vehicles")
     .update(patch)
@@ -337,17 +375,23 @@ export async function updateVehicle(id: string, fd: FormData) {
   revalidatePath("/jobs")
   revalidatePath("/flow")
   revalidatePath("/")
+  return { identityChanged: identityChanged && !isCustom }
 }
 
-// Re-resolve the cached reference image for a master vehicle.
-export async function refreshVehicleMasterImage(id: string) {
+// Re-resolve the cached reference image for a master vehicle (manual refresh).
+// `force` overrides a custom image (used when the user explicitly clicks refresh).
+export async function refreshVehicleMasterImage(id: string, opts?: { force?: boolean }) {
   const { supabase } = await guard("vehicles.edit")
   const { data: v, error: readErr } = await supabase
     .from("vehicles")
-    .select("make, model, year, color, variant")
+    .select("make, model, year, color, variant, image_source")
     .eq("id", id)
     .single()
   if (readErr) throw new Error(readErr.message)
+
+  // Never silently discard a custom photo unless the caller forces it.
+  if (v.image_source === "custom" && !opts?.force) return { found: true, custom: true }
+
   const image = await resolveVehicleImage({
     make: v.make,
     model: v.model,
@@ -355,28 +399,114 @@ export async function refreshVehicleMasterImage(id: string) {
     color: v.color,
     trim: v.variant,
   })
+
+  // On a miss, keep whatever image already exists rather than wiping to null.
+  if (!image) {
+    revalidatePath(`/vehicles/${id}`)
+    return { found: false }
+  }
+
+  const stamp = new Date().toISOString()
   const { error } = await supabase
     .from("vehicles")
     .update({
-      reference_image_url: image?.url ?? null,
-      image_source: image?.source ?? null,
-      image_resolved_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      reference_image_url: image.url,
+      image_source: image.source,
+      image_resolved_at: stamp,
+      updated_at: stamp,
     })
     .eq("id", id)
   if (error) throw new Error(error.message)
   await supabase
     .from("jobs")
     .update({
-      vehicle_reference_image_url: image?.url ?? null,
-      vehicle_image_source: image?.source ?? null,
-      updated_at: new Date().toISOString(),
+      vehicle_reference_image_url: image.url,
+      vehicle_image_source: image.source,
+      updated_at: stamp,
     })
     .eq("vehicle_id", id)
   revalidatePath(`/vehicles/${id}`)
   revalidatePath("/jobs")
   revalidatePath("/flow")
-  return { found: !!image }
+  return { found: true }
+}
+
+// Save a manually-uploaded custom reference photo (owner/admin override).
+// Marked source="custom" so auto-refresh never overwrites it.
+export async function setCustomVehicleImage(id: string, url: string) {
+  const { supabase } = await guard("vehicles.edit")
+  const clean = (url || "").trim()
+  if (!/^https?:\/\//.test(clean)) throw new Error("A valid image URL is required.")
+  const stamp = new Date().toISOString()
+  const { error } = await supabase
+    .from("vehicles")
+    .update({
+      reference_image_url: clean,
+      image_source: "custom",
+      image_resolved_at: stamp,
+      updated_at: stamp,
+    })
+    .eq("id", id)
+  if (error) throw new Error(error.message)
+  await supabase
+    .from("jobs")
+    .update({ vehicle_reference_image_url: clean, vehicle_image_source: "custom", updated_at: stamp })
+    .eq("vehicle_id", id)
+  revalidatePath(`/vehicles/${id}`)
+  revalidatePath("/jobs")
+  revalidatePath("/flow")
+  return { ok: true }
+}
+
+// Bulk re-resolve reference photos across ALL master vehicles. Skips vehicles
+// that already have a valid non-custom image (no wasted CarsXE calls) unless
+// `onlyMissing` is false. Custom images are always preserved.
+export async function refreshAllMasterVehicleImages(opts?: { onlyMissing?: boolean }) {
+  const { supabase } = await guard("vehicles.edit")
+  const onlyMissing = opts?.onlyMissing ?? true
+  const { data: vehicles, error: readErr } = await supabase
+    .from("vehicles")
+    .select("id, make, model, year, color, variant, reference_image_url, image_source")
+  if (readErr) throw new Error(readErr.message)
+
+  let scanned = 0
+  let updated = 0
+  let skipped = 0
+  for (const v of vehicles ?? []) {
+    if (v.image_source === "custom") {
+      skipped++
+      continue
+    }
+    // Skip vehicles that already have a resolved image when only filling gaps.
+    if (onlyMissing && v.reference_image_url && v.image_source === "carsxe") {
+      skipped++
+      continue
+    }
+    scanned++
+    const image = await resolveVehicleImage({
+      make: v.make,
+      model: v.model,
+      year: v.year,
+      color: v.color,
+      trim: v.variant,
+    })
+    if (!image) continue
+    const stamp = new Date().toISOString()
+    const { error } = await supabase
+      .from("vehicles")
+      .update({ reference_image_url: image.url, image_source: image.source, image_resolved_at: stamp })
+      .eq("id", v.id)
+    if (error) continue
+    await supabase
+      .from("jobs")
+      .update({ vehicle_reference_image_url: image.url, vehicle_image_source: image.source })
+      .eq("vehicle_id", v.id)
+    updated++
+  }
+  revalidatePath("/")
+  revalidatePath("/flow")
+  revalidatePath("/vehicles")
+  return { total: (vehicles ?? []).length, scanned, updated, skipped }
 }
 
 // Transfer a vehicle to another owner (used when a car is sold).

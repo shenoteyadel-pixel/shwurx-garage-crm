@@ -122,10 +122,13 @@ export async function refreshVehicleImage(jobId: string) {
   const { supabase } = await guard("jobs.edit")
   const { data: job, error: readErr } = await supabase
     .from("jobs")
-    .select("vehicle_make, vehicle_model, vehicle_year, color, variant")
+    .select("vehicle_make, vehicle_model, vehicle_year, color, variant, vehicle_image_source")
     .eq("id", jobId)
     .single()
   if (readErr) throw new Error(readErr.message)
+
+  // Never overwrite a manually-set custom reference photo.
+  if (job.vehicle_image_source === "custom") return { found: true, custom: true }
 
   const image = await resolveVehicleImage({
     make: job.vehicle_make,
@@ -135,11 +138,17 @@ export async function refreshVehicleImage(jobId: string) {
     trim: job.variant,
   })
 
+  // On a miss keep the existing image instead of wiping it to null (→ silhouette).
+  if (!image) {
+    revalidatePath(`/jobs/${jobId}`)
+    return { found: false }
+  }
+
   const { error } = await supabase
     .from("jobs")
     .update({
-      vehicle_reference_image_url: image?.url ?? null,
-      vehicle_image_source: image?.source ?? null,
+      vehicle_reference_image_url: image.url,
+      vehicle_image_source: image.source,
       vehicle_image_resolved_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -149,7 +158,7 @@ export async function refreshVehicleImage(jobId: string) {
   revalidatePath("/")
   revalidatePath("/flow")
   revalidatePath(`/jobs/${jobId}`)
-  return { found: !!image }
+  return { found: true }
 }
 
 // Re-resolve reference images for every active job at once (bulk visual sync).

@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell"
 import { Card, Badge } from "@/components/ui"
 import { VehicleVisual, BrandLogo } from "@/components/vehicle-visual"
 import { VehicleActions } from "@/components/vehicle-actions"
+import { ReferencePhotoPanel } from "@/components/reference-photo-panel"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { STAGES } from "@/lib/constants"
 import { ArrowLeft, Car, Gauge, Hash, Fingerprint, Palette, FileText, ReceiptText } from "lucide-react"
@@ -77,6 +78,13 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
                 className="aspect-[4/3] w-full"
               />
             </Card>
+            <ReferencePhotoPanel
+              vehicleId={vehicle.id}
+              referenceImageUrl={vehicle.reference_image_url}
+              imageSource={vehicle.image_source}
+              imageResolvedAt={vehicle.image_resolved_at}
+              canManage={user.permissions.includes("vehicles.edit")}
+            />
             <VehicleActions vehicle={vehicle} customers={customers ?? []} currentOwnerId={vehicle.customer_id} />
           </div>
 

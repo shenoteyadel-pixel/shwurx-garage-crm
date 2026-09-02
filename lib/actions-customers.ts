@@ -429,7 +429,7 @@ export async function createJobFromMaster(fd: FormData) {
     vehicle_id: vehicleId,
     // Snapshot (denormalized) fields — keep the job card self-contained.
     customer_name: customer.full_name,
-    customer_mobile: customer.mobile,
+    customer_mobile: customer.mobile ?? "",
     vehicle_make: vehicle.make,
     vehicle_model: vehicle.model,
     variant: vehicle.variant,

@@ -102,7 +102,6 @@ export function VehicleVisual({
           alt={alt || `${label} reference image`}
           className="h-full w-full object-contain"
           onError={() => setRefFailed(true)}
-          crossOrigin="anonymous"
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center p-1.5">

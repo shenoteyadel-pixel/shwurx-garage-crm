@@ -1,24 +1,30 @@
 import "server-only"
 import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
+import { getSessionContext } from "@/lib/rbac/context"
+import type { Permission } from "@/lib/rbac/roles"
 
-// Fetches the current user's display name + role for the AppShell sidebar.
-// Redirects to login when there is no authenticated user.
-export async function getShellUser() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect("/auth/login")
+export interface ShellUser {
+  name: string
+  role: string
+  permissions: Permission[]
+  isStaff: boolean
+  customerId: string | null
+}
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle()
+// Fetches the current user's identity + effective permissions for the AppShell.
+// Redirects to login when there is no authenticated user, and sends customers
+// to their portal (they have no staff UI).
+export async function getShellUser(): Promise<ShellUser> {
+  const ctx = await getSessionContext()
+  if (!ctx) redirect("/auth/login")
+  if (!ctx.isActive) redirect("/auth/login?error=inactive")
+  if (!ctx.isStaff) redirect("/portal")
 
   return {
-    name: profile?.full_name || user.email || "Staff",
-    role: profile?.role || "advisor",
+    name: ctx.name,
+    role: ctx.role,
+    permissions: [...ctx.permissions],
+    isStaff: ctx.isStaff,
+    customerId: ctx.customerId,
   }
 }

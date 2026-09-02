@@ -1,5 +1,7 @@
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
+import { getShellUser } from "@/lib/shell-user"
+import { getSessionContext } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
 import { StatCard } from "@/components/stat-card"
 import { StageBarChart, RevenueAreaChart } from "@/components/dashboard-charts"
@@ -10,16 +12,13 @@ import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardC
 import type { JobCardData } from "@/components/job-card"
 
 export default async function DashboardPage() {
+  // getShellUser redirects unauthenticated users to login and customers to /portal.
+  const shellUser = await getShellUser()
+  const ctx = (await getSessionContext())!
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user!.id)
-    .maybeSingle()
+  const canViewAll = ctx.permissions.has("jobs.view_all")
+  const canSeeMoney = ctx.permissions.has("prices.view")
 
   const { data: jobsRaw } = await supabase
     .from("jobs")
@@ -99,22 +98,30 @@ export default async function DashboardPage() {
   })
 
   return (
-    <AppShell user={{ name: profile?.full_name || user!.email || "Staff", role: profile?.role || "advisor" }}>
+    <AppShell user={shellUser}>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Workshop Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Live overview of every vehicle in the shop.</p>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {canViewAll ? "Workshop Dashboard" : "My Assigned Jobs"}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {canViewAll
+            ? "Live overview of every vehicle in the shop."
+            : `Welcome back, ${shellUser.name.split(" ")[0]}. Here are the vehicles assigned to you.`}
+        </p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Cars in Workshop" value={carsInWorkshop} icon={Car} />
-        <StatCard
-          label="Pending Approvals"
-          value={pendingApprovals}
-          icon={ThumbsUp}
-          accent="text-amber-400"
-          bg="bg-amber-500/10"
-        />
+        <StatCard label={canViewAll ? "Cars in Workshop" : "My Active Jobs"} value={carsInWorkshop} icon={Car} />
+        {canViewAll && (
+          <StatCard
+            label="Pending Approvals"
+            value={pendingApprovals}
+            icon={ThumbsUp}
+            accent="text-amber-400"
+            bg="bg-amber-500/10"
+          />
+        )}
         <StatCard
           label="Pending Parts"
           value={pendingParts}
@@ -129,37 +136,45 @@ export default async function DashboardPage() {
           accent="text-emerald-400"
           bg="bg-emerald-500/10"
         />
-        <StatCard
-          label="Revenue (approved)"
-          value={formatCurrency(revenue)}
-          icon={DollarSign}
-          accent="text-emerald-400"
-          bg="bg-emerald-500/10"
-        />
+        {canSeeMoney && (
+          <StatCard
+            label="Revenue (approved)"
+            value={formatCurrency(revenue)}
+            icon={DollarSign}
+            accent="text-emerald-400"
+            bg="bg-emerald-500/10"
+          />
+        )}
         <StatCard label="Jobs Completed" value={jobsCompleted} icon={ClipboardCheck} />
         <StatCard label="Avg Repair Time" value={avgRepairLabel} icon={Clock} accent="text-sky-400" bg="bg-sky-500/10" />
-        <StatCard label="Total Job Cards" value={jobs.length} icon={Wrench} />
+        <StatCard label={canViewAll ? "Total Job Cards" : "My Job Cards"} value={jobs.length} icon={Wrench} />
       </div>
 
-      {/* Charts */}
-      <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-3 text-sm font-semibold">Cars by Stage</h2>
-          <StageBarChart data={stageData} />
+      {/* Charts — workshop-wide insight only */}
+      {canViewAll && (
+        <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h2 className="mb-3 text-sm font-semibold">Cars by Stage</h2>
+            <StageBarChart data={stageData} />
+          </div>
+          {canSeeMoney && (
+            <div className="rounded-xl border border-border bg-card p-4">
+              <h2 className="mb-3 text-sm font-semibold">Revenue (last 6 months)</h2>
+              <RevenueAreaChart data={revData} />
+            </div>
+          )}
         </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-3 text-sm font-semibold">Revenue (last 6 months)</h2>
-          <RevenueAreaChart data={revData} />
-        </div>
-      </div>
+      )}
 
       {/* Car Flow board */}
       <div className="mt-8">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Car Flow</h2>
-          <Link href="/flow" className="text-sm text-primary hover:underline">
-            Open full board →
-          </Link>
+          <h2 className="text-lg font-semibold">{canViewAll ? "Car Flow" : "My Vehicles"}</h2>
+          {canViewAll && (
+            <Link href="/flow" className="text-sm text-primary hover:underline">
+              Open full board →
+            </Link>
+          )}
         </div>
         <CarFlow jobs={jobCards.filter((j) => j.stage !== "delivered")} />
       </div>

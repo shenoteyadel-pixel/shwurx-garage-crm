@@ -103,6 +103,20 @@ export async function can(perm: Permission): Promise<boolean> {
 }
 
 /**
+ * Page/route guard. Ensures the user is authenticated staff and holds at least
+ * one of the given permissions; otherwise redirects to the Access Denied page.
+ * Use in section `layout.tsx` files.
+ */
+export async function requirePageAccess(anyOf: Permission[], label?: string): Promise<SessionContext> {
+  const ctx = await requireStaff()
+  if (!anyOf.some((p) => ctxCan(ctx, p))) {
+    const qs = label ? `?from=${encodeURIComponent(label)}` : ""
+    redirect(`/denied${qs}`)
+  }
+  return ctx
+}
+
+/**
  * Guard for server actions & privileged reads. Throws a typed error when the
  * user lacks the permission — callers surface this to the UI. Also writes a
  * denied entry to the audit log.

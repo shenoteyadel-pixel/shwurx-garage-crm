@@ -361,7 +361,7 @@ export async function createInvoice(payload: {
 }
 
 export async function recordInvoicePayment(invoiceId: string, formData: FormData) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user, ctx } = await guard("payments.record")
   const amount = num(formData.get("amount"))
   if (amount <= 0) throw new Error("Amount must be positive")
 
@@ -388,12 +388,13 @@ export async function recordInvoicePayment(invoiceId: string, formData: FormData
     .update({ amount_paid: paid, status, updated_at: new Date().toISOString() })
     .eq("id", invoiceId)
 
+  await logAction(ctx, "payment.record", "invoice", invoiceId, { amount })
   revalidatePath(`/invoices/${invoiceId}`)
   revalidatePath("/invoices")
 }
 
 export async function cancelInvoice(invoiceId: string) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("invoices.edit")
   await supabase.from("invoices").update({ status: "cancelled" }).eq("id", invoiceId)
   revalidatePath(`/invoices/${invoiceId}`)
   revalidatePath("/invoices")

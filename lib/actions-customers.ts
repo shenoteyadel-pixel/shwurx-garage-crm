@@ -6,6 +6,8 @@ import { redirect } from "next/navigation"
 import type { Stage } from "@/lib/constants"
 import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
+import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import type { Permission } from "@/lib/rbac/roles"
 
 async function requireUser() {
   const supabase = await createClient()
@@ -14,6 +16,12 @@ async function requireUser() {
   } = await supabase.auth.getUser()
   if (!user) redirect("/auth/login")
   return { supabase, user }
+}
+
+async function guard(perm: Permission): Promise<{ supabase: Awaited<ReturnType<typeof createClient>>; ctx: SessionContext; user: { id: string } }> {
+  const ctx = await requirePermission(perm)
+  const supabase = await createClient()
+  return { supabase, ctx, user: { id: ctx.userId } }
 }
 
 function genJobNumber() {
@@ -75,7 +83,7 @@ const CUSTOMER_FIELDS = [
 ] as const
 
 export async function createCustomer(fd: FormData) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user } = await guard("customers.create")
   const payload: Record<string, unknown> = { created_by: user.id }
   for (const f of CUSTOMER_FIELDS) payload[f] = s(fd, f)
   payload.full_name = s(fd, "full_name") || "Unnamed Customer"
@@ -88,7 +96,7 @@ export async function createCustomer(fd: FormData) {
 }
 
 export async function updateCustomer(id: string, fd: FormData) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("customers.edit")
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
   for (const f of CUSTOMER_FIELDS) if (fd.has(f)) patch[f] = s(fd, f)
   if (fd.has("status")) patch.status = String(fd.get("status") || "active")
@@ -118,7 +126,7 @@ export async function createCustomerInline(input: {
   trn?: string | null
   address?: string | null
 }) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user } = await guard("customers.create")
   const { data, error } = await supabase
     .from("customers")
     .insert({
@@ -198,7 +206,7 @@ function vehiclePayloadFromForm(fd: FormData) {
 }
 
 export async function createVehicle(fd: FormData) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user } = await guard("vehicles.create")
   const payload = vehiclePayloadFromForm(fd)
   payload.created_by = user.id
   payload.customer_id = s(fd, "customer_id")
@@ -238,7 +246,7 @@ export async function createVehicleInline(input: {
   vin?: string | null
   mileage?: number | null
 }) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user } = await guard("vehicles.create")
   const image = await resolveVehicleImage({
     make: input.make ?? null,
     model: input.model ?? null,
@@ -312,7 +320,7 @@ async function syncVehicleToJobs(
 }
 
 export async function updateVehicle(id: string, fd: FormData) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("vehicles.edit")
   const patch = vehiclePayloadFromForm(fd)
   patch.updated_at = new Date().toISOString()
   const { data: updated, error } = await supabase
@@ -333,7 +341,7 @@ export async function updateVehicle(id: string, fd: FormData) {
 
 // Re-resolve the cached reference image for a master vehicle.
 export async function refreshVehicleMasterImage(id: string) {
-  const { supabase } = await requireUser()
+  const { supabase } = await guard("vehicles.edit")
   const { data: v, error: readErr } = await supabase
     .from("vehicles")
     .select("make, model, year, color, variant")
@@ -373,12 +381,13 @@ export async function refreshVehicleMasterImage(id: string) {
 
 // Transfer a vehicle to another owner (used when a car is sold).
 export async function transferVehicleOwner(vehicleId: string, newCustomerId: string) {
-  const { supabase } = await requireUser()
+  const { supabase, ctx } = await guard("vehicles.transfer")
   const { error } = await supabase
     .from("vehicles")
     .update({ customer_id: newCustomerId, updated_at: new Date().toISOString() })
     .eq("id", vehicleId)
   if (error) throw new Error(error.message)
+  await logAction(ctx, "vehicle.transfer", "vehicle", vehicleId, { new_customer_id: newCustomerId })
   revalidatePath(`/vehicles/${vehicleId}`)
   revalidatePath("/customers")
 }
@@ -388,7 +397,7 @@ export async function transferVehicleOwner(vehicleId: string, newCustomerId: str
 // this with their ids. We snapshot the vehicle/customer fields onto the job so the
 // job card remains an accurate point-in-time document even if the master changes.
 export async function createJobFromMaster(fd: FormData) {
-  const { supabase, user } = await requireUser()
+  const { supabase, user, ctx } = await guard("jobs.create")
 
   const customerId = s(fd, "customer_id")
   const vehicleId = s(fd, "vehicle_id")
@@ -471,6 +480,7 @@ export async function createJobFromMaster(fd: FormData) {
   ]
   if (rows.length) await supabase.from("vehicle_photos").insert(rows)
 
+  await logAction(ctx, "job.create", "job", job.id, { job_number: payload.job_number })
   revalidatePath("/")
   revalidatePath(`/customers/${customerId}`)
   revalidatePath(`/vehicles/${vehicleId}`)

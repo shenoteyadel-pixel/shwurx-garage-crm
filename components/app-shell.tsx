@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { signOut } from "@/lib/actions"
+import { NotificationBell } from "@/components/notification-bell"
 import {
   LayoutDashboard,
   Package,
@@ -22,35 +23,43 @@ import {
   BarChart3,
   Settings,
   Users,
+  ShieldCheck,
 } from "lucide-react"
 
+// Each item declares the permissions that reveal it. `anyOf` = show when the
+// user has at least one. Items with no perms are shown to all staff.
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/flow", label: "Car Flow", icon: Workflow },
-  { href: "/jobs", label: "Job Cards", icon: Car },
-  { href: "/customers", label: "Customers", icon: Users },
-  { href: "/invoices", label: "Invoices", icon: FileText },
-  { href: "/parts", label: "Parts", icon: Package },
-  { href: "/purchasing", label: "Purchasing", icon: ShoppingCart },
-  { href: "/inventory", label: "Store / Inventory", icon: Warehouse },
-  { href: "/suppliers", label: "Suppliers", icon: Truck },
-  { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/settings", label: "Settings", icon: Settings },
-]
+  { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all"] },
+  { href: "/jobs", label: "Job Cards", icon: Car, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
+  { href: "/customers", label: "Customers", icon: Users, anyOf: ["customers.view"] },
+  { href: "/invoices", label: "Invoices", icon: FileText, anyOf: ["invoices.view"] },
+  { href: "/parts", label: "Parts", icon: Package, anyOf: ["parts.view"] },
+  { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, anyOf: ["purchase_orders.manage", "parts.view"] },
+  { href: "/inventory", label: "Store / Inventory", icon: Warehouse, anyOf: ["parts.view"] },
+  { href: "/suppliers", label: "Suppliers", icon: Truck, anyOf: ["parts.view"] },
+  { href: "/reports", label: "Reports", icon: BarChart3, anyOf: ["reports.view"] },
+  { href: "/users", label: "Users & Roles", icon: ShieldCheck, anyOf: ["users.manage", "permissions.manage"] },
+  { href: "/settings", label: "Settings", icon: Settings, anyOf: ["settings.manage"] },
+] as const
 
 export function AppShell({
   children,
   user,
 }: {
   children: React.ReactNode
-  user: { name: string; role: string }
+  user: { name: string; role: string; permissions?: string[] }
 }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const perms = new Set(user.permissions ?? [])
+  const has = (anyOf?: readonly string[]) => !anyOf || anyOf.some((p) => perms.has(p))
+  const canCreateJob = perms.has("jobs.create")
+  const visibleNav = NAV.filter((item) => has((item as { anyOf?: readonly string[] }).anyOf))
 
   const nav = (
     <nav className="flex flex-col gap-1">
-      {NAV.map((item) => {
+      {visibleNav.map((item) => {
         const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
         return (
           <Link
@@ -109,13 +118,16 @@ export function AppShell({
           <div className="lg:hidden">
             <Brand compact />
           </div>
-          <div className="ml-auto">
-            <Link
-              href="/jobs/new"
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
-            >
-              <Plus className="h-4 w-4" /> New Job Card
-            </Link>
+          <div className="ml-auto flex items-center gap-3">
+            <NotificationBell />
+            {canCreateJob && (
+              <Link
+                href="/jobs/new"
+                className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+              >
+                <Plus className="h-4 w-4" /> New Job Card
+              </Link>
+            )}
           </div>
         </header>
 

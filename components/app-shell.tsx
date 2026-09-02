@@ -5,13 +5,35 @@ import { usePathname } from "next/navigation"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { signOut } from "@/lib/actions"
-import { LayoutDashboard, Package, Plus, Wrench, LogOut, Menu, X, Car, Workflow } from "lucide-react"
+import {
+  LayoutDashboard,
+  Package,
+  Plus,
+  Wrench,
+  LogOut,
+  Menu,
+  X,
+  Car,
+  Workflow,
+  Truck,
+  Warehouse,
+  ShoppingCart,
+  FileText,
+  BarChart3,
+  Settings,
+} from "lucide-react"
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/flow", label: "Car Flow", icon: Workflow },
   { href: "/jobs", label: "Job Cards", icon: Car },
+  { href: "/invoices", label: "Invoices", icon: FileText },
   { href: "/parts", label: "Parts", icon: Package },
+  { href: "/purchasing", label: "Purchasing", icon: ShoppingCart },
+  { href: "/inventory", label: "Store / Inventory", icon: Warehouse },
+  { href: "/suppliers", label: "Suppliers", icon: Truck },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/settings", label: "Settings", icon: Settings },
 ]
 
 export function AppShell({

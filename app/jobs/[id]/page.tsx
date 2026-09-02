@@ -15,7 +15,19 @@ import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { RefreshVehicleImageButton } from "@/components/refresh-vehicle-image"
 import { STAGE_MAP, QC_STATUSES, canViewPrices, type Stage } from "@/lib/constants"
 import { formatDate } from "@/lib/utils"
-import { ArrowLeft, Phone, Gauge, Hash, Fingerprint, Palette, Car, CalendarClock } from "lucide-react"
+import {
+  ArrowLeft,
+  Phone,
+  Gauge,
+  Hash,
+  Fingerprint,
+  Palette,
+  Car,
+  CalendarClock,
+  FileText,
+  ReceiptText,
+  ShoppingCart,
+} from "lucide-react"
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -250,6 +262,34 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               customerName={job.customer_name}
               vehicle={vehicle}
             />
+          )}
+
+          {showPrices && (
+            <Card className="p-5">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Documents
+              </h2>
+              <div className="flex flex-col gap-2">
+                <Link
+                  href={`/jobs/${job.id}/quotation/print`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
+                >
+                  <FileText className="h-4 w-4 text-muted-foreground" /> Quotation PDF
+                </Link>
+                <Link
+                  href={`/invoices/new?job=${job.id}`}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                >
+                  <ReceiptText className="h-4 w-4" /> Create Invoice
+                </Link>
+                <Link
+                  href={`/purchasing/new?job=${job.id}`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
+                >
+                  <ShoppingCart className="h-4 w-4 text-muted-foreground" /> Raise Purchase Order
+                </Link>
+              </div>
+            </Card>
           )}
 
           {job.approval_comment && (

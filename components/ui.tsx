@@ -36,6 +36,37 @@ export function Button({ className, variant = "primary", size = "md", ...props }
   )
 }
 
+/* ---------------- Button aliases (convenience wrappers) ---------------- */
+export function PrimaryButton(props: ButtonProps) {
+  return <Button variant="primary" {...props} />
+}
+export function GhostButton({ size = "sm", ...props }: ButtonProps) {
+  return <Button variant="outline" size={size} {...props} />
+}
+
+/* ---------------- Field (label + control wrapper) ---------------- */
+export function Field({
+  label,
+  htmlFor,
+  hint,
+  className,
+  children,
+}: {
+  label?: string
+  htmlFor?: string
+  hint?: string
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      {label ? <Label htmlFor={htmlFor}>{label}</Label> : null}
+      {children}
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
+  )
+}
+
 /* ---------------- Input ---------------- */
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   function Input({ className, ...props }, ref) {

@@ -1,15 +1,13 @@
 import { createClient } from "@/lib/supabase/server"
-import { redirect } from "next/navigation"
+import { getShellUser } from "@/lib/shell-user"
+import { AppShell } from "@/components/app-shell"
 import { SuppliersClient } from "@/components/suppliers-client"
 
 export const metadata = { title: "Suppliers · SHWURX Garage" }
 
 export default async function SuppliersPage() {
+  const user = await getShellUser()
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect("/auth/login")
 
   const { data: suppliers } = await supabase.from("suppliers").select("*").order("name")
   const { data: pos } = await supabase
@@ -38,8 +36,10 @@ export default async function SuppliersPage() {
   })
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <SuppliersClient suppliers={rows} />
-    </div>
+    <AppShell user={user}>
+      <div className="mx-auto max-w-6xl">
+        <SuppliersClient suppliers={rows} />
+      </div>
+    </AppShell>
   )
 }

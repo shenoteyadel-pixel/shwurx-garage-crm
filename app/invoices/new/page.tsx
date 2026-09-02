@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
-import { redirect } from "next/navigation"
+import { getShellUser } from "@/lib/shell-user"
+import { AppShell } from "@/components/app-shell"
 import { InvoiceForm } from "@/components/invoice-form"
 import { VAT_RATE } from "@/lib/constants"
 
@@ -11,11 +12,8 @@ export default async function NewInvoicePage({
   searchParams: Promise<{ job?: string }>
 }) {
   const { job } = await searchParams
+  const user = await getShellUser()
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect("/auth/login")
 
   const { data: jobs } = await supabase
     .from("jobs")
@@ -65,9 +63,11 @@ export default async function NewInvoicePage({
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <h1 className="mb-6 text-2xl font-bold tracking-tight">New Invoice</h1>
-      <InvoiceForm jobs={jobs ?? []} prefill={prefill} defaultVat={VAT_RATE} />
-    </div>
+    <AppShell user={user}>
+      <div className="mx-auto max-w-4xl">
+        <h1 className="mb-6 text-2xl font-bold tracking-tight">New Invoice</h1>
+        <InvoiceForm jobs={jobs ?? []} prefill={prefill} defaultVat={VAT_RATE} />
+      </div>
+    </AppShell>
   )
 }

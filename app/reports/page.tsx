@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
-import { redirect } from "next/navigation"
+import { getShellUser } from "@/lib/shell-user"
+import { AppShell } from "@/components/app-shell"
 import { ReportsClient } from "@/components/reports-client"
 
 export const metadata = { title: "Reports · SHWURX Garage" }
@@ -18,11 +19,8 @@ export default async function ReportsPage({
   searchParams: Promise<{ from?: string; to?: string }>
 }) {
   const sp = await searchParams
+  const shellUser = await getShellUser()
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect("/auth/login")
 
   const def = monthRange()
   const from = sp.from || def.from
@@ -69,7 +67,8 @@ export default async function ReportsPage({
   const grossProfit = salesSubtotal - purchaseSubtotal
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <AppShell user={shellUser}>
+      <div className="mx-auto max-w-6xl">
       <ReportsClient
         from={from}
         to={to}
@@ -94,6 +93,7 @@ export default async function ReportsPage({
         invoices={inv as any[]}
         purchases={purchases as any[]}
       />
-    </div>
+      </div>
+    </AppShell>
   )
 }

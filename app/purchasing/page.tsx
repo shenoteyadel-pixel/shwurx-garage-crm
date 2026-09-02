@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
-import { redirect } from "next/navigation"
+import { getShellUser } from "@/lib/shell-user"
+import { AppShell } from "@/components/app-shell"
 import { Card, Button, Badge } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { Plus, ShoppingCart } from "lucide-react"
@@ -20,11 +21,8 @@ export default async function PurchasingPage({
   searchParams: Promise<{ supplier?: string }>
 }) {
   const { supplier } = await searchParams
+  const user = await getShellUser()
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect("/auth/login")
 
   let query = supabase
     .from("purchase_orders")
@@ -39,7 +37,8 @@ export default async function PurchasingPage({
   )
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <AppShell user={user}>
+      <div className="mx-auto max-w-6xl">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Purchasing</h1>
@@ -107,6 +106,7 @@ export default async function PurchasingPage({
           </div>
         </Card>
       )}
-    </div>
+      </div>
+    </AppShell>
   )
 }

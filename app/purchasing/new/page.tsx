@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
-import { redirect } from "next/navigation"
+import { getShellUser } from "@/lib/shell-user"
+import { AppShell } from "@/components/app-shell"
 import { PurchaseOrderForm } from "@/components/purchase-order-form"
 
 export const metadata = { title: "New Purchase Order · SHWURX Garage" }
@@ -10,11 +11,8 @@ export default async function NewPOPage({
   searchParams: Promise<{ supplier?: string; job?: string }>
 }) {
   const { supplier, job } = await searchParams
+  const user = await getShellUser()
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect("/auth/login")
 
   const [{ data: suppliers }, { data: items }, { data: jobs }] = await Promise.all([
     supabase.from("suppliers").select("id, name").order("name"),
@@ -23,15 +21,17 @@ export default async function NewPOPage({
   ])
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <h1 className="mb-6 text-2xl font-bold tracking-tight">New Purchase Order</h1>
-      <PurchaseOrderForm
-        suppliers={suppliers ?? []}
-        items={items ?? []}
-        jobs={jobs ?? []}
-        defaultSupplier={supplier ?? null}
-        defaultJob={job ?? null}
-      />
-    </div>
+    <AppShell user={user}>
+      <div className="mx-auto max-w-4xl">
+        <h1 className="mb-6 text-2xl font-bold tracking-tight">New Purchase Order</h1>
+        <PurchaseOrderForm
+          suppliers={suppliers ?? []}
+          items={items ?? []}
+          jobs={jobs ?? []}
+          defaultSupplier={supplier ?? null}
+          defaultJob={job ?? null}
+        />
+      </div>
+    </AppShell>
   )
 }

@@ -1,6 +1,8 @@
 import Link from "next/link"
-import { notFound, redirect } from "next/navigation"
+import { notFound } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { getShellUser } from "@/lib/shell-user"
+import { AppShell } from "@/components/app-shell"
 import { Card, Badge } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { InvoiceActions } from "@/components/invoice-actions"
@@ -16,11 +18,8 @@ const STATUS: Record<string, string> = {
 
 export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const user = await getShellUser()
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect("/auth/login")
 
   const { data: inv } = await supabase
     .from("invoices")
@@ -34,7 +33,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   const balance = (Number(inv.total) || 0) - (Number(inv.amount_paid) || 0)
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <AppShell user={user}>
+      <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <Link href="/invoices" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Invoices
@@ -126,7 +126,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
       )}
 
       <InvoiceActions invoiceId={id} status={inv.status} balance={balance} />
-    </div>
+      </div>
+    </AppShell>
   )
 }
 

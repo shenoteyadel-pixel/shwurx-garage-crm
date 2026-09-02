@@ -1,15 +1,13 @@
 import { createClient } from "@/lib/supabase/server"
-import { redirect } from "next/navigation"
+import { getShellUser } from "@/lib/shell-user"
+import { AppShell } from "@/components/app-shell"
 import { InventoryClient } from "@/components/inventory-client"
 
 export const metadata = { title: "Store & Inventory · SHWURX Garage" }
 
 export default async function InventoryPage() {
+  const user = await getShellUser()
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect("/auth/login")
 
   const [{ data: items }, { data: suppliers }, { data: movements }] = await Promise.all([
     supabase.from("inventory_items").select("*").order("name"),
@@ -22,12 +20,14 @@ export default async function InventoryPage() {
   ])
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <InventoryClient
-        items={items ?? []}
-        suppliers={suppliers ?? []}
-        movements={(movements ?? []) as any[]}
-      />
-    </div>
+    <AppShell user={user}>
+      <div className="mx-auto max-w-6xl">
+        <InventoryClient
+          items={items ?? []}
+          suppliers={suppliers ?? []}
+          movements={(movements ?? []) as any[]}
+        />
+      </div>
+    </AppShell>
   )
 }

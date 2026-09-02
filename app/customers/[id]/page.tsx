@@ -7,6 +7,7 @@ import { Card, Badge, Button } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { STAGES } from "@/lib/constants"
 import { BrandLogo } from "@/components/vehicle-visual"
+import { PortalLinkButton } from "@/components/portal-link-button"
 import { ArrowLeft, Pencil, Plus, Phone, Mail, Building2, Car, FileText, ReceiptText, Wrench } from "lucide-react"
 
 export const metadata = { title: "Customer · SHWURX Garage" }
@@ -95,16 +96,21 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             </div>
           </div>
           <div className="flex gap-2">
-            <Link href={`/customers/${id}/edit`}>
-              <Button variant="outline" size="sm">
-                <Pencil className="h-4 w-4" /> Edit
-              </Button>
-            </Link>
-            <Link href={`/jobs/new?customer=${id}`}>
-              <Button size="sm">
-                <Plus className="h-4 w-4" /> New Job Card
-              </Button>
-            </Link>
+            {user.permissions.includes("customers.edit") && <PortalLinkButton customerId={id} />}
+            {user.permissions.includes("customers.edit") && (
+              <Link href={`/customers/${id}/edit`}>
+                <Button variant="outline" size="sm">
+                  <Pencil className="h-4 w-4" /> Edit
+                </Button>
+              </Link>
+            )}
+            {user.permissions.includes("jobs.create") && (
+              <Link href={`/jobs/new?customer=${id}`}>
+                <Button size="sm">
+                  <Plus className="h-4 w-4" /> New Job Card
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 

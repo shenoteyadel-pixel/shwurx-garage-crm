@@ -8,6 +8,7 @@ import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
+import { notifyUser, notifyByPermission } from "@/lib/actions-notifications"
 
 async function requireUser() {
   const supabase = await createClient()
@@ -199,6 +200,15 @@ export async function assignStaff(jobId: string, field: "advisor_id" | "technici
     .eq("id", jobId)
   if (error) throw new Error(error.message)
   await logAction(ctx, "job.assign", "job", jobId, { field, value: value || null })
+  if (value && field === "technician_id") {
+    const { data: job } = await supabase.from("jobs").select("job_number").eq("id", jobId).maybeSingle()
+    await notifyUser(value, {
+      title: "New job assigned to you",
+      body: `You have been assigned to job ${job?.job_number ?? jobId.slice(0, 8)}.`,
+      type: "assignment",
+      link: `/jobs/${jobId}`,
+    })
+  }
   revalidatePath(`/jobs/${jobId}`)
 }
 
@@ -379,6 +389,12 @@ export async function addPart(jobId: string, formData: FormData) {
     status: "required",
   })
   if (error) throw new Error(error.message)
+  await notifyByPermission("parts.manage", {
+    title: "New parts request",
+    body: `${String(formData.get("part_name") || "A part")} requested for a job.`,
+    type: "parts",
+    link: `/jobs/${jobId}`,
+  })
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/parts")
 }

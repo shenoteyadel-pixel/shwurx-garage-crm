@@ -46,19 +46,16 @@ function pickImageUrl(json: unknown): string | null {
       if (typeof candidate === "string" && /^https?:\/\//.test(candidate)) urls.push(candidate)
     }
   }
-  // Drop obvious non-vehicle junk (parts/accessories/logos) that sometimes rank in.
-  const JUNK =
-    /coilover|wheel|rim|tyre|tire|brake|spoiler|logo|badge|keychain|part|accessor|shopify|d2racing|\/promo\/|promotion|banner|dealer-?logo|coming[-_]?soon|comingsoon|no[-_]?image|placeholder|photo.?coming/i
-  // If every candidate is junk/placeholder, return null so the caller falls
-  // back to the clean SVG silhouette instead of showing a "Coming Soon" banner.
-  urls = urls.filter((u) => !JUNK.test(u))
   if (!urls.length) return null
-  // Prefer clean studio/stock renders (EVOX/Capital One, cstatic, netcarshow,
-  // stock media). Otherwise trust CarsXE's own ranking and take the first.
-  const studio = urls.find((u) =>
-    /autoimage\.capitalone\.com|\/evox\/|stock-media|stock_photos|cstatic-images|netcarshow/i.test(u),
-  )
-  return studio ?? urls[0]
+  // Allowlist of hosts that reliably serve clean, text-free studio renders on a
+  // plain background. Dealer marketing sites (sm360, etc.) often overlay promo
+  // text/banners, so we only accept known-good studio sources. If none are
+  // present we return null and let the caller fall back to the SVG silhouette —
+  // a correct silhouette beats a wrong or banner-covered photo.
+  const TRUSTED =
+    /autoimage\.capitalone\.com|\/evox\/|stock-media|stock_photos|cstatic-images|netcarshow|vehicle-images\.dealerinspire\.com/i
+  const trusted = urls.find((u) => TRUSTED.test(u))
+  return trusted ?? null
 }
 
 /**

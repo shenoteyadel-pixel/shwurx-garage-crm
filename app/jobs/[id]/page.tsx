@@ -7,6 +7,8 @@ import { StageStepper } from "@/components/stage-stepper"
 import { QuotationBuilder } from "@/components/quotation-builder"
 import { PartsManager } from "@/components/parts-manager"
 import { ApprovalSender } from "@/components/approval-sender"
+import { ApprovalsPanel } from "@/components/approvals-panel"
+import { getJobApprovals } from "@/lib/actions-approvals"
 import { JobPhotos } from "@/components/job-photos"
 import { StaffAssign } from "@/components/staff-assign"
 import { JobCustomerAccess } from "@/components/job-customer-access"
@@ -28,6 +30,7 @@ import {
   FileText,
   ReceiptText,
   ShoppingCart,
+  FolderOpen,
 } from "lucide-react"
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -54,12 +57,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const { data: quotation } = await supabase
     .from("quotations")
     .select(
-      "id, vat_rate, description, internal_notes, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount)",
+      "id, vat_rate, vat_inclusive, description, internal_notes, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, category, recommendation, sort_order)",
     )
     .eq("job_id", id)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  const approvals = await getJobApprovals(id)
 
   const { data: parts } = await supabase
     .from("parts_requests")
@@ -97,7 +102,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const vehicle =
     [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
 
-  const rawItems = quotation?.quotation_items ?? []
+  const rawItems = [...(quotation?.quotation_items ?? [])].sort(
+    (a: any, b: any) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0),
+  )
   const quoteItems =
     rawItems.map((i: any) => ({
       kind: (i.kind === "labor" || i.kind === "service" ? "labor" : "part") as "part" | "labor",
@@ -109,6 +116,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       labour_hours: Number(i.labour_hours ?? 0),
       labour_rate: Number(i.labour_rate ?? 0),
       discount: Number(i.discount ?? 0),
+      category: i.category || "",
+      recommendation: (i.recommendation || "required") as "required" | "recommended" | "optional",
     })) ?? []
 
   const role = profile?.role || "advisor"
@@ -212,6 +221,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 jobId={job.id}
                 initialItems={quoteItems}
                 initialVat={Number(quotation?.vat_rate ?? 5)}
+                initialVatInclusive={Boolean(quotation?.vat_inclusive)}
                 initialDescription={quotation?.description ?? ""}
                 initialInternalNotes={quotation?.internal_notes ?? ""}
                 hasQuotation={!!quotation}
@@ -301,6 +311,16 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           {job.customer_id && <JobCustomerAccess jobId={job.id} />}
 
           {showPrices && (
+            <ApprovalsPanel
+              jobId={job.id}
+              approvals={approvals}
+              hasQuotation={!!quotation}
+              vatRate={Number(quotation?.vat_rate ?? 5)}
+              vatInclusive={Boolean(quotation?.vat_inclusive)}
+            />
+          )}
+
+          {showPrices && (
             <ApprovalSender
               jobId={job.id}
               token={job.approval_token}
@@ -317,6 +337,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 Documents
               </h2>
               <div className="flex flex-col gap-2">
+                <Link
+                  href={`/jobs/${job.id}/documents`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
+                >
+                  <FolderOpen className="h-4 w-4 text-muted-foreground" /> Document Center
+                </Link>
                 <Link
                   href={`/jobs/${job.id}/quotation/print`}
                   className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"

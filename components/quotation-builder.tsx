@@ -5,7 +5,9 @@ import { saveQuotation, type QuoteItemInput } from "@/lib/actions"
 import { Button, Card, Input, AutoTextarea, Label } from "@/components/ui"
 import { VAT_RATE } from "@/lib/constants"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Trash2, Save, Pencil, Printer, FileText, X, Lock, Wrench, Package } from "lucide-react"
+import { Plus, Trash2, Save, Pencil, Printer, FileText, X, Lock, Wrench, Package, Tag } from "lucide-react"
+
+export type Recommendation = "required" | "recommended" | "optional"
 
 export type Item = {
   kind: "part" | "labor"
@@ -17,6 +19,31 @@ export type Item = {
   labour_hours: number
   labour_rate: number
   discount: number
+  category: string
+  recommendation: Recommendation
+}
+
+export const RECOMMENDATIONS: { value: Recommendation; label: string; chip: string }[] = [
+  { value: "required", label: "Required", chip: "border-red-500/30 bg-red-500/10 text-red-300" },
+  { value: "recommended", label: "Recommended", chip: "border-amber-500/30 bg-amber-500/10 text-amber-300" },
+  { value: "optional", label: "Optional", chip: "border-sky-500/30 bg-sky-500/10 text-sky-300" },
+]
+
+export const CATEGORY_SUGGESTIONS = [
+  "Engine",
+  "Brakes",
+  "Suspension & Steering",
+  "Electrical",
+  "Air Conditioning",
+  "Transmission",
+  "Tyres & Wheels",
+  "Body & Paint",
+  "Diagnostics",
+  "General Service",
+]
+
+function recMeta(r: Recommendation) {
+  return RECOMMENDATIONS.find((x) => x.value === r) ?? RECOMMENDATIONS[0]
 }
 
 function emptyItem(kind: Item["kind"]): Item {
@@ -30,6 +57,8 @@ function emptyItem(kind: Item["kind"]): Item {
     labour_hours: 0,
     labour_rate: 0,
     discount: 0,
+    category: "",
+    recommendation: "required",
   }
 }
 
@@ -46,12 +75,30 @@ function lineBase(i: Item) {
   return Math.max(0, lineGross(i) - (Number(i.discount) || 0))
 }
 
-function totals(items: Item[], vat: number) {
-  const partsTotal = items.filter((i) => i.kind === "part").reduce((s, i) => s + lineGross(i), 0)
-  const laborTotal = items.filter((i) => i.kind === "labor").reduce((s, i) => s + lineGross(i), 0)
+// VAT-exclusive: base is the taxable net, VAT added on top.
+// VAT-inclusive: base already contains VAT, so back-calculate the net + VAT portion.
+function lineParts(i: Item, vat: number, inclusive: boolean) {
+  const base = lineBase(i)
+  if (inclusive) {
+    const net = base / (1 + vat / 100)
+    return { net, vat: base - net, total: base }
+  }
+  const v = (base * vat) / 100
+  return { net: base, vat: v, total: base + v }
+}
+
+function totals(items: Item[], vat: number, inclusive = false) {
   const discountTotal = items.reduce((s, i) => s + (Number(i.discount) || 0), 0)
-  const subtotal = partsTotal + laborTotal - discountTotal
-  const vatAmount = items.reduce((s, i) => s + (lineBase(i) * vat) / 100, 0)
+  let partsTotal = 0
+  let laborTotal = 0
+  let vatAmount = 0
+  for (const i of items) {
+    const { net, vat: v } = lineParts(i, vat, inclusive)
+    if (i.kind === "part") partsTotal += net
+    else laborTotal += net
+    vatAmount += v
+  }
+  const subtotal = partsTotal + laborTotal
   const total = subtotal + vatAmount
   return { partsTotal, laborTotal, discountTotal, subtotal, vatAmount, total }
 }
@@ -60,6 +107,7 @@ export function QuotationBuilder({
   jobId,
   initialItems,
   initialVat,
+  initialVatInclusive = false,
   initialDescription,
   initialInternalNotes,
   hasQuotation,
@@ -69,6 +117,7 @@ export function QuotationBuilder({
   jobId: string
   initialItems: Item[]
   initialVat: number
+  initialVatInclusive?: boolean
   initialDescription: string
   initialInternalNotes: string
   hasQuotation: boolean
@@ -77,10 +126,11 @@ export function QuotationBuilder({
 }) {
   const [open, setOpen] = React.useState(false)
   const vat = initialVat || VAT_RATE
+  const inclusive = initialVatInclusive
 
   const parts = initialItems.filter((i) => i.kind === "part")
   const labour = initialItems.filter((i) => i.kind === "labor")
-  const t = totals(initialItems, vat)
+  const t = totals(initialItems, vat, inclusive)
 
   return (
     <Card className="p-5">
@@ -131,7 +181,7 @@ export function QuotationBuilder({
           {parts.length > 0 && (
             <SummarySection icon={<Package className="h-4 w-4" />} title="Parts">
               {parts.map((it, idx) => (
-                <SummaryLine key={idx} it={it} vat={vat} />
+                <SummaryLine key={idx} it={it} vat={vat} inclusive={inclusive} />
               ))}
             </SummarySection>
           )}
@@ -139,7 +189,7 @@ export function QuotationBuilder({
           {labour.length > 0 && (
             <SummarySection icon={<Wrench className="h-4 w-4" />} title="Labour / Services">
               {labour.map((it, idx) => (
-                <SummaryLine key={idx} it={it} vat={vat} />
+                <SummaryLine key={idx} it={it} vat={vat} inclusive={inclusive} />
               ))}
             </SummarySection>
           )}
@@ -147,13 +197,19 @@ export function QuotationBuilder({
           <div className="space-y-1.5 border-t border-border pt-4 text-sm">
             <SummaryRow label="Parts subtotal" value={formatCurrency(t.partsTotal)} />
             <SummaryRow label="Labour subtotal" value={formatCurrency(t.laborTotal)} />
-            {t.discountTotal > 0 && <SummaryRow label="Discount" value={`− ${formatCurrency(t.discountTotal)}`} />}
-            <SummaryRow label="Subtotal" value={formatCurrency(t.subtotal)} />
-            <SummaryRow label={`VAT (${vat}%)`} value={formatCurrency(t.vatAmount)} />
+            {t.discountTotal > 0 && <SummaryRow label="Discount applied" value={`− ${formatCurrency(t.discountTotal)}`} />}
+            <SummaryRow label="Subtotal (excl. VAT)" value={formatCurrency(t.subtotal)} />
+            <SummaryRow
+              label={`VAT (${vat}%)${inclusive ? " — included" : ""}`}
+              value={formatCurrency(t.vatAmount)}
+            />
             <div className="flex items-center justify-between border-t border-border pt-2 text-base font-bold">
               <span>Grand total</span>
               <span className="tabular-nums text-primary">{formatCurrency(t.total)}</span>
             </div>
+            <p className="pt-1 text-[11px] text-muted-foreground">
+              Prices are VAT-{inclusive ? "inclusive" : "exclusive"}.
+            </p>
           </div>
 
           {initialInternalNotes && (
@@ -172,6 +228,7 @@ export function QuotationBuilder({
           jobId={jobId}
           initialItems={initialItems}
           initialVat={vat}
+          initialVatInclusive={inclusive}
           initialDescription={initialDescription}
           initialInternalNotes={initialInternalNotes}
           onClose={() => setOpen(false)}
@@ -200,9 +257,9 @@ function SummarySection({
   )
 }
 
-function SummaryLine({ it, vat }: { it: Item; vat: number }) {
-  const base = lineBase(it)
-  const lineVat = (base * vat) / 100
+function SummaryLine({ it, vat, inclusive }: { it: Item; vat: number; inclusive: boolean }) {
+  const { vat: lineVat, total } = lineParts(it, vat, inclusive)
+  const rec = recMeta(it.recommendation)
   return (
     <div className="rounded-lg border border-border bg-background/40 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -214,12 +271,17 @@ function SummaryLine({ it, vat }: { it: Item; vat: number }) {
                 #{it.part_number}
               </span>
             )}
+            {it.recommendation !== "required" && (
+              <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${rec.chip}`}>
+                {rec.label}
+              </span>
+            )}
           </div>
           {it.detail && (
             <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{it.detail}</p>
           )}
         </div>
-        <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(base + lineVat)}</span>
+        <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(total)}</span>
       </div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         {it.kind === "part" ? (
@@ -234,7 +296,7 @@ function SummaryLine({ it, vat }: { it: Item; vat: number }) {
           </>
         )}
         {it.discount > 0 && <span className="text-amber-400">− {formatCurrency(it.discount)}</span>}
-        <span>VAT {formatCurrency(lineVat)}</span>
+        <span>VAT {formatCurrency(lineVat)}{inclusive ? " (incl.)" : ""}</span>
       </div>
     </div>
   )
@@ -254,6 +316,7 @@ function QuotationEditor({
   jobId,
   initialItems,
   initialVat,
+  initialVatInclusive,
   initialDescription,
   initialInternalNotes,
   onClose,
@@ -261,6 +324,7 @@ function QuotationEditor({
   jobId: string
   initialItems: Item[]
   initialVat: number
+  initialVatInclusive: boolean
   initialDescription: string
   initialInternalNotes: string
   onClose: () => void
@@ -268,6 +332,7 @@ function QuotationEditor({
   const [description, setDescription] = React.useState(initialDescription)
   const [internalNotes, setInternalNotes] = React.useState(initialInternalNotes)
   const [vat, setVat] = React.useState(initialVat)
+  const [inclusive, setInclusive] = React.useState(initialVatInclusive)
   const [items, setItems] = React.useState<Item[]>(
     initialItems.length ? initialItems : [emptyItem("part"), emptyItem("labor")],
   )
@@ -283,7 +348,7 @@ function QuotationEditor({
     }
   }, [onClose])
 
-  const t = totals(items, vat)
+  const t = totals(items, vat, inclusive)
 
   function update(id: number, patch: Partial<Item>) {
     setItems((prev) => prev.map((it, i) => (i === id ? { ...it, ...patch } : it)))
@@ -302,6 +367,7 @@ function QuotationEditor({
         description,
         internalNotes,
         vatRate: vat,
+        vatInclusive: inclusive,
         items: items
           .filter((i) => i.name.trim() || i.detail.trim() || lineGross(i) > 0)
           .map<QuoteItemInput>((i) => ({
@@ -314,6 +380,8 @@ function QuotationEditor({
             labour_hours: Number(i.labour_hours) || 0,
             labour_rate: Number(i.labour_rate) || 0,
             discount: Number(i.discount) || 0,
+            category: i.category?.trim() || undefined,
+            recommendation: i.recommendation,
           })),
       })
       onClose()
@@ -382,6 +450,7 @@ function QuotationEditor({
                     key={index}
                     it={it}
                     vat={vat}
+                    inclusive={inclusive}
                     onChange={(patch) => update(index, patch)}
                     onRemove={() => remove(index)}
                   />
@@ -413,6 +482,7 @@ function QuotationEditor({
                     key={index}
                     it={it}
                     vat={vat}
+                    inclusive={inclusive}
                     onChange={(patch) => update(index, patch)}
                     onRemove={() => remove(index)}
                   />
@@ -449,11 +519,41 @@ function QuotationEditor({
           <aside className="lg:col-span-1">
             <div className="sticky top-0 space-y-4 rounded-xl border border-border bg-card p-5">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Summary</h3>
+
+              {/* VAT mode toggle */}
+              <div className="rounded-lg border border-border bg-background/50 p-1">
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setInclusive(false)}
+                    className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                      !inclusive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
+                    }`}
+                  >
+                    VAT exclusive
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInclusive(true)}
+                    className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                      inclusive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
+                    }`}
+                  >
+                    VAT inclusive
+                  </button>
+                </div>
+                <p className="px-1 pb-0.5 pt-1.5 text-[10px] leading-snug text-muted-foreground">
+                  {inclusive
+                    ? "Entered prices already include VAT. VAT is calculated out of the total."
+                    : "Entered prices are before VAT. VAT is added on top."}
+                </p>
+              </div>
+
               <div className="space-y-1.5 text-sm">
                 <SummaryRow label="Parts subtotal" value={formatCurrency(t.partsTotal)} />
                 <SummaryRow label="Labour subtotal" value={formatCurrency(t.laborTotal)} />
-                {t.discountTotal > 0 && <SummaryRow label="Discount" value={`− ${formatCurrency(t.discountTotal)}`} />}
-                <SummaryRow label="Subtotal" value={formatCurrency(t.subtotal)} />
+                {t.discountTotal > 0 && <SummaryRow label="Discount applied" value={`− ${formatCurrency(t.discountTotal)}`} />}
+                <SummaryRow label="Subtotal (excl. VAT)" value={formatCurrency(t.subtotal)} />
               </div>
               <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -489,16 +589,17 @@ function QuotationEditor({
 function PartRow({
   it,
   vat,
+  inclusive,
   onChange,
   onRemove,
 }: {
   it: Item
   vat: number
+  inclusive: boolean
   onChange: (patch: Partial<Item>) => void
   onRemove: () => void
 }) {
-  const base = lineBase(it)
-  const lineVat = (base * vat) / 100
+  const { vat: lineVat, total } = lineParts(it, vat, inclusive)
   return (
     <div className="rounded-xl border border-border bg-card/60 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -517,6 +618,8 @@ function PartRow({
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
+
+      <CategoryRecoRow it={it} onChange={onChange} />
 
       <div className="mb-3 grid gap-3 sm:grid-cols-2">
         <div>
@@ -542,11 +645,16 @@ function PartRow({
 
       <div className="grid grid-cols-3 gap-3">
         <NumField label="Quantity" value={it.quantity} step="1" onChange={(v) => onChange({ quantity: v })} />
-        <NumField label="Unit price" value={it.unit_price} step="0.01" onChange={(v) => onChange({ unit_price: v })} />
+        <NumField
+          label={`Unit price${inclusive ? " (incl.)" : ""}`}
+          value={it.unit_price}
+          step="0.01"
+          onChange={(v) => onChange({ unit_price: v })}
+        />
         <NumField label="Discount" value={it.discount} step="0.01" onChange={(v) => onChange({ discount: v })} />
       </div>
 
-      <LineFooter vat={vat} lineVat={lineVat} total={base + lineVat} />
+      <LineFooter vat={vat} lineVat={lineVat} total={total} inclusive={inclusive} />
     </div>
   )
 }
@@ -555,16 +663,17 @@ function PartRow({
 function LabourRow({
   it,
   vat,
+  inclusive,
   onChange,
   onRemove,
 }: {
   it: Item
   vat: number
+  inclusive: boolean
   onChange: (patch: Partial<Item>) => void
   onRemove: () => void
 }) {
-  const base = lineBase(it)
-  const lineVat = (base * vat) / 100
+  const { vat: lineVat, total } = lineParts(it, vat, inclusive)
   return (
     <div className="rounded-xl border border-border bg-card/60 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -584,6 +693,8 @@ function LabourRow({
         </button>
       </div>
 
+      <CategoryRecoRow it={it} onChange={onChange} />
+
       <div className="mb-3">
         <Label>Detailed work description</Label>
         <AutoTextarea
@@ -601,23 +712,83 @@ function LabourRow({
           step="0.5"
           onChange={(v) => onChange({ labour_hours: v })}
         />
-        <NumField label="Labour rate" value={it.labour_rate} step="0.01" onChange={(v) => onChange({ labour_rate: v })} />
+        <NumField
+          label={`Labour rate${inclusive ? " (incl.)" : ""}`}
+          value={it.labour_rate}
+          step="0.01"
+          onChange={(v) => onChange({ labour_rate: v })}
+        />
         <NumField label="Discount" value={it.discount} step="0.01" onChange={(v) => onChange({ discount: v })} />
       </div>
       <p className="mt-1.5 text-[11px] text-muted-foreground">
         If hours are set, the line = hours × rate. Leave hours at 0 to use the rate as a flat labour charge.
       </p>
 
-      <LineFooter vat={vat} lineVat={lineVat} total={base + lineVat} />
+      <LineFooter vat={vat} lineVat={lineVat} total={total} inclusive={inclusive} />
     </div>
   )
 }
 
-function LineFooter({ vat, lineVat, total }: { vat: number; lineVat: number; total: number }) {
+function CategoryRecoRow({ it, onChange }: { it: Item; onChange: (patch: Partial<Item>) => void }) {
+  const listId = React.useId()
+  return (
+    <div className="mb-3 grid gap-3 sm:grid-cols-2">
+      <div>
+        <Label className="flex items-center gap-1.5">
+          <Tag className="h-3 w-3" /> Category
+        </Label>
+        <Input
+          value={it.category}
+          onChange={(e) => onChange({ category: e.target.value })}
+          placeholder="e.g. Brakes"
+          list={listId}
+          className="h-9"
+        />
+        <datalist id={listId}>
+          {CATEGORY_SUGGESTIONS.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+      </div>
+      <div>
+        <Label>Recommendation</Label>
+        <div className="flex gap-1">
+          {RECOMMENDATIONS.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              onClick={() => onChange({ recommendation: r.value })}
+              className={`flex-1 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                it.recommendation === r.value
+                  ? r.chip
+                  : "border-border text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LineFooter({
+  vat,
+  lineVat,
+  total,
+  inclusive,
+}: {
+  vat: number
+  lineVat: number
+  total: number
+  inclusive: boolean
+}) {
   return (
     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-sm">
       <span className="text-muted-foreground">
-        VAT ({vat}%): <span className="tabular-nums text-foreground">{formatCurrency(lineVat)}</span>
+        VAT ({vat}%){inclusive ? " incl." : ""}:{" "}
+        <span className="tabular-nums text-foreground">{formatCurrency(lineVat)}</span>
       </span>
       <span className="font-semibold">
         Line total: <span className="tabular-nums text-primary">{formatCurrency(total)}</span>

@@ -273,6 +273,8 @@ export type QuoteItemInput = {
   labour_hours: number
   labour_rate: number
   discount: number
+  category?: string
+  recommendation?: "required" | "recommended" | "optional"
 }
 
 export async function saveQuotation(
@@ -281,16 +283,20 @@ export async function saveQuotation(
     description: string
     internalNotes: string
     vatRate: number
+    vatInclusive?: boolean
     items: QuoteItemInput[]
   },
 ) {
   const { supabase } = await guard("quotations.create")
 
   const vatRate = Number.isFinite(payload.vatRate) ? payload.vatRate : VAT_RATE
+  const vatInclusive = Boolean(payload.vatInclusive)
   const items = payload.items
 
   // Per-line computation. Parts use qty*unit_price; labour uses hours*rate (or a flat rate).
-  const computed = items.map((i) => {
+  // VAT-exclusive: entered prices are pre-VAT, VAT is added on top.
+  // VAT-inclusive: entered prices already contain VAT, back-calculate the taxable base.
+  const computed = items.map((i, idx) => {
     const qty = Number(i.quantity) || 0
     const unit = Number(i.unit_price) || 0
     const hours = Number(i.labour_hours) || 0
@@ -298,7 +304,19 @@ export async function saveQuotation(
     const discount = Number(i.discount) || 0
     const gross = i.kind === "labor" ? (hours > 0 ? hours * rate : rate) : qty * unit
     const base = Math.max(0, gross - discount)
-    const vat = (base * vatRate) / 100
+    let net: number
+    let vat: number
+    let lineTotal: number
+    if (vatInclusive) {
+      // `base` is VAT-inclusive
+      lineTotal = base
+      net = base / (1 + vatRate / 100)
+      vat = base - net
+    } else {
+      net = base
+      vat = (base * vatRate) / 100
+      lineTotal = base + vat
+    }
     return {
       ...i,
       quantity: qty,
@@ -307,16 +325,20 @@ export async function saveQuotation(
       labour_rate: rate,
       discount,
       gross,
+      net,
       vat,
-      line_total: base + vat,
+      line_total: lineTotal,
+      sort_order: idx,
     }
   })
 
-  const partsTotal = computed.filter((i) => i.kind === "part").reduce((s, i) => s + i.gross, 0)
-  const laborTotal = computed.filter((i) => i.kind === "labor").reduce((s, i) => s + i.gross, 0)
+  // For inclusive mode parts/labour "totals" are the net (ex-VAT) contribution so the
+  // subtotal + VAT = grand total identity always holds.
+  const partsTotal = computed.filter((i) => i.kind === "part").reduce((s, i) => s + (vatInclusive ? i.net : i.gross), 0)
+  const laborTotal = computed.filter((i) => i.kind === "labor").reduce((s, i) => s + (vatInclusive ? i.net : i.gross), 0)
   const discountTotal = computed.reduce((s, i) => s + i.discount, 0)
-  const subtotal = partsTotal + laborTotal - discountTotal
   const vatAmount = computed.reduce((s, i) => s + i.vat, 0)
+  const subtotal = vatInclusive ? partsTotal + laborTotal : partsTotal + laborTotal - discountTotal
   const total = subtotal + vatAmount
 
   // remove previous quotations for this job (single active quotation)
@@ -329,6 +351,7 @@ export async function saveQuotation(
       description: payload.description || null,
       internal_notes: payload.internalNotes || null,
       vat_rate: vatRate,
+      vat_inclusive: vatInclusive,
       parts_total: partsTotal,
       labor_total: laborTotal,
       discount_total: discountTotal,
@@ -358,6 +381,9 @@ export async function saveQuotation(
         discount: i.discount,
         vat: i.vat,
         line_total: i.line_total,
+        category: i.category?.trim() || null,
+        recommendation: i.recommendation || "required",
+        sort_order: i.sort_order,
       })),
     )
     if (itemErr) throw new Error(itemErr.message)

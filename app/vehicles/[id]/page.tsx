@@ -30,7 +30,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
       : Promise.resolve({ data: null } as any),
     supabase
       .from("jobs")
-      .select("id, job_number, stage, status, created_at, complaint, mileage")
+      .select("id, job_number, stage, created_at, complaint, mileage")
       .eq("vehicle_id", id)
       .order("created_at", { ascending: false }),
     supabase.from("customers").select("id, full_name, mobile").order("full_name"),

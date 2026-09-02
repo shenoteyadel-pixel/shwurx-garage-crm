@@ -403,9 +403,11 @@ export async function deleteStaffUser(userId: string): Promise<{ ok: true }> {
   if (target.role === "owner") throw new Error("Owner accounts cannot be deleted.")
 
   // Detach live assignment pointers so active work isn't orphaned to a missing id.
-  // Denormalized name columns on jobs are left intact for historical accuracy.
-  await svc.from("jobs").update({ assigned_to: null }).eq("assigned_to", userId)
+  // Denormalized name columns on jobs stay intact for historical accuracy, and
+  // created_by is preserved as an immutable record of who opened each job (it
+  // does not affect live routing).
   await svc.from("jobs").update({ technician_id: null }).eq("technician_id", userId)
+  await svc.from("jobs").update({ advisor_id: null }).eq("advisor_id", userId)
 
   // Revoke sessions, then remove auth user and profile.
   await signOutUserEverywhere(userId).catch(() => {})

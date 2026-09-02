@@ -66,7 +66,31 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .eq("job_id", id)
     .order("created_at")
 
-  const { data: staff } = await supabase.from("profiles").select("id, full_name, role").order("full_name")
+  const { data: staffRows } = await supabase
+    .from("profiles")
+    .select("id, full_name, role, job_title, skills, is_active")
+    .neq("role", "customer")
+    .eq("is_active", true)
+    .order("full_name")
+
+  // Active workload per staff member (any job not yet delivered) so the
+  // assignment dropdowns can show who is busy.
+  const { data: activeJobs } = await supabase
+    .from("jobs")
+    .select("technician_id, advisor_id")
+    .neq("stage", "delivered")
+  const activeCount = new Map<string, number>()
+  for (const j of activeJobs ?? []) {
+    if (j.technician_id) activeCount.set(j.technician_id, (activeCount.get(j.technician_id) ?? 0) + 1)
+  }
+  const staff = (staffRows ?? []).map((s) => ({
+    id: s.id,
+    full_name: s.full_name,
+    role: s.role,
+    job_title: s.job_title ?? null,
+    skills: (s.skills ?? []) as string[],
+    active_jobs: activeCount.get(s.id) ?? 0,
+  }))
 
   const stageMeta = STAGE_MAP[job.stage as Stage]
   const vehicle =

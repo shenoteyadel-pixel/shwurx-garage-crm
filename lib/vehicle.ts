@@ -157,6 +157,7 @@ export type VehicleProfile =
   | "coupe"
   | "sports"
   | "hatchback"
+  | "wagon"
   | "suv"
   | "suv_large"
   | "suv_boxy"
@@ -164,31 +165,171 @@ export type VehicleProfile =
   | "van"
   | "convertible"
 
-// Ordered model rules matched against "make model" (normalized, spaces kept).
-// First match wins. This is the reusable make+model mapping system.
-const PROFILE_RULES: [RegExp, VehicleProfile][] = [
-  // --- Exotic / sports ---
-  [/\b(911|cayman|boxster|718)\b/, "sports"],
-  [/(ferrari|lamborghini|mclaren|bugatti)\b/, "sports"],
-  [/\b(amg ?gt|r8|gt-?r|gtr|supra|corvette|huracan|aventador|revuelto|f8|488|458|720s|765|roma|sf90|812)\b/, "sports"],
-  // --- SUVs that must not read as sedans ---
-  [/(g-?class|g\s?wagon|\bg\s?\d{2,3}\b|\bg63\b|\bg500\b|\bg550\b|defender|wrangler|jimny|land ?cruiser|\blc\s?\d{2,3}\b|patrol|\blx\b|\bgx\b|g-?wagen)/, "suv_boxy"],
-  [/(range ?rover|rangerover|\bx7\b|\bq8\b|\bgls\b|escalade|navigator|suburban|\blx\b|expedition|bentayga|cullinan|urus|purosangue|\bgv80\b|\bqx80\b|armada|sequoia|\bgx\b|\bgle\s?coupe\b)/, "suv_large"],
-  [/(cayenne|macan|\bx[1-6]\b|\bq[3-7]\b|\bgl[abce]\b|glc|gle|gla|glb|\brx\b|\bnx\b|\bux\b|rav4|highlander|\bcr-?v\b|tucson|santa ?fe|sorento|sportage|tiguan|touareg|\bcx-?\d\b|discovery|evoque|velar|grand ?cherokee|explorer|pathfinder|x-?trail|xtrail|4runner|prado|kona|seltos|\bek\b|\betron\b|e-?tron|\bev\b ?suv|outlander|\bxc(40|60|90)\b|\bqx\d0\b)/, "suv"],
-  // --- Pickups ---
-  [/(hilux|ranger|f-?150|f-?250|f-?350|silverado|sierra|tundra|tacoma|navara|d-?max|amarok|gladiator|colorado|frontier|ram ?\d?|ridgeline)/, "pickup"],
-  // --- Vans ---
-  [/(hiace|transit|sprinter|caravan|sienna|odyssey|carnival|vito|viano|transporter|caddy|starex|h-?1|urvan)/, "van"],
-  // --- Convertibles / roadsters ---
-  [/(spider|spyder|cabrio|cabriolet|convertible|roadster|\bz4\b|\bslk\b|\bslc\b|\bsl\s?\d{2,3}\b|miata|mx-?5|124 ?spider|\bts\s?roadster\b)/, "convertible"],
-  // --- Coupes ---
-  [/(coupe|coup\b|\b2 ?series\b|\b4 ?series\b|\b8 ?series\b|\bcls\b|\btt\b|mustang|challenger|camaro|\brc\b|\blc\s?500\b|continental ?gt|\bm2\b|\bm4\b|\bm8\b|brz|gr86|\b86\b)/, "coupe"],
-  // --- Luxury full-size sedans ---
-  [/(s-?class|\bs\s?\d{3}\b|\bmaybach\b|7 ?series|\b7\d0[a-z]?i?\b|\bi7\b|\ba8\b|panamera|taycan|flying ?spur|ghost|phantom|\bls\s?\d{3}\b|\bls\b\b|\bes\s?\d{3}\b|\bct6\b|\bg90\b)/, "sedan_luxury"],
-  // --- Hatchbacks ---
-  [/(golf|polo|\ba3\b|\b1 ?series\b|\bi3\b|yaris|swift|\bfit\b|jazz|\bi20\b|\bi10\b|micra|fiesta|clio|\b208\b|corolla ?hatch|mazda ?2|\bup\b|picanto|\brio\b)/, "hatchback"],
-  // --- Regular sedans (C/E, 3/5, A4/A6, Camry, etc.) ---
-  [/(c-?class|\bc\s?\d{3}\b|e-?class|\be\s?\d{3}\b|\bcla\b|\ba4\b|\ba5\b|\ba6\b|\ba7\b|3 ?series|5 ?series|\b3\d0[a-z]?i?\b|\b5\d0[a-z]?i?\b|\bm3\b|\bm5\b|camry|corolla|accord|civic|altima|sonata|elantra|\bis\s?\d{3}\b|\bis\b|\bgs\b|malibu|sentra|maxima|jetta|passat|mazda ?[36]|charger|\ba\d ?sedan\b)/, "sedan"],
+// Normalize free text to a spaced, lowercase, alphanumeric string ("C-Class" -> "c class").
+function normText(s: string | null | undefined): string {
+  return (s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+// Compact form with spaces/punctuation removed ("c 200" -> "c200", "C-Class" -> "cclass").
+function compact(s: string | null | undefined): string {
+  return normText(s).replace(/\s+/g, "")
+}
+
+type ModelRule = { canonical: string; profile: VehicleProfile; test: RegExp }
+type MakeDef = {
+  canonical: string // proper make name used for image lookups, e.g. "Mercedes-Benz"
+  aliases: string[] // compact alias keys, incl. common misspellings
+  defaultProfile: VehicleProfile // brand-family fallback when no model matches
+  models: ModelRule[] // tested in order against the compact model string
+}
+
+// Structured make + model database. Model rules are tested top-to-bottom, so the
+// most specific entries come first (e.g. CLA/CLS before C/S-Class).
+const VEHICLE_DB: MakeDef[] = [
+  {
+    canonical: "Mercedes-Benz",
+    aliases: ["mercedes", "mercedesbenz", "merc", "benz", "mercdes", "mercedez", "mercades", "mb"],
+    defaultProfile: "sedan",
+    models: [
+      { canonical: "CLA", profile: "sedan", test: /^cla/ },
+      { canonical: "CLS", profile: "sedan_luxury", test: /^cls/ },
+      { canonical: "GLE", profile: "suv", test: /^gle/ },
+      { canonical: "GLS", profile: "suv_large", test: /^gls/ },
+      { canonical: "GLC", profile: "suv", test: /^glc/ },
+      { canonical: "GLA", profile: "suv", test: /^gla/ },
+      { canonical: "GLB", profile: "suv", test: /^glb/ },
+      { canonical: "GLK", profile: "suv", test: /^glk/ },
+      { canonical: "G-Class", profile: "suv_boxy", test: /^g(class|wagon|wagen|\d{2,3})/ },
+      { canonical: "SL", profile: "convertible", test: /^sl(k|c|\d|$)/ },
+      { canonical: "S-Class", profile: "sedan_luxury", test: /^(maybach|s(class|\d{3}))/ },
+      { canonical: "E-Class", profile: "sedan", test: /^e(class|\d{3})/ },
+      { canonical: "C-Class", profile: "sedan", test: /^c(class|\d{2,3})/ },
+      { canonical: "A-Class", profile: "hatchback", test: /^a(class|\d{3})/ },
+      { canonical: "V-Class", profile: "van", test: /^(vclass|vito|viano)/ },
+    ],
+  },
+  {
+    canonical: "BMW",
+    aliases: ["bmw"],
+    defaultProfile: "sedan",
+    models: [
+      { canonical: "X7", profile: "suv_large", test: /^x7/ },
+      { canonical: "X6", profile: "suv", test: /^x6/ },
+      { canonical: "X5", profile: "suv", test: /^x5/ },
+      { canonical: "X4", profile: "suv", test: /^x4/ },
+      { canonical: "X3", profile: "suv", test: /^x3/ },
+      { canonical: "X1", profile: "suv", test: /^x[12]/ },
+      { canonical: "Z4", profile: "convertible", test: /^z4/ },
+      { canonical: "i7", profile: "sedan_luxury", test: /^i7/ },
+      { canonical: "7 Series", profile: "sedan_luxury", test: /^7(series|\d{2})/ },
+      { canonical: "8 Series", profile: "coupe", test: /^8(series|\d{2})/ },
+      { canonical: "5 Series", profile: "sedan", test: /^5(series|\d{2})/ },
+      { canonical: "4 Series", profile: "coupe", test: /^4(series|\d{2})/ },
+      { canonical: "3 Series", profile: "sedan", test: /^3(series|\d{2})/ },
+      { canonical: "2 Series", profile: "coupe", test: /^2(series|\d{2})/ },
+      { canonical: "1 Series", profile: "hatchback", test: /^1(series|\d{2})/ },
+      { canonical: "M3", profile: "sedan", test: /^m[35]/ },
+      { canonical: "M4", profile: "coupe", test: /^m[248]/ },
+    ],
+  },
+  {
+    canonical: "Audi",
+    aliases: ["audi", "audy"],
+    defaultProfile: "sedan",
+    models: [
+      { canonical: "RS6", profile: "wagon", test: /^(rs6|.*avant)/ },
+      { canonical: "Q8", profile: "suv_large", test: /^q8/ },
+      { canonical: "Q7", profile: "suv_large", test: /^q7/ },
+      { canonical: "Q5", profile: "suv", test: /^q5/ },
+      { canonical: "Q3", profile: "suv", test: /^q[34]/ },
+      { canonical: "e-tron", profile: "suv", test: /^etron/ },
+      { canonical: "TT", profile: "coupe", test: /^tt/ },
+      { canonical: "R8", profile: "sports", test: /^r8/ },
+      { canonical: "A8", profile: "sedan_luxury", test: /^(a8|s8)/ },
+      { canonical: "A7", profile: "sedan_luxury", test: /^(a7|s7|rs7)/ },
+      { canonical: "A6", profile: "sedan", test: /^(a6|s6)/ },
+      { canonical: "A5", profile: "coupe", test: /^(a5|s5|rs5)/ },
+      { canonical: "A4", profile: "sedan", test: /^(a4|s4)/ },
+      { canonical: "A3", profile: "sedan", test: /^(a3|s3|rs3)/ },
+    ],
+  },
+  {
+    canonical: "Porsche",
+    aliases: ["porsche", "porche", "porsch"],
+    defaultProfile: "sports",
+    models: [
+      { canonical: "Cayenne", profile: "suv", test: /^cayenne/ },
+      { canonical: "Macan", profile: "suv", test: /^macan/ },
+      { canonical: "Panamera", profile: "sedan_luxury", test: /^panamera/ },
+      { canonical: "Taycan", profile: "sedan_luxury", test: /^taycan/ },
+      { canonical: "718 Cayman", profile: "sports", test: /^(718|cayman|boxster)/ },
+      { canonical: "911", profile: "sports", test: /^(911|carrera|gt[23]|turbo)/ },
+    ],
+  },
+  {
+    canonical: "Land Rover",
+    aliases: ["landrover", "rangerover", "range", "rover", "land", "rangie"],
+    defaultProfile: "suv_large",
+    models: [
+      { canonical: "Range Rover Evoque", profile: "suv", test: /^evoque/ },
+      { canonical: "Range Rover Velar", profile: "suv", test: /^velar/ },
+      { canonical: "Range Rover Sport", profile: "suv_large", test: /^sport/ },
+      { canonical: "Range Rover", profile: "suv_large", test: /^(vogue|autobiography|svr|rangerover|range)/ },
+      { canonical: "Defender", profile: "suv_boxy", test: /^defender/ },
+      { canonical: "Discovery", profile: "suv", test: /^disco/ },
+    ],
+  },
+  {
+    canonical: "Toyota",
+    aliases: ["toyota", "toyta", "toyoto", "toyata"],
+    defaultProfile: "sedan",
+    models: [
+      { canonical: "Land Cruiser", profile: "suv_boxy", test: /^(landcruiser|lc\d{2,3}|landcruser)/ },
+      { canonical: "Prado", profile: "suv", test: /^prado/ },
+      { canonical: "Fortuner", profile: "suv", test: /^fortuner/ },
+      { canonical: "RAV4", profile: "suv", test: /^rav4/ },
+      { canonical: "Hilux", profile: "pickup", test: /^hilux/ },
+      { canonical: "Hiace", profile: "van", test: /^hiace/ },
+      { canonical: "Supra", profile: "sports", test: /^supra/ },
+      { canonical: "Yaris", profile: "hatchback", test: /^yaris/ },
+      { canonical: "Corolla", profile: "sedan", test: /^corolla/ },
+      { canonical: "Camry", profile: "sedan", test: /^camry/ },
+    ],
+  },
+  {
+    canonical: "Nissan",
+    aliases: ["nissan", "nisan", "nissian"],
+    defaultProfile: "sedan",
+    models: [
+      { canonical: "Patrol", profile: "suv_boxy", test: /^patrol/ },
+      { canonical: "X-Trail", profile: "suv", test: /^xtrail/ },
+      { canonical: "Pathfinder", profile: "suv", test: /^pathfinder/ },
+      { canonical: "Kicks", profile: "suv", test: /^kicks/ },
+      { canonical: "Navara", profile: "pickup", test: /^navara/ },
+      { canonical: "GT-R", profile: "sports", test: /^gtr/ },
+      { canonical: "Altima", profile: "sedan", test: /^altima/ },
+      { canonical: "Maxima", profile: "sedan", test: /^maxima/ },
+      { canonical: "Sunny", profile: "sedan", test: /^sunny/ },
+    ],
+  },
+]
+
+// Generic keyword rules for makes not in the structured DB (final safety net).
+const GENERIC_RULES: [RegExp, VehicleProfile][] = [
+  [/(ferrari|lamborghini|mclaren|bugatti|911|cayman|boxster|718|corvette|huracan|aventador|f8|488|458|720s|roma|sf90|812|r8|gtr)/, "sports"],
+  [/(g-?class|g ?wagon|defender|wrangler|jimny|land ?cruiser|patrol|\blx\b|\bgx\b)/, "suv_boxy"],
+  [/(range ?rover|escalade|navigator|suburban|expedition|bentayga|cullinan|urus|armada|sequoia|x7|q8|gls|qx80)/, "suv_large"],
+  [/(cayenne|macan|rav4|highlander|cr-?v|tucson|santa ?fe|sorento|sportage|tiguan|touareg|cx-?\d|discovery|evoque|velar|explorer|pathfinder|x-?trail|4runner|prado|kona|outlander|xc\d0|suv|q[3-7]|x[1-6]|gl[abce])/, "suv"],
+  [/(hilux|ranger|f-?150|f-?250|silverado|sierra|tundra|tacoma|navara|d-?max|amarok|gladiator|colorado|frontier|ram|pickup|truck)/, "pickup"],
+  [/(hiace|transit|sprinter|caravan|sienna|odyssey|carnival|vito|viano|transporter|caddy|starex|urvan|van)/, "van"],
+  [/(spider|spyder|cabrio|cabriolet|convertible|roadster|miata|mx-?5)/, "convertible"],
+  [/(avant|estate|wagon|touring|variant|allroad)/, "wagon"],
+  [/(coupe|mustang|challenger|camaro|brz|gr86|\b86\b)/, "coupe"],
+  [/(maybach|panamera|taycan|flying ?spur|ghost|phantom)/, "sedan_luxury"],
+  [/(golf|polo|yaris|swift|fit|jazz|micra|fiesta|clio|picanto|rio|hatch)/, "hatchback"],
 ]
 
 const PROFILE_FROM_BODY: Record<BodyType, VehicleProfile> = {
@@ -202,24 +343,87 @@ const PROFILE_FROM_BODY: Record<BodyType, VehicleProfile> = {
   sports: "sports",
 }
 
-// Resolve the most accurate silhouette profile.
-// Priority: explicit make+model rule → stored body type → make heuristic → sedan.
+function findMakeDef(make: string | null | undefined): MakeDef | undefined {
+  const key = compact(make)
+  if (!key) return undefined
+  // Exact alias match first, then a contains match for compound inputs.
+  return (
+    VEHICLE_DB.find((m) => m.aliases.includes(key) || compact(m.canonical) === key) ||
+    VEHICLE_DB.find((m) => m.aliases.some((a) => key.includes(a)))
+  )
+}
+
+export type ResolvedVehicle = {
+  make: string // canonical make (or cleaned original if unknown)
+  model: string // canonical model family (or cleaned original if unknown)
+  profile: VehicleProfile
+  matched: boolean // true when a known make (and ideally model) was recognized
+}
+
+// Core resolver. Priority:
+//   1. Exact/family model match within a known make
+//   2. Brand-family default when the make is known but the model is not
+//   3. Generic keyword rules across all makes
+//   4. Stored body type, then the body-type heuristic
+export function resolveVehicle(
+  make: string | null | undefined,
+  model: string | null | undefined,
+  bodyType?: string | null,
+): ResolvedVehicle {
+  const def = findMakeDef(make)
+  const modelCompact = compact(model)
+  const titleModel = titleCase(normText(model))
+
+  if (def) {
+    for (const rule of def.models) {
+      if (modelCompact && rule.test.test(modelCompact)) {
+        return { make: def.canonical, model: rule.canonical, profile: rule.profile, matched: true }
+      }
+    }
+    // Known make, unknown model -> brand-family fallback, keep the typed model.
+    return {
+      make: def.canonical,
+      model: titleModel || def.canonical,
+      profile: def.defaultProfile,
+      matched: true,
+    }
+  }
+
+  // Unknown make: generic keyword pass over "make model".
+  const hay = `${normText(make)} ${normText(model)}`.trim()
+  for (const [re, profile] of GENERIC_RULES) {
+    if (hay && re.test(hay)) {
+      return { make: titleCase(normText(make)), model: titleModel, profile, matched: false }
+    }
+  }
+
+  // Body-type fallbacks.
+  const bt = bodyType as BodyType | null | undefined
+  const profile =
+    bt && BODY_TYPES.some((b) => b.value === bt) ? PROFILE_FROM_BODY[bt] : PROFILE_FROM_BODY[inferBodyType(make, model)]
+  return { make: titleCase(normText(make)), model: titleModel, profile, matched: false }
+}
+
+function titleCase(s: string): string {
+  return s.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+// Thin wrapper kept for existing callers that only need the silhouette profile.
 export function resolveVehicleProfile(
   make: string | null | undefined,
   model: string | null | undefined,
   bodyType?: string | null,
 ): VehicleProfile {
-  const hay = `${(make || "").toLowerCase()} ${(model || "").toLowerCase()}`.replace(/\s+/g, " ").trim()
-  if (hay) {
-    for (const [re, profile] of PROFILE_RULES) {
-      if (re.test(hay)) return profile
-    }
-  }
-  // Stored body type from the job card, if valid.
-  const bt = bodyType as BodyType | null | undefined
-  if (bt && BODY_TYPES.some((b) => b.value === bt)) return PROFILE_FROM_BODY[bt]
-  // Fall back to the make/model body heuristic.
-  return PROFILE_FROM_BODY[inferBodyType(make, model)]
+  return resolveVehicle(make, model, bodyType).profile
+}
+
+// Canonical make/model for image lookups (CarsXE). Falls back to cleaned input.
+export function canonicalizeVehicle(
+  make: string | null | undefined,
+  model: string | null | undefined,
+): { make: string; model: string } {
+  const r = resolveVehicle(make, model)
+  return { make: r.make || (make || "").trim(), model: r.model || (model || "").trim() }
 }
 
 /* ---------------- Paint color resolution ---------------- */

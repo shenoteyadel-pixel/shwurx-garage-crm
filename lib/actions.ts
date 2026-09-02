@@ -138,6 +138,46 @@ export async function refreshVehicleImage(jobId: string) {
   return { found: !!image }
 }
 
+// Re-resolve reference images for every active job at once (bulk visual sync).
+// Runs the improved make+model mapping across all cards and caches new images.
+export async function refreshAllVehicleImages() {
+  const { supabase } = await requireUser()
+  const { data: jobs, error: readErr } = await supabase
+    .from("jobs")
+    .select("id, vehicle_make, vehicle_model, vehicle_year, color, variant")
+    .neq("stage", "delivered")
+  if (readErr) throw new Error(readErr.message)
+
+  let updated = 0
+  let found = 0
+  for (const job of jobs ?? []) {
+    const image = await resolveVehicleImage({
+      make: job.vehicle_make,
+      model: job.vehicle_model,
+      year: job.vehicle_year,
+      color: job.color,
+      trim: job.variant,
+    })
+    if (!image) continue // keep any existing image / silhouette on a miss
+    const { error } = await supabase
+      .from("jobs")
+      .update({
+        vehicle_reference_image_url: image.url,
+        vehicle_image_source: image.source,
+        vehicle_image_resolved_at: new Date().toISOString(),
+      })
+      .eq("id", job.id)
+    if (!error) {
+      updated++
+      found++
+    }
+  }
+
+  revalidatePath("/")
+  revalidatePath("/flow")
+  return { total: (jobs ?? []).length, updated, found }
+}
+
 export async function assignStaff(jobId: string, field: "advisor_id" | "technician_id", value: string) {
   const { supabase } = await requireUser()
   const { error } = await supabase

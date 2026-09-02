@@ -60,6 +60,11 @@ const P: Record<VehicleProfile, Proto> = {
     cowlX: 98, rfX: 120, rbX: 160, deckX: 196, deckY: 66, rear: "fast",
     wR: 18, ax1: 64, ax2: 168, round: 7,
   },
+  wagon: {
+    fx: 24, rx: 226, bottom: 90, noseY: 72, hoodY: 61, roofY: 42,
+    cowlX: 100, rfX: 122, rbX: 200, deckX: 214, deckY: 46, rear: "box",
+    wR: 19, ax1: 66, ax2: 184, round: 5,
+  },
   suv: {
     fx: 24, rx: 222, bottom: 92, noseY: 60, hoodY: 51, roofY: 29,
     cowlX: 100, rfX: 120, rbX: 178, deckX: 210, deckY: 33, rear: "box",

@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { AppShell } from "@/components/app-shell"
 import { CarFlow } from "@/components/car-flow"
+import { SyncVisualsButton } from "@/components/sync-visuals-button"
 import { ZONES } from "@/lib/constants"
 import type { JobCardData } from "@/components/job-card"
 
@@ -49,11 +50,14 @@ export default async function FlowPage() {
 
   return (
     <AppShell user={{ name: profile?.full_name || user!.email || "Staff", role: profile?.role || "advisor" }}>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Car Flow</h1>
-        <p className="text-sm text-muted-foreground">
-          Live workshop board — every vehicle by physical zone and lift bay.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Car Flow</h1>
+          <p className="text-sm text-muted-foreground">
+            Live workshop board — every vehicle by physical zone and lift bay.
+          </p>
+        </div>
+        <SyncVisualsButton />
       </div>
 
       {/* Zone summary strip */}

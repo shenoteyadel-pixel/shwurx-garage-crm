@@ -18,7 +18,7 @@ export default async function UsersPage() {
     svc
       .from("profiles")
       .select(
-        "id, email, full_name, role, is_active, customer_id, created_at, phone, mobile, must_set_password, department, branch, employee_id, invite_status, invite_sent_at, invite_error, last_login_at",
+        "id, email, full_name, role, is_active, customer_id, created_at, phone, mobile, must_set_password, department, branch, employee_id, job_title, skills, invite_status, invite_sent_at, invite_error, last_login_at",
       )
       .neq("role", "customer")
       .order("created_at", { ascending: true }),
@@ -52,6 +52,7 @@ export default async function UsersPage() {
         currentUserId={ctx!.userId}
         canManageUsers={canManageUsers}
         canManagePerms={canManagePerms}
+        isOwner={ctx!.role === "owner"}
       />
     </AppShell>
   )

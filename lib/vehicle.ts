@@ -87,7 +87,7 @@ export const MODEL_SUGGESTIONS: Record<string, string[]> = {
   "Mercedes-Benz": ["C-Class", "E-Class", "S-Class", "G-Class", "GLE", "GLC", "GLS", "A-Class", "AMG GT"],
   BMW: ["3 Series", "5 Series", "7 Series", "X3", "X5", "X6", "X7", "M4", "i7"],
   Audi: ["A4", "A6", "A8", "Q5", "Q7", "Q8", "RS7", "e-tron"],
-  Lexus: ["LX", "GX", "RX", "NX", "ES", "LS", "IS", "LC"],
+  Lexus: ["LX", "GX", "RX", "NX", "UX", "ES", "IS", "LS", "LC", "RC"],
   "Land Rover": ["Range Rover", "Range Rover Sport", "Defender", "Discovery", "Evoque", "Velar"],
   Porsche: ["911", "Cayenne", "Macan", "Panamera", "Taycan", "718 Cayman"],
   Ford: ["F-150", "Mustang", "Explorer", "Expedition", "Ranger", "Edge"],
@@ -100,6 +100,7 @@ export const MODEL_SUGGESTIONS: Record<string, string[]> = {
   Lamborghini: ["Urus", "Huracan", "Aventador", "Revuelto"],
   "Rolls-Royce": ["Cullinan", "Ghost", "Phantom", "Wraith", "Spectre"],
   Bentley: ["Bentayga", "Continental GT", "Flying Spur"],
+  Maserati: ["Ghibli", "Quattroporte", "Levante", "Grecale", "GranTurismo", "GranCabrio", "MC20"],
 }
 
 export function brandLogoUrl(make: string | null | undefined): string | null {
@@ -117,6 +118,12 @@ export function brandInitials(make: string | null | undefined): string {
 
 // Model keyword -> body type. Checked before the generic make heuristic.
 const MODEL_BODY_HINTS: [RegExp, BodyType][] = [
+  // Maserati-specific (checked first so a "GT" variant never flips Ghibli to coupe).
+  [/(mc20|mc12)/, "sports"],
+  [/(levante|grecale)/, "suv"],
+  [/(granturismo)/, "coupe"],
+  [/(grancabrio)/, "convertible"],
+  [/(ghibli|quattroporte)/, "sedan"],
   [/\b(911|488|458|570|720|f8|huracan|aventador|gt3|gt2|supra|gr86|corvette|z4|amg gt)\b/, "sports"],
   [/(cayenne|macan|urus|bentayga|cullinan|g[\s-]?class|g\d{2,3}|land ?cruiser|prado|patrol|range rover|rangerover|x[3-7]\b|q[3-8]\b|gl[aces]|glc|gle|gls|rx|nx|lx|gx|rav4|highlander|tahoe|suburban|explorer|pathfinder|xterra|4runner|touareg|tiguan|santa fe|tucson|sorento|sportage|cx-?\d|discovery|defender|wrangler|grand cherokee|escalade|navigator)/, "suv"],
   [/(hilux|ranger|f-?150|f-?250|silverado|sierra|tundra|tacoma|navara|d-?max|amarok|gladiator|colorado|frontier)/, "pickup"],
@@ -313,6 +320,39 @@ const VEHICLE_DB: MakeDef[] = [
       { canonical: "Altima", profile: "sedan", test: /^altima/ },
       { canonical: "Maxima", profile: "sedan", test: /^maxima/ },
       { canonical: "Sunny", profile: "sedan", test: /^sunny/ },
+    ],
+  },
+  {
+    canonical: "Maserati",
+    aliases: ["maserati", "maseratti", "masarati", "maserrati", "gibli"],
+    defaultProfile: "sedan_luxury",
+    models: [
+      { canonical: "Levante", profile: "suv", test: /^levante/ },
+      { canonical: "Grecale", profile: "suv", test: /^grecale/ },
+      { canonical: "GranTurismo", profile: "coupe", test: /^granturismo/ },
+      { canonical: "GranCabrio", profile: "convertible", test: /^grancabrio/ },
+      { canonical: "MC20", profile: "sports", test: /^mc(20|12)/ },
+      { canonical: "Quattroporte", profile: "sedan_luxury", test: /^quattroporte/ },
+      // Ghibli is a mid-size SEDAN — its "GT" trim must NOT read as a coupe.
+      { canonical: "Ghibli", profile: "sedan", test: /^(ghibli|gibli)/ },
+    ],
+  },
+  {
+    canonical: "Lexus",
+    aliases: ["lexus", "lexas", "lexux"],
+    defaultProfile: "sedan",
+    models: [
+      { canonical: "LX", profile: "suv_boxy", test: /^lx/ },
+      { canonical: "GX", profile: "suv_boxy", test: /^gx/ },
+      { canonical: "RX", profile: "suv", test: /^rx/ },
+      { canonical: "NX", profile: "suv", test: /^nx/ },
+      { canonical: "UX", profile: "suv", test: /^ux/ },
+      { canonical: "LC", profile: "coupe", test: /^lc/ },
+      { canonical: "RC", profile: "coupe", test: /^rc/ },
+      { canonical: "LS", profile: "sedan_luxury", test: /^ls/ },
+      { canonical: "ES", profile: "sedan", test: /^es/ },
+      { canonical: "IS", profile: "sedan", test: /^is/ },
+      { canonical: "GS", profile: "sedan", test: /^gs/ },
     ],
   },
 ]

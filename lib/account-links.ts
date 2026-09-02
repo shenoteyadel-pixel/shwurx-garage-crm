@@ -27,7 +27,15 @@ function baseUrl() {
       /* fall through */
     }
   }
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
+  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
+  return "http://localhost:3000"
+}
+
+/** Absolute base URL for building customer-facing links (tracking, portal) in emails. */
+export function appBaseUrl(): string {
+  return baseUrl()
 }
 
 type LinkType = "invite" | "recovery" | "magiclink"

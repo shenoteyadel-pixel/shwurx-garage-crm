@@ -9,6 +9,7 @@ import { PartsManager } from "@/components/parts-manager"
 import { ApprovalSender } from "@/components/approval-sender"
 import { JobPhotos } from "@/components/job-photos"
 import { StaffAssign } from "@/components/staff-assign"
+import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
 import { TechnicianJobCard } from "@/components/technician-job-card"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
@@ -296,6 +297,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             advisorId={job.advisor_id}
             technicianId={job.technician_id}
           />
+
+          {job.customer_id && <JobCustomerAccess jobId={job.id} />}
 
           {showPrices && (
             <ApprovalSender

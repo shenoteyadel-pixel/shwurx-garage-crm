@@ -88,6 +88,39 @@ function esc(v: string | null | undefined): string {
 }
 
 /**
+ * Approval request email — the customer opens the secure link to review each
+ * recommended item and Approve/Reject before signing. Used for both the initial
+ * quotation and mid-repair additional-work requests.
+ */
+export function approvalRequestEmail(opts: {
+  name: string
+  vehicle: string
+  jobNumber: string
+  itemCount: number
+  total: string
+  url: string
+  isAdditional: boolean
+}) {
+  const title = opts.isAdditional ? "Additional work needs your approval" : "Your repair quotation is ready"
+  const intro = opts.isAdditional
+    ? `While working on your <strong>${esc(opts.vehicle)}</strong>, our technicians found additional items that need your go-ahead before we continue.`
+    : `Your quotation for the <strong>${esc(opts.vehicle)}</strong> is ready for review.`
+  const body = `
+    <p>Hi ${esc(opts.name) || "there"},</p>
+    <p>${intro}</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0 4px">
+      <tr><td style="padding:4px 0;color:#8b93a1;font-size:12px;text-transform:uppercase;letter-spacing:1px;width:130px">Job Card</td>
+        <td style="padding:4px 0;color:#ffffff;font-size:14px;font-weight:600">${esc(opts.jobNumber)}</td></tr>
+      <tr><td style="padding:4px 0;color:#8b93a1;font-size:12px;text-transform:uppercase;letter-spacing:1px">Items</td>
+        <td style="padding:4px 0;color:#ffffff;font-size:14px;font-weight:600">${opts.itemCount}</td></tr>
+      <tr><td style="padding:4px 0;color:#8b93a1;font-size:12px;text-transform:uppercase;letter-spacing:1px">Estimated total</td>
+        <td style="padding:4px 0;color:#ffffff;font-size:14px;font-weight:600">${esc(opts.total)}</td></tr>
+    </table>
+    <p style="margin-top:14px">You can approve or decline each item individually, then sign to confirm. We only proceed with what you approve.</p>`
+  return shell(title, body, { label: opts.isAdditional ? "Review additional work" : "Review & approve", url: opts.url })
+}
+
+/**
  * Vehicle check-in email sent when a customer's job card is created. Contains
  * the vehicle/plate/job details plus the secure set-password, portal and
  * tracking links. Never contains a plain-text password.

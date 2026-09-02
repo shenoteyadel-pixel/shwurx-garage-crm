@@ -13,14 +13,16 @@ function isPublicPath(path: string): boolean {
   )
 }
 
-export async function middleware(request: NextRequest) {
+// Next.js 16 Proxy (formerly Middleware). Runs on the Node.js runtime by
+// default, so Node globals and heavier deps (@supabase/ssr) are fully supported.
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
   const isPublic = isPublicPath(path)
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  // If Supabase env is somehow unavailable at the edge, never crash the request.
+  // If Supabase env is somehow unavailable, never crash the request.
   // Allow public routes through and send everything else to login.
   if (!supabaseUrl || !supabaseKey) {
     if (isPublic) return NextResponse.next({ request })
@@ -58,7 +60,7 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse
   } catch (error) {
     // A transient auth/network error must never produce a 500 in production.
-    console.log("[v0] middleware auth check failed:", (error as Error)?.message)
+    console.log("[v0] proxy auth check failed:", (error as Error)?.message)
     if (isPublic) return supabaseResponse
     const url = request.nextUrl.clone()
     url.pathname = "/auth/login"

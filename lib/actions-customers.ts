@@ -1,13 +1,56 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
+import { after } from "next/server"
+import { randomBytes } from "crypto"
 import type { Stage } from "@/lib/constants"
 import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
+import { appBaseUrl } from "@/lib/account-links"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
+
+/**
+ * Resolve and persist a vehicle's CarsXE reference image OUT OF BAND.
+ * Runs via `after()` so the slow external lookup never blocks (or times out)
+ * the save request — this is the fix for the "Save & Continue" #441 timeouts.
+ * Uses the service client because request cookies may be gone post-response.
+ * Never overwrites a custom (manually uploaded) photo.
+ */
+async function backfillVehicleImage(vehicleId: string) {
+  try {
+    const svc = createServiceClient()
+    const { data: v } = await svc
+      .from("vehicles")
+      .select("make, model, year, color, variant, reference_image_url, image_source")
+      .eq("id", vehicleId)
+      .maybeSingle()
+    if (!v) return
+    if (v.image_source === "custom") return
+    if (v.reference_image_url && v.image_source === "carsxe") return
+    const image = await resolveVehicleImage({
+      make: v.make,
+      model: v.model,
+      year: v.year,
+      color: v.color,
+      trim: v.variant,
+    })
+    if (!image) return
+    const stamp = new Date().toISOString()
+    await svc
+      .from("vehicles")
+      .update({ reference_image_url: image.url, image_source: image.source, image_resolved_at: stamp })
+      .eq("id", vehicleId)
+    await svc
+      .from("jobs")
+      .update({ vehicle_reference_image_url: image.url, vehicle_image_source: image.source })
+      .eq("vehicle_id", vehicleId)
+  } catch (e) {
+    console.log("[v0] backfillVehicleImage failed:", (e as Error).message)
+  }
+}
 
 async function requireUser() {
   const supabase = await createClient()
@@ -216,27 +259,36 @@ export async function createVehicle(fd: FormData) {
   payload.created_by = user.id
   payload.customer_id = s(fd, "customer_id")
 
-  // Resolve reference image once at creation (cached on the master record).
-  const image = await resolveVehicleImage({
-    make: payload.make as string,
-    model: payload.model as string,
-    year: payload.year as number,
-    color: payload.color as string,
-    trim: payload.variant as string,
-  })
-  payload.reference_image_url = image?.url ?? null
-  payload.image_source = image?.source ?? null
-  payload.image_resolved_at = image ? new Date().toISOString() : null
-
+  // Save the master record FIRST; the CarsXE image resolves in the background
+  // so a slow external lookup can never block or fail the save.
   const { data, error } = await supabase.from("vehicles").insert(payload).select("id").single()
   if (error) throw new Error(error.message)
+  after(() => backfillVehicleImage(data.id))
   revalidatePath("/customers")
   const redirectTo = String(fd.get("redirect_to") || "")
   if (redirectTo) redirect(redirectTo)
   redirect(`/vehicles/${data.id}`)
 }
 
-// Inline create used by the intake wizard — returns the row instead of redirecting.
+export type VehicleRow = {
+  id: string
+  make: string | null
+  model: string | null
+  variant: string | null
+  year: number | null
+  color: string | null
+  plate_emirate: string | null
+  plate_code: string | null
+  plate_number: string | null
+  vin: string | null
+  reference_image_url: string | null
+}
+export type VehicleSaveResult = { ok: true; vehicle: VehicleRow } | { ok: false; error: string }
+
+// Inline create used by the intake wizard. Returns an { ok, error } result
+// (never throws) so a failure shows a real message instead of the redacted
+// "Minified React error #441". The CarsXE image resolves in the background
+// AFTER the row is saved, so the save is instant and reliable.
 export async function createVehicleInline(input: {
   customer_id: string
   make?: string | null
@@ -250,40 +302,41 @@ export async function createVehicleInline(input: {
   plate_number?: string | null
   vin?: string | null
   mileage?: number | null
-}) {
-  const { supabase, user } = await guard("vehicles.create")
-  const image = await resolveVehicleImage({
-    make: input.make ?? null,
-    model: input.model ?? null,
-    year: input.year ?? null,
-    color: input.color ?? null,
-    trim: input.variant ?? null,
-  })
-  const { data, error } = await supabase
-    .from("vehicles")
-    .insert({
-      customer_id: input.customer_id,
-      make: input.make?.trim() || null,
-      model: input.model?.trim() || null,
-      variant: input.variant?.trim() || null,
-      year: input.year || null,
-      color: input.color?.trim() || null,
-      body_type: input.body_type?.trim() || inferBodyType(input.make ?? null, input.model ?? null),
-      plate_emirate: input.plate_emirate?.trim() || null,
-      plate_code: input.plate_code?.trim() || null,
-      plate_number: input.plate_number?.trim() || null,
-      vin: input.vin?.trim() || null,
-      mileage: input.mileage || null,
-      reference_image_url: image?.url ?? null,
-      image_source: image?.source ?? null,
-      image_resolved_at: image ? new Date().toISOString() : null,
-      created_by: user.id,
-    })
-    .select("id, make, model, variant, year, color, plate_emirate, plate_code, plate_number, vin, reference_image_url")
-    .single()
-  if (error) throw new Error(error.message)
-  revalidatePath(`/customers/${input.customer_id}`)
-  return data
+}): Promise<VehicleSaveResult> {
+  try {
+    const { supabase, user } = await guard("vehicles.create")
+    if (!input.customer_id) return { ok: false, error: "A customer is required before adding a vehicle." }
+    if (!input.make?.trim() && !input.model?.trim() && !input.plate_number?.trim() && !input.vin?.trim()) {
+      return { ok: false, error: "Enter at least a make, model, plate, or VIN to save the vehicle." }
+    }
+    const { data, error } = await supabase
+      .from("vehicles")
+      .insert({
+        customer_id: input.customer_id,
+        make: input.make?.trim() || null,
+        model: input.model?.trim() || null,
+        variant: input.variant?.trim() || null,
+        year: input.year || null,
+        color: input.color?.trim() || null,
+        body_type: input.body_type?.trim() || inferBodyType(input.make ?? null, input.model ?? null),
+        plate_emirate: input.plate_emirate?.trim() || null,
+        plate_code: input.plate_code?.trim() || null,
+        plate_number: input.plate_number?.trim() || null,
+        vin: input.vin?.trim() || null,
+        mileage: input.mileage || null,
+        created_by: user.id,
+      })
+      .select(
+        "id, make, model, variant, year, color, plate_emirate, plate_code, plate_number, vin, reference_image_url",
+      )
+      .single()
+    if (error) return { ok: false, error: error.message }
+    after(() => backfillVehicleImage(data.id))
+    revalidatePath(`/customers/${input.customer_id}`)
+    return { ok: true, vehicle: data as VehicleRow }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not save the vehicle. Please try again." }
+  }
 }
 
 // List all vehicles owned by a customer (for the wizard's vehicle step).
@@ -523,107 +576,158 @@ export async function transferVehicleOwner(vehicleId: string, newCustomerId: str
 }
 
 /* ---------------- Job creation from master records ---------------- */
+
+export type JobCreateResult =
+  | {
+      ok: true
+      jobId: string
+      jobNumber: string
+      customerName: string
+      customerMobile: string | null
+      vehicleLabel: string
+      plate: string | null
+      trackingPath: string | null
+      portalPath: string
+      access: import("@/lib/actions-customer-portal").CustomerAccessResult
+    }
+  | { ok: false; error: string }
+
 // The intake wizard resolves (or creates) a customer + vehicle first, then calls
 // this with their ids. We snapshot the vehicle/customer fields onto the job so the
 // job card remains an accurate point-in-time document even if the master changes.
-export async function createJobFromMaster(fd: FormData) {
-  const { supabase, user, ctx } = await guard("jobs.create")
+// Returns an { ok, error } result (never throws) so the wizard can show a real
+// success popup with honest customer-access status instead of redirecting blind.
+export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult> {
+  try {
+    const { supabase, user, ctx } = await guard("jobs.create")
 
-  const customerId = s(fd, "customer_id")
-  const vehicleId = s(fd, "vehicle_id")
-  if (!customerId || !vehicleId) throw new Error("A customer and vehicle are required.")
+    const customerId = s(fd, "customer_id")
+    const vehicleId = s(fd, "vehicle_id")
+    if (!customerId || !vehicleId) return { ok: false, error: "A customer and vehicle are required." }
 
-  const [{ data: customer }, { data: vehicle }] = await Promise.all([
-    supabase.from("customers").select("*").eq("id", customerId).single(),
-    supabase.from("vehicles").select("*").eq("id", vehicleId).single(),
-  ])
-  if (!customer || !vehicle) throw new Error("Customer or vehicle not found.")
+    const [{ data: customer }, { data: vehicle }] = await Promise.all([
+      supabase.from("customers").select("*").eq("id", customerId).single(),
+      supabase.from("vehicles").select("*").eq("id", vehicleId).single(),
+    ])
+    if (!customer || !vehicle) return { ok: false, error: "Customer or vehicle not found." }
 
-  // Ensure the vehicle has a cached image; resolve on demand if missing.
-  let imageUrl = vehicle.reference_image_url
-  let imageSource = vehicle.image_source
-  let imageResolvedAt = vehicle.image_resolved_at
-  if (!imageUrl) {
-    const image = await resolveVehicleImage({
-      make: vehicle.make,
-      model: vehicle.model,
-      year: vehicle.year,
+    // Snapshot whatever image the vehicle already has. If none yet, it resolves
+    // in the background and backfills every linked job (never blocks creation).
+    const payload = {
+      job_number: genJobNumber(),
+      customer_id: customerId,
+      vehicle_id: vehicleId,
+      // Snapshot (denormalized) fields — keep the job card self-contained.
+      customer_name: customer.full_name,
+      customer_mobile: customer.mobile ?? "",
+      vehicle_make: vehicle.make,
+      vehicle_model: vehicle.model,
+      variant: vehicle.variant,
       color: vehicle.color,
-      trim: vehicle.variant,
-    })
-    if (image) {
-      imageUrl = image.url
-      imageSource = image.source
-      imageResolvedAt = new Date().toISOString()
+      body_type: vehicle.body_type || inferBodyType(vehicle.make, vehicle.model),
+      vehicle_year: vehicle.year,
+      vehicle_reference_image_url: vehicle.reference_image_url,
+      vehicle_image_source: vehicle.image_source,
+      vehicle_image_resolved_at: vehicle.image_resolved_at,
+      plate_emirate: vehicle.plate_emirate,
+      plate_code: vehicle.plate_code,
+      plate_number: vehicle.plate_number,
+      vin: vehicle.vin,
+      mileage: fd.get("mileage") ? Number(fd.get("mileage")) : vehicle.mileage,
+      complaint: s(fd, "complaint"),
+      advisor_id: s(fd, "advisor_id"),
+      technician_id: s(fd, "technician_id"),
+      notes: s(fd, "notes"),
+      stage: "check_in" as Stage,
+      created_by: user.id,
+    }
+
+    const { data: job, error } = await supabase.from("jobs").insert(payload).select("id").single()
+    if (error) return { ok: false, error: error.message }
+
+    if (!vehicle.reference_image_url) after(() => backfillVehicleImage(vehicleId))
+
+    // If the wizard collected a fresher mileage, update the master vehicle too.
+    if (fd.get("mileage")) {
       await supabase
         .from("vehicles")
-        .update({ reference_image_url: imageUrl, image_source: imageSource, image_resolved_at: imageResolvedAt })
+        .update({ mileage: Number(fd.get("mileage")), updated_at: new Date().toISOString() })
         .eq("id", vehicleId)
     }
+
+    const photoUrls = String(fd.get("photo_urls") || "").split(",").filter(Boolean)
+    const damageUrls = String(fd.get("damage_urls") || "").split(",").filter(Boolean)
+    const rows = [
+      ...photoUrls.map((url) => ({ job_id: job.id, url, kind: "vehicle" })),
+      ...damageUrls.map((url) => ({ job_id: job.id, url, kind: "damage" })),
+    ]
+    if (rows.length) await supabase.from("vehicle_photos").insert(rows)
+
+    await logAction(ctx, "job.create", "job", job.id, { job_number: payload.job_number })
+
+    const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || "Vehicle"
+    const plate = [vehicle.plate_emirate, vehicle.plate_code, vehicle.plate_number].filter(Boolean).join(" ") || null
+
+    // Issue a secure, opaque tracking token (no raw DB ids exposed).
+    let trackingPath: string | null = null
+    try {
+      const svc = createServiceClient()
+      // Reuse a live token if one already exists for this customer.
+      const { data: live } = await svc
+        .from("customer_portal_tokens")
+        .select("token, expires_at, revoked")
+        .eq("customer_id", customerId)
+        .eq("revoked", false)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      let token = live && !live.revoked && new Date(live.expires_at).getTime() > Date.now() ? live.token : null
+      if (!token) {
+        token = randomBytes(24).toString("base64url")
+        await svc.from("customer_portal_tokens").insert({
+          customer_id: customerId,
+          token,
+          expires_at: new Date(Date.now() + 90 * 86400_000).toISOString(),
+          created_by: user.id,
+        })
+      }
+      trackingPath = `/track/${token}`
+    } catch (e) {
+      console.log("[v0] tracking token issue failed:", (e as Error).message)
+    }
+
+    // Provision (or reuse) the customer portal account and send the check-in email.
+    const base = appBaseUrl()
+    const { ensureCustomerPortalForJob } = await import("@/lib/actions-customer-portal")
+    const access = await ensureCustomerPortalForJob({
+      customerId,
+      jobId: job.id,
+      jobNumber: payload.job_number,
+      vehicleLabel,
+      plate,
+      trackingUrl: trackingPath ? `${base}${trackingPath}` : `${base}/portal`,
+      portalUrl: `${base}/portal`,
+    })
+
+    revalidatePath("/")
+    revalidatePath(`/customers/${customerId}`)
+    revalidatePath(`/vehicles/${vehicleId}`)
+    revalidatePath("/jobs")
+    revalidatePath("/flow")
+
+    return {
+      ok: true,
+      jobId: job.id,
+      jobNumber: payload.job_number,
+      customerName: customer.full_name,
+      customerMobile: customer.mobile ?? null,
+      vehicleLabel,
+      plate,
+      trackingPath,
+      portalPath: "/portal",
+      access,
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not create the job card." }
   }
-
-  const payload = {
-    job_number: genJobNumber(),
-    customer_id: customerId,
-    vehicle_id: vehicleId,
-    // Snapshot (denormalized) fields — keep the job card self-contained.
-    customer_name: customer.full_name,
-    customer_mobile: customer.mobile ?? "",
-    vehicle_make: vehicle.make,
-    vehicle_model: vehicle.model,
-    variant: vehicle.variant,
-    color: vehicle.color,
-    body_type: vehicle.body_type || inferBodyType(vehicle.make, vehicle.model),
-    vehicle_year: vehicle.year,
-    vehicle_reference_image_url: imageUrl,
-    vehicle_image_source: imageSource,
-    vehicle_image_resolved_at: imageResolvedAt,
-    plate_emirate: vehicle.plate_emirate,
-    plate_code: vehicle.plate_code,
-    plate_number: vehicle.plate_number,
-    vin: vehicle.vin,
-    mileage: fd.get("mileage") ? Number(fd.get("mileage")) : vehicle.mileage,
-    complaint: s(fd, "complaint"),
-    advisor_id: s(fd, "advisor_id"),
-    technician_id: s(fd, "technician_id"),
-    notes: s(fd, "notes"),
-    stage: "check_in" as Stage,
-    created_by: user.id,
-  }
-
-  const { data: job, error } = await supabase.from("jobs").insert(payload).select("id").single()
-  if (error) throw new Error(error.message)
-
-  // If the wizard collected a fresher mileage, update the master vehicle too.
-  if (fd.get("mileage")) {
-    await supabase
-      .from("vehicles")
-      .update({ mileage: Number(fd.get("mileage")), updated_at: new Date().toISOString() })
-      .eq("id", vehicleId)
-  }
-
-  const photoUrls = String(fd.get("photo_urls") || "").split(",").filter(Boolean)
-  const damageUrls = String(fd.get("damage_urls") || "").split(",").filter(Boolean)
-  const rows = [
-    ...photoUrls.map((url) => ({ job_id: job.id, url, kind: "vehicle" })),
-    ...damageUrls.map((url) => ({ job_id: job.id, url, kind: "damage" })),
-  ]
-  if (rows.length) await supabase.from("vehicle_photos").insert(rows)
-
-  await logAction(ctx, "job.create", "job", job.id, { job_number: payload.job_number })
-
-  // First job for this customer? Auto-provision their portal account (best-effort, never blocks).
-  const { count: jobCount } = await supabase
-    .from("jobs")
-    .select("id", { count: "exact", head: true })
-    .eq("customer_id", customerId)
-  if ((jobCount ?? 0) <= 1) {
-    const { autoProvisionCustomerPortal } = await import("@/lib/actions-customer-portal")
-    await autoProvisionCustomerPortal(customerId)
-  }
-
-  revalidatePath("/")
-  revalidatePath(`/customers/${customerId}`)
-  revalidatePath(`/vehicles/${vehicleId}`)
-  redirect(`/jobs/${job.id}`)
 }

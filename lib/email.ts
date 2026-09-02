@@ -82,3 +82,48 @@ export function customerWelcomeEmail(opts: { name: string; url: string }) {
     { label: "Activate my account", url: opts.url },
   )
 }
+
+function esc(v: string | null | undefined): string {
+  return String(v ?? "").replace(/[<>&]/g, (c) => (c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;"))
+}
+
+/**
+ * Vehicle check-in email sent when a customer's job card is created. Contains
+ * the vehicle/plate/job details plus the secure set-password, portal and
+ * tracking links. Never contains a plain-text password.
+ */
+export function customerCheckInEmail(opts: {
+  name: string
+  vehicle: string
+  plate?: string | null
+  jobNumber: string
+  portalUrl: string
+  trackingUrl: string
+  setPasswordUrl: string
+  showSetPassword: boolean
+}) {
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:4px 0;color:#8b93a1;font-size:12px;text-transform:uppercase;letter-spacing:1px;width:120px">${label}</td>
+      <td style="padding:4px 0;color:#ffffff;font-size:14px;font-weight:600">${esc(value)}</td></tr>`
+  const linkRow = (label: string, url: string) =>
+    `<p style="margin:10px 0 0;font-size:13px"><span style="color:#8b93a1">${label}:</span><br/>
+      <a href="${url}" style="color:#93c5fd;word-break:break-all">${url}</a></p>`
+  const body = `
+    <p>Hi ${esc(opts.name) || "there"},</p>
+    <p>Your vehicle has been checked in at <strong>${BRAND}</strong>. You can follow every step of the work online.</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0 4px">
+      ${row("Vehicle", opts.vehicle || "Your vehicle")}
+      ${opts.plate ? row("Plate", opts.plate) : ""}
+      ${row("Job Card", opts.jobNumber)}
+    </table>
+    ${opts.showSetPassword ? linkRow("Set your password", opts.setPasswordUrl) : ""}
+    ${linkRow("Track your vehicle", opts.trackingUrl)}
+    ${linkRow("Customer portal", opts.portalUrl)}`
+  return shell(
+    "Your vehicle has been checked in",
+    body,
+    opts.showSetPassword
+      ? { label: "Set password & track", url: opts.setPasswordUrl }
+      : { label: "Track my vehicle", url: opts.trackingUrl },
+  )
+}

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import {
   createJobFromMaster,
   searchCustomers,
@@ -8,13 +9,31 @@ import {
   createCustomerInline,
   createVehicleInline,
   findVehicleByVinOrPlate,
+  type JobCreateResult,
 } from "@/lib/actions-customers"
+import { resendCheckInForJob } from "@/lib/actions-customer-portal"
 import { Button, Card, Combo, Input, Label, Select, Textarea, UAEPlate } from "@/components/ui"
 import { PhotoUploader } from "@/components/photo-uploader"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { BODY_TYPES, inferBodyType, MODEL_SUGGESTIONS } from "@/lib/vehicle"
 import { COMMON_MAKES, COMMON_COLORS, UAE_EMIRATES } from "@/lib/constants"
-import { Search, UserPlus, Check, ArrowLeft, Car, Phone, Plus, Loader2 } from "lucide-react"
+import {
+  Search,
+  UserPlus,
+  Check,
+  ArrowLeft,
+  Car,
+  Phone,
+  Plus,
+  Loader2,
+  X,
+  Copy,
+  MessageCircle,
+  Mail,
+  ExternalLink,
+  CircleCheck,
+  CircleAlert,
+} from "lucide-react"
 
 type Staff = { id: string; full_name: string | null; role: string }
 type Customer = { id: string; full_name: string; mobile: string | null; company_name?: string | null }
@@ -445,7 +464,7 @@ function NewVehicleForm({
         setCreating(false)
         return
       }
-      const v = await createVehicleInline({
+      const res = await createVehicleInline({
         customer_id: customerId,
         make,
         model,
@@ -459,7 +478,12 @@ function NewVehicleForm({
         vin,
         mileage: fd.get("mileage") ? Number(fd.get("mileage")) : null,
       })
-      onCreated(v as Vehicle)
+      if (!res.ok) {
+        setError(res.error)
+        setCreating(false)
+        return
+      }
+      onCreated(res.vehicle as Vehicle)
     } catch (e: any) {
       setError(e.message ?? "Failed to create vehicle")
       setCreating(false)

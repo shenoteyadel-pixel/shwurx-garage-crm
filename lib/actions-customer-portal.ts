@@ -82,7 +82,7 @@ export async function inviteCustomerToPortal(customerId: string): Promise<Creden
 
   await logAction(ctx, "customer.portal_invite", "customer", customerId, { email, emailSent: send.sent })
   revalidatePath(`/customers/${customerId}`)
-  return { userId: userId!, email, link, emailSent: send.sent, emailError: send.error }
+  return { ok: true, userId: userId!, email, link, emailSent: send.sent, emailError: send.error }
 }
 
 /**

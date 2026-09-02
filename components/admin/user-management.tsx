@@ -1,7 +1,9 @@
 "use client"
 
-import { useState, useTransition, useRef } from "react"
+import { useState, useTransition, useRef, useEffect, useLayoutEffect, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { Card, Button, Input, Label, Select, Badge, Combo } from "@/components/ui"
+import { cn } from "@/lib/utils"
 import {
   ROLE_LIST,
   PERMISSION_CATALOG,
@@ -14,6 +16,8 @@ import {
   DEPARTMENTS,
   departmentLabel,
   JOB_TITLE_SUGGESTIONS,
+  buildStaffInviteWhatsApp,
+  buildWhatsAppLink,
 } from "@/lib/rbac/catalog"
 import {
   inviteStaffUser,
@@ -47,6 +51,9 @@ import {
   Trash2,
   Pencil,
   Copy,
+  MoreHorizontal,
+  MessageCircle,
+  Link2,
 } from "lucide-react"
 
 interface UserRow {
@@ -254,6 +261,133 @@ function StatusBadge({ user }: { user: UserRow }) {
   )
 }
 
+/* ---------------- Row actions menu (portal + collision aware) ---------------- */
+
+type MenuItem = {
+  key: string
+  label: string
+  icon: React.ReactNode
+  onSelect: () => void
+  danger?: boolean
+  busy?: boolean
+  separatorBefore?: boolean
+}
+
+const MENU_WIDTH = 232
+
+/**
+ * Action menu rendered through a portal to document.body so it can NEVER be
+ * clipped by the table's `overflow-hidden` / `overflow-x-auto` containers.
+ * It measures the trigger with getBoundingClientRect and:
+ *  - flips upward when there isn't room below (collision detection),
+ *  - clamps fully inside the viewport on both axes,
+ *  - re-positions on scroll/resize,
+ *  - closes on outside click, Escape, or after choosing an action.
+ */
+function RowActionsMenu({ items, disabled }: { items: MenuItem[]; disabled?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  const place = useCallback(() => {
+    const a = anchorRef.current
+    if (!a) return
+    const r = a.getBoundingClientRect()
+    const gap = 6
+    const margin = 8
+    const menuH = menuRef.current?.offsetHeight ?? Math.min(items.length * 40 + 8, 420)
+    const spaceBelow = window.innerHeight - r.bottom
+    // Flip up only when there isn't room below but there is more room above.
+    const openUp = spaceBelow < menuH + gap + margin && r.top > spaceBelow
+    let top = openUp ? r.top - menuH - gap : r.bottom + gap
+    top = Math.max(margin, Math.min(top, window.innerHeight - menuH - margin))
+    let left = r.right - MENU_WIDTH
+    left = Math.max(margin, Math.min(left, window.innerWidth - MENU_WIDTH - margin))
+    setPos({ top, left })
+  }, [items.length])
+
+  // Position synchronously before paint, then refine once the menu is measured.
+  useLayoutEffect(() => {
+    if (!open) return
+    place()
+    const id = requestAnimationFrame(place)
+    return () => cancelAnimationFrame(id)
+  }, [open, place])
+
+  useEffect(() => {
+    if (!open) return
+    const reposition = () => place()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (menuRef.current?.contains(t) || anchorRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    window.addEventListener("scroll", reposition, true)
+    window.addEventListener("resize", reposition)
+    document.addEventListener("keydown", onKey)
+    document.addEventListener("mousedown", onDown)
+    return () => {
+      window.removeEventListener("scroll", reposition, true)
+      window.removeEventListener("resize", reposition)
+      document.removeEventListener("keydown", onKey)
+      document.removeEventListener("mousedown", onDown)
+    }
+  }, [open, place])
+
+  return (
+    <div ref={anchorRef} className="inline-block">
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </Button>
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            className="fixed z-[100] overflow-hidden rounded-lg border border-border bg-card py-1 shadow-2xl"
+            style={{ top: pos.top, left: pos.left, width: MENU_WIDTH }}
+          >
+            {items.map((it) => (
+              <div key={it.key}>
+                {it.separatorBefore && <div className="my-1 border-t border-border" />}
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={it.busy}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50",
+                    it.danger && "text-destructive hover:bg-destructive/10",
+                  )}
+                  onClick={() => {
+                    setOpen(false)
+                    it.onSelect()
+                  }}
+                >
+                  {it.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : it.icon}
+                  {it.label}
+                </button>
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </div>
+  )
+}
+
 function UserRowItem({
   user,
   isSelf,
@@ -282,23 +416,153 @@ function UserRowItem({
   const [pending, start] = useTransition()
   const [credPending, startCred] = useTransition()
   const [linkPending, startLink] = useTransition()
-  const [menuOpen, setMenuOpen] = useState(false)
   const phone = user.mobile ?? user.phone
   const needsSetup = user.must_set_password || user.invite_status === "invited" || user.invite_status === "email_failed"
 
-  // Copy a freshly generated login/setup link straight to the clipboard.
-  function copyLoginLink() {
-    setMenuOpen(false)
+  // Surface an { ok, error } ActionResult as a toast.
+  function toastResult(r: { ok: boolean; error?: string }, okMsg?: string) {
+    if (!r.ok) onToast(r.error || "Action failed. Please try again.", "error")
+    else if (okMsg) onToast(okMsg)
+  }
+
+  // Generate a fresh link and copy it to the clipboard.
+  function copyLinkAction(kind: "set" | "reset", okMsg: string) {
     startLink(async () => {
+      const r = await getLoginLink(user.id, kind)
+      if (!r.ok) {
+        onToast(r.error, "error")
+        return
+      }
       try {
-        const r = await getLoginLink(user.id, needsSetup ? "set" : "reset")
-        await navigator.clipboard.writeText(r.link).catch(() => {})
-        onToast("Login link copied to clipboard")
-      } catch (e) {
-        onToast((e as Error).message, "error")
+        await navigator.clipboard.writeText(r.link)
+        onToast(okMsg)
+      } catch {
+        onToast("Your browser blocked the copy — try again from the share dialog.", "error")
       }
     })
   }
+
+  // Generate a link and open a prefilled WhatsApp message to the user's mobile.
+  function whatsappAction() {
+    startLink(async () => {
+      const kind = needsSetup ? "set" : "reset"
+      const r = await getLoginLink(user.id, kind)
+      if (!r.ok) {
+        onToast(r.error, "error")
+        return
+      }
+      const href = buildWhatsAppLink(
+        r.mobile,
+        buildStaffInviteWhatsApp({
+          fullName: r.fullName,
+          jobTitle: r.jobTitle,
+          roleLabel: r.roleLabel,
+          link: r.link,
+          kind,
+        }),
+      )
+      if (!href) {
+        onToast("Add a mobile number to this user to share via WhatsApp.", "error")
+        return
+      }
+      window.open(href, "_blank", "noopener,noreferrer")
+    })
+  }
+
+  // Generate a credential link and open the share dialog (invite or reset).
+  function credAction(purpose: "invite" | "reset") {
+    startCred(async () => {
+      const r = purpose === "invite" ? await resendStaffInvite(user.id) : await sendPasswordReset(user.id)
+      if (!r.ok) {
+        onToast(r.error || "Could not generate the link.", "error")
+        return
+      }
+      onCredential(r, purpose, phone)
+    })
+  }
+
+  const menuItems: MenuItem[] = [
+    { key: "edit", label: "Edit profile", icon: <Pencil className="h-4 w-4" />, onSelect: onEditProfile },
+    ...(canManagePerms
+      ? [
+          {
+            key: "perms",
+            label: "Permissions",
+            icon: <SlidersHorizontal className="h-4 w-4" />,
+            onSelect: onEditPerms,
+          } as MenuItem,
+        ]
+      : []),
+    {
+      key: "resend",
+      label: "Resend invite",
+      icon: <Send className="h-4 w-4" />,
+      onSelect: () => credAction("invite"),
+      busy: credPending,
+      separatorBefore: true,
+    },
+    {
+      key: "reset",
+      label: "Reset password",
+      icon: <KeyRound className="h-4 w-4" />,
+      onSelect: () => credAction("reset"),
+      busy: credPending,
+    },
+    {
+      key: "copy-set",
+      label: "Copy set-password link",
+      icon: <Link2 className="h-4 w-4" />,
+      onSelect: () => copyLinkAction("set", "Set-password link copied"),
+      busy: linkPending,
+    },
+    {
+      key: "copy-login",
+      label: "Copy login link",
+      icon: <Copy className="h-4 w-4" />,
+      onSelect: () => copyLinkAction("reset", "Login link copied"),
+      busy: linkPending,
+    },
+    {
+      key: "whatsapp",
+      label: "Send via WhatsApp",
+      icon: <MessageCircle className="h-4 w-4" />,
+      onSelect: whatsappAction,
+      busy: linkPending,
+    },
+    {
+      key: "logout",
+      label: "Force logout",
+      icon: <LogOut className="h-4 w-4" />,
+      onSelect: () => start(async () => toastResult(await forceLogoutUser(user.id), "User signed out everywhere")),
+      busy: pending,
+      separatorBefore: true,
+    },
+    {
+      key: "active",
+      label: user.is_active ? "Disable user" : "Enable user",
+      icon: user.is_active ? <Ban className="h-4 w-4" /> : <Check className="h-4 w-4" />,
+      onSelect: () =>
+        start(async () =>
+          toastResult(
+            await setUserActive(user.id, !user.is_active),
+            user.is_active ? "User disabled" : "User enabled",
+          ),
+        ),
+      busy: pending,
+    },
+    ...(isOwner
+      ? [
+          {
+            key: "delete",
+            label: "Delete user",
+            icon: <Trash2 className="h-4 w-4" />,
+            onSelect: onDelete,
+            danger: true,
+            separatorBefore: true,
+          } as MenuItem,
+        ]
+      : []),
+  ]
 
   return (
     <tr className="border-b border-border last:border-0">
@@ -340,7 +604,9 @@ function UserRowItem({
           <Select
             defaultValue={user.role}
             disabled={pending}
-            onChange={(e) => start(() => updateUserRole(user.id, e.target.value as Role))}
+            onChange={(e) =>
+              start(async () => toastResult(await updateUserRole(user.id, e.target.value as Role), "Role updated"))
+            }
             className="h-9 w-44"
           >
             {ALL_STAFF_ROLES.map((r) => (
@@ -377,31 +643,11 @@ function UserRowItem({
         <div className="flex items-center justify-end gap-2">
           {canManageUsers &&
             (needsSetup ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={credPending}
-                onClick={() =>
-                  startCred(async () => {
-                    const r = await resendStaffInvite(user.id)
-                    onCredential(r, "invite", phone)
-                  })
-                }
-              >
+              <Button variant="ghost" size="sm" disabled={credPending} onClick={() => credAction("invite")}>
                 {credPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Resend invite
               </Button>
             ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={credPending}
-                onClick={() =>
-                  startCred(async () => {
-                    const r = await sendPasswordReset(user.id)
-                    onCredential(r, "reset", phone)
-                  })
-                }
-              >
+              <Button variant="ghost" size="sm" disabled={credPending} onClick={() => credAction("reset")}>
                 {credPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />} Reset
                 password
               </Button>
@@ -411,76 +657,7 @@ function UserRowItem({
               <SlidersHorizontal className="h-4 w-4" /> Permissions
             </Button>
           )}
-          {canManageUsers && !isSelf && (
-            <div className="relative">
-              <Button variant="ghost" size="sm" onClick={() => setMenuOpen((v) => !v)} aria-label="More actions">
-                •••
-              </Button>
-              {menuOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} aria-hidden />
-                  <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-card shadow-xl">
-                    <button
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        onEditProfile()
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" /> Edit profile
-                    </button>
-                    <button
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50"
-                      disabled={linkPending}
-                      onClick={copyLoginLink}
-                    >
-                      {linkPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />} Copy login
-                      link
-                    </button>
-                    <button
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50"
-                      disabled={pending}
-                      onClick={() => {
-                        setMenuOpen(false)
-                        start(() => forceLogoutUser(user.id))
-                      }}
-                    >
-                      <LogOut className="h-4 w-4" /> Force logout
-                    </button>
-                    <button
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50"
-                      disabled={pending}
-                      onClick={() => {
-                        setMenuOpen(false)
-                        start(() => setUserActive(user.id, !user.is_active))
-                      }}
-                    >
-                      {user.is_active ? (
-                        <>
-                          <Ban className="h-4 w-4" /> Deactivate
-                        </>
-                      ) : (
-                        <>
-                          <Check className="h-4 w-4" /> Activate
-                        </>
-                      )}
-                    </button>
-                    {isOwner && (
-                      <button
-                        className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
-                        onClick={() => {
-                          setMenuOpen(false)
-                          onDelete()
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" /> Delete user
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+          {canManageUsers && !isSelf && <RowActionsMenu items={menuItems} />}
         </div>
       </td>
     </tr>
@@ -540,6 +717,10 @@ function CreateUserDialog({
             else if (dupes.length > 0) fd.set("allow_duplicate", "true")
             try {
               const result = await inviteStaffUser(fd)
+              if (!result.ok) {
+                setError(result.error || "Could not create the user.")
+                return
+              }
               onInvited(result, String(fd.get("mobile") || ""))
             } catch (e) {
               setError((e as Error).message)
@@ -671,7 +852,9 @@ function OverridesDialog({
 
   function cycle(perm: Permission, next: "default" | "allow" | "deny") {
     const allowed = next === "default" ? null : next === "allow"
-    start(() => setPermissionOverride(user.id, perm, allowed))
+    start(async () => {
+      await setPermissionOverride(user.id, perm, allowed)
+    })
   }
 
   return (
@@ -741,7 +924,11 @@ function EditProfileDialog({
           start(async () => {
             setError(null)
             try {
-              await updateStaffProfile(user.id, fd)
+              const r = await updateStaffProfile(user.id, fd)
+              if (!r.ok) {
+                setError(r.error || "Could not save changes.")
+                return
+              }
               onSaved()
             } catch (e) {
               setError((e as Error).message)
@@ -868,12 +1055,16 @@ function DeleteUserDialog({
             onClick={() =>
               start(async () => {
                 setError(null)
-                try {
-                  await deleteStaffUser(user.id)
-                  onDeleted()
-                } catch (e) {
-                  setError((e as Error).message)
-                }
+            try {
+              const r = await deleteStaffUser(user.id)
+              if (!r.ok) {
+                setError(r.error || "Could not delete this user.")
+                return
+              }
+              onDeleted()
+            } catch (e) {
+              setError((e as Error).message)
+            }
               })
             }
           >

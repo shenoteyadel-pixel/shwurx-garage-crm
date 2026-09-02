@@ -3,44 +3,127 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { requirePermission, logAction, ForbiddenError } from "@/lib/rbac/context"
 import { ROLE_MAP, ALL_PERMISSIONS, type Permission, type Role } from "@/lib/rbac/roles"
+import { generateActionLink, createManagedAuthUser, deleteAuthUser } from "@/lib/account-links"
+import { sendEmail, staffInviteEmail, resetPasswordEmail } from "@/lib/email"
 import { revalidatePath } from "next/cache"
 
 function str(v: FormDataEntryValue | null): string {
   return String(v ?? "").trim()
 }
 
-/** Create a new staff user (owner/GM only) via the Supabase admin API. */
-export async function createStaffUser(formData: FormData) {
+export type CredentialLinkResult = {
+  email: string
+  link: string
+  emailSent: boolean
+  emailError?: string
+}
+
+/**
+ * Invite a new staff user (owner/GM only).
+ * Creates a confirmed account WITHOUT a password, then generates a secure
+ * set-password link. The link is emailed automatically (Resend) and also
+ * returned so the admin can copy / WhatsApp / email it manually.
+ * No plain-text password is ever created or stored.
+ */
+export async function inviteStaffUser(formData: FormData): Promise<CredentialLinkResult> {
   const ctx = await requirePermission("users.manage")
   const email = str(formData.get("email")).toLowerCase()
-  const password = str(formData.get("password"))
   const fullName = str(formData.get("full_name"))
+  const phone = str(formData.get("phone"))
   const role = str(formData.get("role")) as Role
 
-  if (!email || !password) throw new Error("Email and password are required.")
-  if (password.length < 8) throw new Error("Password must be at least 8 characters.")
+  if (!email) throw new Error("Email is required.")
   const meta = ROLE_MAP[role]
   if (!meta || !meta.staff) throw new Error("Invalid staff role.")
 
   const svc = createServiceClient()
-  const { data: created, error } = await svc.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: { full_name: fullName },
-  })
-  if (error) throw new Error(error.message)
 
-  const userId = created.user!.id
-  // Upsert profile (a DB trigger may already have inserted a default row).
+  // Create (or reuse) the auth account without a password.
+  const { userId, alreadyExisted } = await createManagedAuthUser({
+    email,
+    metadata: { full_name: fullName, must_set_password: true },
+  })
+
+  // Upsert the profile; roll back the auth user if this is a brand-new account and profile write fails.
   const { error: pErr } = await svc.from("profiles").upsert(
-    { id: userId, email, full_name: fullName || email, role, is_active: true },
+    {
+      id: userId,
+      email,
+      full_name: fullName || email,
+      phone: phone || null,
+      role,
+      is_active: true,
+      must_set_password: true,
+      invited_at: new Date().toISOString(),
+      invited_by: ctx.userId,
+    },
     { onConflict: "id" },
   )
-  if (pErr) throw new Error(pErr.message)
+  if (pErr) {
+    if (!alreadyExisted) await deleteAuthUser(userId).catch(() => {})
+    throw new Error(pErr.message)
+  }
 
-  await logAction(ctx, "user.create", "user", userId, { email, role })
+  // Generate the secure set-password link (invite for new accounts, recovery for existing).
+  const link = await generateActionLink({
+    email,
+    type: alreadyExisted ? "recovery" : "invite",
+    redirectPath: "/auth/set-password",
+  })
+
+  const send = await sendEmail({
+    to: email,
+    subject: "Set up your Shwurx Garage account",
+    html: staffInviteEmail({ fullName, roleLabel: meta.label, url: link }),
+    idempotencyKey: `staff-invite/${userId}`,
+  })
+
+  await logAction(ctx, "user.invite", "user", userId, { email, role, emailSent: send.sent })
   revalidatePath("/users")
+  return { email, link, emailSent: send.sent, emailError: send.error }
+}
+
+/** Resend a set-password invite for a user who hasn't set their password yet. */
+export async function resendStaffInvite(userId: string): Promise<CredentialLinkResult> {
+  const ctx = await requirePermission("users.manage")
+  const svc = createServiceClient()
+  const { data: profile, error } = await svc
+    .from("profiles")
+    .select("email, full_name, role")
+    .eq("id", userId)
+    .maybeSingle()
+  if (error || !profile?.email) throw new Error("User not found.")
+
+  const meta = ROLE_MAP[profile.role as Role]
+  const link = await generateActionLink({ email: profile.email, type: "invite", redirectPath: "/auth/set-password" })
+  const send = await sendEmail({
+    to: profile.email,
+    subject: "Set up your Shwurx Garage account",
+    html: staffInviteEmail({ fullName: profile.full_name ?? "", roleLabel: meta?.label ?? "staff", url: link }),
+  })
+  await logAction(ctx, "user.invite_resend", "user", userId, { emailSent: send.sent })
+  return { email: profile.email, link, emailSent: send.sent, emailError: send.error }
+}
+
+/** Send a password-reset link for an existing user. */
+export async function sendPasswordReset(userId: string): Promise<CredentialLinkResult> {
+  const ctx = await requirePermission("users.manage")
+  const svc = createServiceClient()
+  const { data: profile, error } = await svc
+    .from("profiles")
+    .select("email, full_name")
+    .eq("id", userId)
+    .maybeSingle()
+  if (error || !profile?.email) throw new Error("User not found.")
+
+  const link = await generateActionLink({ email: profile.email, type: "recovery", redirectPath: "/auth/set-password" })
+  const send = await sendEmail({
+    to: profile.email,
+    subject: "Reset your Shwurx Garage password",
+    html: resetPasswordEmail({ fullName: profile.full_name ?? "", url: link }),
+  })
+  await logAction(ctx, "user.password_reset", "user", userId, { emailSent: send.sent })
+  return { email: profile.email, link, emailSent: send.sent, emailError: send.error }
 }
 
 /** Change a user's role. */

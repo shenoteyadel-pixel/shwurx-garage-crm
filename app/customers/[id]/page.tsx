@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { Card, Badge, Button } from "@/components/ui"
@@ -23,6 +23,15 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
   const { data: customer } = await supabase.from("customers").select("*").eq("id", id).single()
   if (!customer) notFound()
+
+  // Does this customer already have a real portal login? (service client — staff can't read others' profiles under RLS)
+  const svc = createServiceClient()
+  const { data: portalProfile } = await svc
+    .from("profiles")
+    .select("id")
+    .eq("customer_id", id)
+    .maybeSingle()
+  const hasPortalAccount = !!portalProfile
 
   const [{ data: vehicles }, { data: jobs }] = await Promise.all([
     supabase
@@ -96,7 +105,14 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             </div>
           </div>
           <div className="flex gap-2">
-            {user.permissions.includes("customers.edit") && <PortalLinkButton customerId={id} />}
+            {user.permissions.includes("customers.edit") && (
+              <PortalLinkButton
+                customerId={id}
+                hasEmail={!!customer.email}
+                hasAccount={hasPortalAccount}
+                phone={customer.whatsapp || customer.mobile}
+              />
+            )}
             {user.permissions.includes("customers.edit") && (
               <Link href={`/customers/${id}/edit`}>
                 <Button variant="outline" size="sm">

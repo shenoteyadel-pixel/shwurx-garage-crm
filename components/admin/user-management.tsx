@@ -3,8 +3,17 @@
 import { useState, useTransition } from "react"
 import { Card, Button, Input, Label, Select, Badge } from "@/components/ui"
 import { ROLE_LIST, PERMISSION_CATALOG, roleLabel, type Permission, type Role } from "@/lib/rbac/roles"
-import { createStaffUser, updateUserRole, setUserActive, setPermissionOverride } from "@/lib/actions-users"
-import { UserPlus, Loader2, SlidersHorizontal, X, Check, Ban } from "lucide-react"
+import {
+  inviteStaffUser,
+  resendStaffInvite,
+  sendPasswordReset,
+  updateUserRole,
+  setUserActive,
+  setPermissionOverride,
+  type CredentialLinkResult,
+} from "@/lib/actions-users"
+import { CredentialLinkPanel } from "@/components/admin/credential-link-panel"
+import { UserPlus, Loader2, SlidersHorizontal, X, Check, Ban, KeyRound, Send } from "lucide-react"
 
 interface UserRow {
   id: string
@@ -14,6 +23,8 @@ interface UserRow {
   is_active: boolean
   customer_id: string | null
   created_at: string
+  phone?: string | null
+  must_set_password?: boolean
 }
 interface Override {
   user_id: string
@@ -38,6 +49,9 @@ export function UserManagement({
 }) {
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<UserRow | null>(null)
+  const [cred, setCred] = useState<{ result: CredentialLinkResult; purpose: "invite" | "reset"; phone?: string | null } | null>(
+    null,
+  )
   const staff = users.filter((u) => u.role !== "customer")
 
   const overrideCount = (userId: string) => overrides.filter((o) => o.user_id === userId).length
@@ -74,6 +88,7 @@ export function UserManagement({
                   canManageUsers={canManageUsers}
                   canManagePerms={canManagePerms}
                   onEditPerms={() => setEditing(u)}
+                  onCredential={(result, purpose, phone) => setCred({ result, purpose, phone })}
                 />
               ))}
               {staff.length === 0 && (
@@ -88,13 +103,29 @@ export function UserManagement({
         </div>
       </Card>
 
-      {showCreate && <CreateUserDialog onClose={() => setShowCreate(false)} />}
+      {showCreate && (
+        <CreateUserDialog
+          onClose={() => setShowCreate(false)}
+          onInvited={(result, phone) => {
+            setShowCreate(false)
+            setCred({ result, purpose: "invite", phone })
+          }}
+        />
+      )}
       {editing && (
         <OverridesDialog
           user={editing}
           overrides={overrides.filter((o) => o.user_id === editing.id)}
           onClose={() => setEditing(null)}
         />
+      )}
+      {cred && (
+        <Dialog title="Share access link" onClose={() => setCred(null)}>
+          <CredentialLinkPanel result={cred.result} purpose={cred.purpose} phone={cred.phone} />
+          <div className="mt-5 flex justify-end">
+            <Button onClick={() => setCred(null)}>Done</Button>
+          </div>
+        </Dialog>
       )}
     </div>
   )
@@ -107,6 +138,7 @@ function UserRowItem({
   canManageUsers,
   canManagePerms,
   onEditPerms,
+  onCredential,
 }: {
   user: UserRow
   isSelf: boolean
@@ -114,8 +146,10 @@ function UserRowItem({
   canManageUsers: boolean
   canManagePerms: boolean
   onEditPerms: () => void
+  onCredential: (r: CredentialLinkResult, purpose: "invite" | "reset", phone?: string | null) => void
 }) {
   const [pending, start] = useTransition()
+  const [credPending, startCred] = useTransition()
 
   return (
     <tr className="border-b border-border last:border-0">
@@ -151,13 +185,17 @@ function UserRowItem({
         )}
       </td>
       <td className="px-4 py-3">
-        {user.is_active ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-400">
-            <Check className="h-3 w-3" /> Active
-          </span>
-        ) : (
+        {!user.is_active ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-1 text-xs font-medium text-destructive">
             <Ban className="h-3 w-3" /> Inactive
+          </span>
+        ) : user.must_set_password ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-400">
+            <KeyRound className="h-3 w-3" /> Pending setup
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-400">
+            <Check className="h-3 w-3" /> Active
           </span>
         )}
       </td>
@@ -170,6 +208,38 @@ function UserRowItem({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-2">
+          {canManageUsers &&
+            (user.must_set_password ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={credPending}
+                onClick={() =>
+                  startCred(async () => {
+                    const r = await resendStaffInvite(user.id)
+                    onCredential(r, "invite", user.phone)
+                  })
+                }
+              >
+                {credPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Resend
+                invite
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={credPending}
+                onClick={() =>
+                  startCred(async () => {
+                    const r = await sendPasswordReset(user.id)
+                    onCredential(r, "reset", user.phone)
+                  })
+                }
+              >
+                {credPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />} Reset
+                password
+              </Button>
+            ))}
           {canManagePerms && (
             <Button variant="ghost" size="sm" onClick={onEditPerms}>
               <SlidersHorizontal className="h-4 w-4" /> Permissions
@@ -197,19 +267,29 @@ function UserRowItem({
   )
 }
 
-function CreateUserDialog({ onClose }: { onClose: () => void }) {
+function CreateUserDialog({
+  onClose,
+  onInvited,
+}: {
+  onClose: () => void
+  onInvited: (result: CredentialLinkResult, phone?: string | null) => void
+}) {
   const [pending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
   return (
-    <Dialog title="Add staff user" onClose={onClose}>
+    <Dialog title="Invite staff user" onClose={onClose}>
+      <p className="mb-4 text-sm text-muted-foreground">
+        We&apos;ll create the account and generate a secure set-password link. No password is set here — the user
+        chooses their own.
+      </p>
       <form
         action={(fd) =>
           start(async () => {
             setError(null)
             try {
-              await createStaffUser(fd)
-              onClose()
+              const result = await inviteStaffUser(fd)
+              onInvited(result, String(fd.get("phone") || ""))
             } catch (e) {
               setError((e as Error).message)
             }
@@ -226,8 +306,8 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
           <Input id="email" name="email" type="email" required placeholder="staff@shwurx.com" />
         </div>
         <div>
-          <Label htmlFor="password">Temporary password</Label>
-          <Input id="password" name="password" type="text" required minLength={8} placeholder="min 8 characters" />
+          <Label htmlFor="phone">Phone (for WhatsApp share)</Label>
+          <Input id="phone" name="phone" placeholder="+971 50 000 0000" />
         </div>
         <div>
           <Label htmlFor="role">Role</Label>
@@ -245,7 +325,7 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
             Cancel
           </Button>
           <Button type="submit" disabled={pending}>
-            {pending && <Loader2 className="h-4 w-4 animate-spin" />} Create user
+            {pending && <Loader2 className="h-4 w-4 animate-spin" />} Create &amp; generate link
           </Button>
         </div>
       </form>

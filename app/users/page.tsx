@@ -17,7 +17,7 @@ export default async function UsersPage() {
   const [{ data: profiles }, { data: overrides }] = await Promise.all([
     svc
       .from("profiles")
-      .select("id, email, full_name, role, is_active, customer_id, created_at")
+      .select("id, email, full_name, role, is_active, customer_id, created_at, phone, must_set_password")
       .order("created_at", { ascending: true }),
     svc.from("permission_overrides").select("user_id, permission, allowed"),
   ])

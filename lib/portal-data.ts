@@ -49,8 +49,22 @@ export async function resolvePortalToken(token: string): Promise<PortalData | nu
 
   const customerId = row.customer_id as string
 
+  // void the token's freshness marker (best-effort)
+  await svc.from("customer_portal_tokens").update({ last_used_at: new Date().toISOString() }).eq("token", token)
+
+  return loadPortalDataByCustomer(customerId)
+}
+
+/**
+ * Load customer-safe portal data for a customer id (used by both the token
+ * portal and a logged-in customer's own portal). Only exposes progress +
+ * billing summaries — never internal costs, staff notes, or parts pricing.
+ */
+export async function loadPortalDataByCustomer(customerId: string): Promise<PortalData | null> {
+  const svc = createServiceClient()
+
   const [{ data: customer }, { data: jobs }, { data: invoices }] = await Promise.all([
-    svc.from("customers").select("id, full_name, phone").eq("id", customerId).maybeSingle(),
+    svc.from("customers").select("id, full_name, mobile").eq("id", customerId).maybeSingle(),
     svc
       .from("jobs")
       .select(
@@ -65,9 +79,6 @@ export async function resolvePortalToken(token: string): Promise<PortalData | nu
   ])
 
   if (!customer) return null
-
-  // void the token's freshness marker (best-effort)
-  await svc.from("customer_portal_tokens").update({ last_used_at: new Date().toISOString() }).eq("token", token)
 
   const jobIds = new Set((jobs ?? []).map((j) => j.id))
 
@@ -99,7 +110,7 @@ export async function resolvePortalToken(token: string): Promise<PortalData | nu
     }))
 
   return {
-    customer: { id: customer.id, full_name: customer.full_name, phone: customer.phone },
+    customer: { id: customer.id, full_name: customer.full_name, phone: customer.mobile },
     jobs: portalJobs,
     invoices: portalInvoices,
   }

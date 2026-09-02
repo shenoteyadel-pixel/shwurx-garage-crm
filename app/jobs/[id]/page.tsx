@@ -54,7 +54,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const { data: quotation } = await supabase
     .from("quotations")
     .select(
-      "id, vat_rate, description, internal_notes, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount)",
+      "id, vat_rate, vat_inclusive, description, internal_notes, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, category, recommendation, sort_order)",
     )
     .eq("job_id", id)
     .order("created_at", { ascending: false })
@@ -97,7 +97,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const vehicle =
     [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
 
-  const rawItems = quotation?.quotation_items ?? []
+  const rawItems = [...(quotation?.quotation_items ?? [])].sort(
+    (a: any, b: any) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0),
+  )
   const quoteItems =
     rawItems.map((i: any) => ({
       kind: (i.kind === "labor" || i.kind === "service" ? "labor" : "part") as "part" | "labor",
@@ -109,6 +111,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       labour_hours: Number(i.labour_hours ?? 0),
       labour_rate: Number(i.labour_rate ?? 0),
       discount: Number(i.discount ?? 0),
+      category: i.category || "",
+      recommendation: (i.recommendation || "required") as "required" | "recommended" | "optional",
     })) ?? []
 
   const role = profile?.role || "advisor"
@@ -212,6 +216,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 jobId={job.id}
                 initialItems={quoteItems}
                 initialVat={Number(quotation?.vat_rate ?? 5)}
+                initialVatInclusive={Boolean(quotation?.vat_inclusive)}
                 initialDescription={quotation?.description ?? ""}
                 initialInternalNotes={quotation?.internal_notes ?? ""}
                 hasQuotation={!!quotation}

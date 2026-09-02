@@ -5,7 +5,9 @@ import { saveQuotation, type QuoteItemInput } from "@/lib/actions"
 import { Button, Card, Input, AutoTextarea, Label } from "@/components/ui"
 import { VAT_RATE } from "@/lib/constants"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Trash2, Save, Pencil, Printer, FileText, X, Lock, Wrench, Package } from "lucide-react"
+import { Plus, Trash2, Save, Pencil, Printer, FileText, X, Lock, Wrench, Package, Tag } from "lucide-react"
+
+export type Recommendation = "required" | "recommended" | "optional"
 
 export type Item = {
   kind: "part" | "labor"
@@ -17,6 +19,31 @@ export type Item = {
   labour_hours: number
   labour_rate: number
   discount: number
+  category: string
+  recommendation: Recommendation
+}
+
+export const RECOMMENDATIONS: { value: Recommendation; label: string; chip: string }[] = [
+  { value: "required", label: "Required", chip: "border-red-500/30 bg-red-500/10 text-red-300" },
+  { value: "recommended", label: "Recommended", chip: "border-amber-500/30 bg-amber-500/10 text-amber-300" },
+  { value: "optional", label: "Optional", chip: "border-sky-500/30 bg-sky-500/10 text-sky-300" },
+]
+
+export const CATEGORY_SUGGESTIONS = [
+  "Engine",
+  "Brakes",
+  "Suspension & Steering",
+  "Electrical",
+  "Air Conditioning",
+  "Transmission",
+  "Tyres & Wheels",
+  "Body & Paint",
+  "Diagnostics",
+  "General Service",
+]
+
+function recMeta(r: Recommendation) {
+  return RECOMMENDATIONS.find((x) => x.value === r) ?? RECOMMENDATIONS[0]
 }
 
 function emptyItem(kind: Item["kind"]): Item {
@@ -30,6 +57,8 @@ function emptyItem(kind: Item["kind"]): Item {
     labour_hours: 0,
     labour_rate: 0,
     discount: 0,
+    category: "",
+    recommendation: "required",
   }
 }
 
@@ -46,12 +75,30 @@ function lineBase(i: Item) {
   return Math.max(0, lineGross(i) - (Number(i.discount) || 0))
 }
 
-function totals(items: Item[], vat: number) {
-  const partsTotal = items.filter((i) => i.kind === "part").reduce((s, i) => s + lineGross(i), 0)
-  const laborTotal = items.filter((i) => i.kind === "labor").reduce((s, i) => s + lineGross(i), 0)
+// VAT-exclusive: base is the taxable net, VAT added on top.
+// VAT-inclusive: base already contains VAT, so back-calculate the net + VAT portion.
+function lineParts(i: Item, vat: number, inclusive: boolean) {
+  const base = lineBase(i)
+  if (inclusive) {
+    const net = base / (1 + vat / 100)
+    return { net, vat: base - net, total: base }
+  }
+  const v = (base * vat) / 100
+  return { net: base, vat: v, total: base + v }
+}
+
+function totals(items: Item[], vat: number, inclusive = false) {
   const discountTotal = items.reduce((s, i) => s + (Number(i.discount) || 0), 0)
-  const subtotal = partsTotal + laborTotal - discountTotal
-  const vatAmount = items.reduce((s, i) => s + (lineBase(i) * vat) / 100, 0)
+  let partsTotal = 0
+  let laborTotal = 0
+  let vatAmount = 0
+  for (const i of items) {
+    const { net, vat: v } = lineParts(i, vat, inclusive)
+    if (i.kind === "part") partsTotal += net
+    else laborTotal += net
+    vatAmount += v
+  }
+  const subtotal = partsTotal + laborTotal
   const total = subtotal + vatAmount
   return { partsTotal, laborTotal, discountTotal, subtotal, vatAmount, total }
 }
@@ -60,6 +107,7 @@ export function QuotationBuilder({
   jobId,
   initialItems,
   initialVat,
+  initialVatInclusive = false,
   initialDescription,
   initialInternalNotes,
   hasQuotation,
@@ -69,6 +117,7 @@ export function QuotationBuilder({
   jobId: string
   initialItems: Item[]
   initialVat: number
+  initialVatInclusive?: boolean
   initialDescription: string
   initialInternalNotes: string
   hasQuotation: boolean
@@ -77,10 +126,11 @@ export function QuotationBuilder({
 }) {
   const [open, setOpen] = React.useState(false)
   const vat = initialVat || VAT_RATE
+  const inclusive = initialVatInclusive
 
   const parts = initialItems.filter((i) => i.kind === "part")
   const labour = initialItems.filter((i) => i.kind === "labor")
-  const t = totals(initialItems, vat)
+  const t = totals(initialItems, vat, inclusive)
 
   return (
     <Card className="p-5">
@@ -131,7 +181,7 @@ export function QuotationBuilder({
           {parts.length > 0 && (
             <SummarySection icon={<Package className="h-4 w-4" />} title="Parts">
               {parts.map((it, idx) => (
-                <SummaryLine key={idx} it={it} vat={vat} />
+                <SummaryLine key={idx} it={it} vat={vat} inclusive={inclusive} />
               ))}
             </SummarySection>
           )}
@@ -139,7 +189,7 @@ export function QuotationBuilder({
           {labour.length > 0 && (
             <SummarySection icon={<Wrench className="h-4 w-4" />} title="Labour / Services">
               {labour.map((it, idx) => (
-                <SummaryLine key={idx} it={it} vat={vat} />
+                <SummaryLine key={idx} it={it} vat={vat} inclusive={inclusive} />
               ))}
             </SummarySection>
           )}
@@ -147,13 +197,19 @@ export function QuotationBuilder({
           <div className="space-y-1.5 border-t border-border pt-4 text-sm">
             <SummaryRow label="Parts subtotal" value={formatCurrency(t.partsTotal)} />
             <SummaryRow label="Labour subtotal" value={formatCurrency(t.laborTotal)} />
-            {t.discountTotal > 0 && <SummaryRow label="Discount" value={`− ${formatCurrency(t.discountTotal)}`} />}
-            <SummaryRow label="Subtotal" value={formatCurrency(t.subtotal)} />
-            <SummaryRow label={`VAT (${vat}%)`} value={formatCurrency(t.vatAmount)} />
+            {t.discountTotal > 0 && <SummaryRow label="Discount applied" value={`− ${formatCurrency(t.discountTotal)}`} />}
+            <SummaryRow label="Subtotal (excl. VAT)" value={formatCurrency(t.subtotal)} />
+            <SummaryRow
+              label={`VAT (${vat}%)${inclusive ? " — included" : ""}`}
+              value={formatCurrency(t.vatAmount)}
+            />
             <div className="flex items-center justify-between border-t border-border pt-2 text-base font-bold">
               <span>Grand total</span>
               <span className="tabular-nums text-primary">{formatCurrency(t.total)}</span>
             </div>
+            <p className="pt-1 text-[11px] text-muted-foreground">
+              Prices are VAT-{inclusive ? "inclusive" : "exclusive"}.
+            </p>
           </div>
 
           {initialInternalNotes && (
@@ -172,6 +228,7 @@ export function QuotationBuilder({
           jobId={jobId}
           initialItems={initialItems}
           initialVat={vat}
+          initialVatInclusive={inclusive}
           initialDescription={initialDescription}
           initialInternalNotes={initialInternalNotes}
           onClose={() => setOpen(false)}
@@ -200,9 +257,9 @@ function SummarySection({
   )
 }
 
-function SummaryLine({ it, vat }: { it: Item; vat: number }) {
-  const base = lineBase(it)
-  const lineVat = (base * vat) / 100
+function SummaryLine({ it, vat, inclusive }: { it: Item; vat: number; inclusive: boolean }) {
+  const { vat: lineVat, total } = lineParts(it, vat, inclusive)
+  const rec = recMeta(it.recommendation)
   return (
     <div className="rounded-lg border border-border bg-background/40 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -214,12 +271,17 @@ function SummaryLine({ it, vat }: { it: Item; vat: number }) {
                 #{it.part_number}
               </span>
             )}
+            {it.recommendation !== "required" && (
+              <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${rec.chip}`}>
+                {rec.label}
+              </span>
+            )}
           </div>
           {it.detail && (
             <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{it.detail}</p>
           )}
         </div>
-        <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(base + lineVat)}</span>
+        <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(total)}</span>
       </div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         {it.kind === "part" ? (
@@ -234,7 +296,7 @@ function SummaryLine({ it, vat }: { it: Item; vat: number }) {
           </>
         )}
         {it.discount > 0 && <span className="text-amber-400">− {formatCurrency(it.discount)}</span>}
-        <span>VAT {formatCurrency(lineVat)}</span>
+        <span>VAT {formatCurrency(lineVat)}{inclusive ? " (incl.)" : ""}</span>
       </div>
     </div>
   )
@@ -254,6 +316,7 @@ function QuotationEditor({
   jobId,
   initialItems,
   initialVat,
+  initialVatInclusive,
   initialDescription,
   initialInternalNotes,
   onClose,
@@ -261,6 +324,7 @@ function QuotationEditor({
   jobId: string
   initialItems: Item[]
   initialVat: number
+  initialVatInclusive: boolean
   initialDescription: string
   initialInternalNotes: string
   onClose: () => void
@@ -268,6 +332,7 @@ function QuotationEditor({
   const [description, setDescription] = React.useState(initialDescription)
   const [internalNotes, setInternalNotes] = React.useState(initialInternalNotes)
   const [vat, setVat] = React.useState(initialVat)
+  const [inclusive, setInclusive] = React.useState(initialVatInclusive)
   const [items, setItems] = React.useState<Item[]>(
     initialItems.length ? initialItems : [emptyItem("part"), emptyItem("labor")],
   )
@@ -283,7 +348,7 @@ function QuotationEditor({
     }
   }, [onClose])
 
-  const t = totals(items, vat)
+  const t = totals(items, vat, inclusive)
 
   function update(id: number, patch: Partial<Item>) {
     setItems((prev) => prev.map((it, i) => (i === id ? { ...it, ...patch } : it)))
@@ -302,6 +367,7 @@ function QuotationEditor({
         description,
         internalNotes,
         vatRate: vat,
+        vatInclusive: inclusive,
         items: items
           .filter((i) => i.name.trim() || i.detail.trim() || lineGross(i) > 0)
           .map<QuoteItemInput>((i) => ({
@@ -314,6 +380,8 @@ function QuotationEditor({
             labour_hours: Number(i.labour_hours) || 0,
             labour_rate: Number(i.labour_rate) || 0,
             discount: Number(i.discount) || 0,
+            category: i.category?.trim() || undefined,
+            recommendation: i.recommendation,
           })),
       })
       onClose()

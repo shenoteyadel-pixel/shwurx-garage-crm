@@ -4,14 +4,12 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
-import { Button, Input, Label, Select } from "@/components/ui"
-import { ROLES } from "@/lib/constants"
+import { Button, Input, Label } from "@/components/ui"
 import { Wrench } from "lucide-react"
 
 export default function SignUpPage() {
   const router = useRouter()
   const [fullName, setFullName] = useState("")
-  const [role, setRole] = useState("advisor")
   const [phone, setPhone] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -29,7 +27,7 @@ export default function SignUpPage() {
       options: {
         emailRedirectTo:
           process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback`,
-        data: { full_name: fullName, role, phone },
+        data: { full_name: fullName, phone },
       },
     })
     if (error) {
@@ -58,21 +56,9 @@ export default function SignUpPage() {
             <Label htmlFor="name">Full name</Label>
             <Input id="name" required value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Ahmed Ali" />
           </div>
-          <div className="mb-4 grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="role">Role</Label>
-              <Select id="role" value={role} onChange={(e) => setRole(e.target.value)}>
-                {ROLES.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="phone">Phone</Label>
-              <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+971…" />
-            </div>
+          <div className="mb-4">
+            <Label htmlFor="phone">Phone</Label>
+            <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+971…" />
           </div>
           <div className="mb-4">
             <Label htmlFor="email">Email</Label>
@@ -82,6 +68,9 @@ export default function SignUpPage() {
             <Label htmlFor="password">Password</Label>
             <Input id="password" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
           </div>
+          <p className="mb-4 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+            New accounts start with view-only access. An administrator will assign your role and permissions.
+          </p>
           {error && <p className="mb-4 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</p>}
           <Button type="submit" size="lg" className="w-full" disabled={loading}>
             {loading ? "Creating account…" : "Create account"}

@@ -43,7 +43,7 @@ export function VehicleCreateForm({ customerId }: { customerId: string }) {
         setCreating(false)
         return
       }
-      const v = await createVehicleInline({
+      const res = await createVehicleInline({
         customer_id: customerId,
         make,
         model,
@@ -57,7 +57,12 @@ export function VehicleCreateForm({ customerId }: { customerId: string }) {
         vin,
         mileage: fd.get("mileage") ? Number(fd.get("mileage")) : null,
       })
-      router.push(`/vehicles/${v.id}`)
+      if (!res.ok) {
+        setError(res.error)
+        setCreating(false)
+        return
+      }
+      router.push(`/vehicles/${res.vehicle.id}`)
     } catch (e: any) {
       setError(e.message ?? "Failed to create vehicle")
       setCreating(false)

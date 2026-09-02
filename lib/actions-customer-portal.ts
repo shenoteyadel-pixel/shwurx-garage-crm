@@ -1,5 +1,6 @@
 "use server"
 
+import { randomBytes } from "crypto"
 import { createServiceClient } from "@/lib/supabase/server"
 import { requirePermission, logAction } from "@/lib/rbac/context"
 import {
@@ -293,6 +294,113 @@ export async function autoProvisionCustomerPortal(customerId: string): Promise<v
     })
   } catch (e) {
     console.log("[v0] autoProvisionCustomerPortal skipped:", (e as Error).message)
+  }
+}
+
+export type JobAccessInfo = {
+  hasCustomer: boolean
+  email: string | null
+  mobile: string | null
+  customerName: string
+  vehicleLabel: string
+  portalStatus: "created" | "none"
+  passwordStatus: "pending" | "completed"
+  emailStatus: "sent" | "failed" | "unknown"
+  trackingUrl: string | null
+  portalUrl: string
+}
+
+/**
+ * Read the live customer-access state for a job and ensure a tracking link
+ * exists, for the Job Card "Customer access" panel. Creates a token if none is
+ * live so staff always have a link to share. Never throws.
+ */
+export async function getJobCustomerAccess(jobId: string): Promise<JobAccessInfo> {
+  const base = appBaseUrl()
+  const empty: JobAccessInfo = {
+    hasCustomer: false,
+    email: null,
+    mobile: null,
+    customerName: "",
+    vehicleLabel: "Vehicle",
+    portalStatus: "none",
+    passwordStatus: "pending",
+    emailStatus: "unknown",
+    trackingUrl: null,
+    portalUrl: `${base}/portal`,
+  }
+  try {
+    await requirePermission("customers.view")
+    const svc = createServiceClient()
+    const { data: job } = await svc
+      .from("jobs")
+      .select("id, customer_id, vehicle_make, vehicle_model, vehicle_year, created_by")
+      .eq("id", jobId)
+      .maybeSingle()
+    if (!job?.customer_id) return empty
+
+    const { data: customer } = await svc
+      .from("customers")
+      .select("full_name, email, mobile")
+      .eq("id", job.customer_id)
+      .maybeSingle()
+
+    const { data: profile } = await svc
+      .from("profiles")
+      .select("id, invite_status")
+      .eq("customer_id", job.customer_id)
+      .maybeSingle()
+
+    let passwordStatus: JobAccessInfo["passwordStatus"] = "pending"
+    if (profile?.id) {
+      const st = await getAuthUserState(profile.id).catch(() => null)
+      if (st?.hasPassword) passwordStatus = "completed"
+    }
+
+    // Ensure a live tracking token so staff always have a link to share.
+    let trackingUrl: string | null = null
+    const { data: live } = await svc
+      .from("customer_portal_tokens")
+      .select("token, expires_at, revoked")
+      .eq("customer_id", job.customer_id)
+      .eq("revoked", false)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    let token = live && !live.revoked && new Date(live.expires_at).getTime() > Date.now() ? live.token : null
+    if (!token) {
+      token = randomBytes(24).toString("base64url")
+      const { error } = await svc.from("customer_portal_tokens").insert({
+        customer_id: job.customer_id,
+        token,
+        expires_at: new Date(Date.now() + 90 * 86400_000).toISOString(),
+        created_by: job.created_by ?? null,
+      })
+      if (error) token = null
+    }
+    if (token) trackingUrl = `${base}/track/${token}`
+
+    return {
+      hasCustomer: true,
+      email: customer?.email ?? null,
+      mobile: customer?.mobile ?? null,
+      customerName: customer?.full_name ?? "",
+      vehicleLabel:
+        [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle",
+      portalStatus: profile?.id ? "created" : "none",
+      passwordStatus,
+      emailStatus:
+        profile?.invite_status === "invited"
+          ? "sent"
+          : profile?.invite_status === "email_failed"
+            ? "failed"
+            : "unknown",
+      trackingUrl,
+      portalUrl: `${base}/portal`,
+    }
+  } catch (e) {
+    console.log("[v0] getJobCustomerAccess failed:", (e as Error).message)
+    return empty
   }
 }
 

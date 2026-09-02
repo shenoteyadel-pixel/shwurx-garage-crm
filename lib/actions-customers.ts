@@ -188,7 +188,7 @@ export async function createCustomerInline(input: {
       address: input.address?.trim() || null,
       created_by: user.id,
     })
-    .select("id, full_name, mobile, company_name")
+    .select("id, full_name, mobile, email, company_name")
     .single()
   if (error) throw new Error(error.message)
   revalidatePath("/customers")

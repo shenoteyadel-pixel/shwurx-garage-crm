@@ -496,7 +496,15 @@ export async function deleteStaffUser(userId: string): Promise<ActionResult> {
       .eq("id", userId)
       .maybeSingle()
     if (!target) return { ok: false, error: "User not found — they may already have been deleted." }
-    if (target.role === "owner") return { ok: false, error: "Owner accounts cannot be deleted." }
+    // The final Owner / Super Admin can never be deleted (keeps the workshop
+    // from being locked out). Any other owner may be removed by the current owner.
+    if (target.role === "owner") {
+      const { count } = await svc
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "owner")
+      if ((count ?? 0) <= 1) return { ok: false, error: "The last Owner account cannot be deleted." }
+    }
 
     // Detach live assignment pointers so active work isn't orphaned to a missing id.
     // Denormalized name columns on jobs stay intact for historical accuracy, and
@@ -522,6 +530,58 @@ export async function deleteStaffUser(userId: string): Promise<ActionResult> {
     }).catch(() => {})
     revalidatePath("/users")
     return { ok: true }
+  } catch (e) {
+    return { ok: false, error: errMsg(e) }
+  }
+}
+
+export type BulkDeleteResult =
+  | { ok: true; deleted: number; failed: number }
+  | { ok: false; error: string }
+
+/**
+ * Owner-only "reset to a clean workshop": permanently delete EVERY staff/test
+ * account except the current Owner. History-safe — all FKs from jobs, invoices
+ * and audit logs to profiles are ON DELETE SET NULL, so business records and
+ * their denormalized staff names survive; only the sign-ins and profile rows go.
+ * Customers are never touched (they are excluded by role). The currently
+ * logged-in Owner is always excluded, so the account can never lock itself out.
+ */
+export async function deleteAllStaffExceptOwner(confirmation: string): Promise<BulkDeleteResult> {
+  try {
+    const ctx = await requirePermission("users.manage")
+    if (ctx.role !== "owner") {
+      return { ok: false, error: "Only the Owner can delete all staff accounts." }
+    }
+    if (confirmation.trim().toUpperCase() !== "DELETE ALL USERS") {
+      return { ok: false, error: 'Please type "DELETE ALL USERS" to confirm.' }
+    }
+
+    const svc = createServiceClient()
+    // Every non-customer account except the current Owner (excluded automatically).
+    const { data: targets, error: listErr } = await svc
+      .from("profiles")
+      .select("id, email, role")
+      .neq("role", "customer")
+      .neq("id", ctx.userId)
+    if (listErr) return { ok: false, error: listErr.message }
+
+    let deleted = 0
+    let failed = 0
+    for (const t of targets ?? []) {
+      // Detach live assignment pointers first (denormalized names stay for history).
+      await svc.from("jobs").update({ technician_id: null }).eq("technician_id", t.id)
+      await svc.from("jobs").update({ advisor_id: null }).eq("advisor_id", t.id)
+      await signOutUserEverywhere(t.id).catch(() => {})
+      await deleteAuthUser(t.id).catch(() => {})
+      const { error } = await svc.from("profiles").delete().eq("id", t.id)
+      if (error) failed++
+      else deleted++
+    }
+
+    await logAction(ctx, "user.bulk_delete", "user", ctx.userId, { deleted, failed })
+    revalidatePath("/users")
+    return { ok: true, deleted, failed }
   } catch (e) {
     return { ok: false, error: errMsg(e) }
   }

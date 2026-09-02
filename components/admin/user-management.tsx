@@ -30,6 +30,7 @@ import {
   searchExistingUsers,
   updateStaffProfile,
   deleteStaffUser,
+  deleteAllStaffExceptOwner,
   getLoginLink,
   type CredentialLinkResult,
   type DuplicateMatch,
@@ -54,6 +55,7 @@ import {
   MoreHorizontal,
   MessageCircle,
   Link2,
+  ShieldAlert,
 } from "lucide-react"
 
 interface UserRow {
@@ -118,6 +120,7 @@ export function UserManagement({
   const [editing, setEditing] = useState<UserRow | null>(null)
   const [profileEditing, setProfileEditing] = useState<UserRow | null>(null)
   const [deleting, setDeleting] = useState<UserRow | null>(null)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const [toast, setToast] = useState<{ msg: string; tone: "ok" | "error" } | null>(null)
   const [cred, setCred] = useState<{ result: CredentialLinkResult; purpose: "invite" | "reset"; phone?: string | null } | null>(
     null,
@@ -129,11 +132,18 @@ export function UserManagement({
   }
 
   const overrideCount = (userId: string) => overrides.filter((o) => o.user_id === userId).length
+  // Everyone the bulk delete would remove: all staff except the current Owner.
+  const otherUserCount = users.filter((u) => u.id !== currentUserId).length
 
   return (
     <div className="flex flex-col gap-4">
       {canManageUsers && (
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
+          {isOwner && otherUserCount > 0 && (
+            <Button variant="danger" onClick={() => setBulkDeleting(true)}>
+              <ShieldAlert className="h-4 w-4" /> Delete all users
+            </Button>
+          )}
           <Button onClick={() => setShowCreate(true)}>
             <UserPlus className="h-4 w-4" /> Add staff user
           </Button>
@@ -215,6 +225,16 @@ export function UserManagement({
           onDeleted={() => {
             setDeleting(null)
             showToast("User deleted")
+          }}
+        />
+      )}
+      {bulkDeleting && (
+        <BulkDeleteDialog
+          count={otherUserCount}
+          onClose={() => setBulkDeleting(false)}
+          onDeleted={(n) => {
+            setBulkDeleting(false)
+            showToast(n === 1 ? "1 user deleted" : `${n} users deleted`)
           }}
         />
       )}
@@ -550,7 +570,7 @@ function UserRowItem({
         ),
       busy: pending,
     },
-    ...(isOwner
+    ...(isOwner && !isSelf
       ? [
           {
             key: "delete",
@@ -1069,6 +1089,85 @@ function DeleteUserDialog({
             }
           >
             {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete permanently
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+function BulkDeleteDialog({
+  count,
+  onClose,
+  onDeleted,
+}: {
+  count: number
+  onClose: () => void
+  onDeleted: (deleted: number) => void
+}) {
+  const [pending, start] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+  const [confirmText, setConfirmText] = useState("")
+  const PHRASE = "DELETE ALL USERS"
+  const canDelete = confirmText.trim().toUpperCase() === PHRASE
+
+  return (
+    <Dialog title="Delete all users?" onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4">
+          <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+          <div className="text-sm">
+            <p className="font-medium text-foreground">
+              This permanently removes all staff/test accounts ({count}) except your main Owner account.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Historical workshop and financial records will NOT be deleted. Any staff assigned to active jobs are
+              unassigned and those jobs show as &quot;Unassigned&quot;.
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="bulk_confirm">
+            Type <span className="font-mono font-semibold text-foreground">{PHRASE}</span> to confirm
+          </Label>
+          <Input
+            id="bulk_confirm"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder={PHRASE}
+            autoComplete="off"
+          />
+        </div>
+
+        {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={!canDelete || pending}
+            onClick={() =>
+              start(async () => {
+                setError(null)
+                try {
+                  const r = await deleteAllStaffExceptOwner(confirmText)
+                  if (!r.ok) {
+                    setError(r.error || "Could not delete users.")
+                    return
+                  }
+                  onDeleted(r.deleted)
+                } catch (e) {
+                  setError((e as Error).message)
+                }
+              })
+            }
+          >
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />} Delete all
+            users
           </Button>
         </div>
       </div>

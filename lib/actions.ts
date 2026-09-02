@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { VAT_RATE, type Stage } from "@/lib/constants"
 import { inferBodyType } from "@/lib/vehicle"
+import { resolveVehicleImage } from "@/lib/vehicle-image"
 
 async function requireUser() {
   const supabase = await createClient()
@@ -30,6 +31,11 @@ export async function createJob(formData: FormData) {
   const model = String(formData.get("vehicle_model") || "") || null
   const bodyTypeInput = String(formData.get("body_type") || "")
   const bodyType = bodyTypeInput || inferBodyType(make, model)
+  const year = formData.get("vehicle_year") ? Number(formData.get("vehicle_year")) : null
+  const color = String(formData.get("color") || "") || null
+
+  // Resolve a real reference image from CarsXE (server-side, cached in the row).
+  const image = await resolveVehicleImage({ make, model, year, color })
 
   const payload = {
     job_number: genJobNumber(),
@@ -38,9 +44,12 @@ export async function createJob(formData: FormData) {
     vehicle_make: make,
     vehicle_model: model,
     variant: String(formData.get("variant") || "") || null,
-    color: String(formData.get("color") || "") || null,
+    color,
     body_type: bodyType,
-    vehicle_year: formData.get("vehicle_year") ? Number(formData.get("vehicle_year")) : null,
+    vehicle_year: year,
+    vehicle_reference_image_url: image?.url ?? null,
+    vehicle_image_source: image?.source ?? null,
+    vehicle_image_resolved_at: image ? new Date().toISOString() : null,
     plate_emirate: String(formData.get("plate_emirate") || "") || null,
     plate_code: String(formData.get("plate_code") || "") || null,
     plate_number: String(formData.get("plate_number") || "") || null,
@@ -92,6 +101,41 @@ export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: str
   revalidatePath("/")
   revalidatePath("/flow")
   revalidatePath(`/jobs/${jobId}`)
+}
+
+// Re-resolve the CarsXE reference image for a job (manual admin/advisor refresh).
+export async function refreshVehicleImage(jobId: string) {
+  const { supabase } = await requireUser()
+  const { data: job, error: readErr } = await supabase
+    .from("jobs")
+    .select("vehicle_make, vehicle_model, vehicle_year, color, variant")
+    .eq("id", jobId)
+    .single()
+  if (readErr) throw new Error(readErr.message)
+
+  const image = await resolveVehicleImage({
+    make: job.vehicle_make,
+    model: job.vehicle_model,
+    year: job.vehicle_year,
+    color: job.color,
+    trim: job.variant,
+  })
+
+  const { error } = await supabase
+    .from("jobs")
+    .update({
+      vehicle_reference_image_url: image?.url ?? null,
+      vehicle_image_source: image?.source ?? null,
+      vehicle_image_resolved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
+  if (error) throw new Error(error.message)
+
+  revalidatePath("/")
+  revalidatePath("/flow")
+  revalidatePath(`/jobs/${jobId}`)
+  return { found: !!image }
 }
 
 export async function assignStaff(jobId: string, field: "advisor_id" | "technician_id", value: string) {

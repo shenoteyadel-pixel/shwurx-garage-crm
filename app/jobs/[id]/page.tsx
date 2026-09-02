@@ -12,6 +12,7 @@ import { StaffAssign } from "@/components/staff-assign"
 import { RepairDetails } from "@/components/repair-details"
 import { TechnicianJobCard } from "@/components/technician-job-card"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
+import { RefreshVehicleImageButton } from "@/components/refresh-vehicle-image"
 import { STAGE_MAP, QC_STATUSES, canViewPrices, type Stage } from "@/lib/constants"
 import { formatDate } from "@/lib/utils"
 import { ArrowLeft, Phone, Gauge, Hash, Fingerprint, Palette, Car, CalendarClock } from "lucide-react"
@@ -107,14 +108,18 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-4">
-          <VehicleVisual
-            coverPhoto={coverPhoto}
-            make={job.vehicle_make}
-            model={job.vehicle_model}
-            bodyType={job.body_type}
-            color={job.color}
-            className="hidden h-20 w-32 shrink-0 rounded-lg border border-border sm:block"
-          />
+          <div className="hidden shrink-0 flex-col items-center gap-1 sm:flex">
+            <VehicleVisual
+              coverPhoto={coverPhoto}
+              referenceImage={job.vehicle_reference_image_url}
+              make={job.vehicle_make}
+              model={job.vehicle_model}
+              bodyType={job.body_type}
+              color={job.color}
+              className="h-20 w-32 rounded-lg border border-border"
+            />
+            {!coverPhoto && <RefreshVehicleImageButton jobId={job.id} source={job.vehicle_image_source} />}
+          </div>
           <div>
             <div className="flex flex-wrap items-center gap-3">
               <BrandLogo make={job.vehicle_make} size={36} />

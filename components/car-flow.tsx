@@ -391,6 +391,7 @@ function FlowCard({
         <div className="relative rounded-md bg-gradient-to-b from-muted/40 to-card">
           <VehicleVisual
             coverPhoto={job.cover}
+            referenceImage={job.vehicle_reference_image_url}
             make={job.vehicle_make}
             model={job.vehicle_model}
             bodyType={job.body_type}
@@ -441,6 +442,7 @@ function BayCard({
       <div className="flex flex-1 flex-col gap-1 rounded-md bg-card p-1.5">
         <VehicleVisual
           coverPhoto={job.cover}
+          referenceImage={job.vehicle_reference_image_url}
           make={job.vehicle_make}
           model={job.vehicle_model}
           bodyType={job.body_type}

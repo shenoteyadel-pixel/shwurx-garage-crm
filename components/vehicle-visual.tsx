@@ -57,6 +57,7 @@ export function BrandLogo({
 /* ---------------- Vehicle Visual (cover photo or silhouette) ---------------- */
 export function VehicleVisual({
   coverPhoto,
+  referenceImage,
   make,
   model,
   bodyType,
@@ -65,6 +66,7 @@ export function VehicleVisual({
   alt,
 }: {
   coverPhoto?: string | null
+  referenceImage?: string | null
   make?: string | null
   model?: string | null
   bodyType?: string | null
@@ -72,22 +74,34 @@ export function VehicleVisual({
   className?: string
   alt?: string
 }) {
+  // Fallback chain: user's real photo -> CarsXE reference image -> SVG silhouette.
   const [coverFailed, setCoverFailed] = useState(false)
-  const showCover = coverPhoto && !coverFailed
+  const [refFailed, setRefFailed] = useState(false)
 
-  // Model-accurate profile: make+model rule first, then stored body type.
   const profile = resolveVehicleProfile(make, model, bodyType)
   const label = `${make ?? ""} ${model ?? ""}`.trim() || "Vehicle"
 
+  const activePhoto = coverPhoto && !coverFailed ? coverPhoto : null
+  const activeRef = !activePhoto && referenceImage && !refFailed ? referenceImage : null
+
   return (
     <div className={cn("relative overflow-hidden bg-gradient-to-b from-muted/50 to-card", className)}>
-      {showCover ? (
+      {activePhoto ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={coverPhoto || "/placeholder.svg"}
+          src={activePhoto || "/placeholder.svg"}
           alt={alt || label}
           className="h-full w-full object-cover"
           onError={() => setCoverFailed(true)}
+          crossOrigin="anonymous"
+        />
+      ) : activeRef ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={activeRef || "/placeholder.svg"}
+          alt={alt || `${label} reference image`}
+          className="h-full w-full object-contain"
+          onError={() => setRefFailed(true)}
           crossOrigin="anonymous"
         />
       ) : (

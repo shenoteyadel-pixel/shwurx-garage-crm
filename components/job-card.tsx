@@ -20,6 +20,7 @@ export interface JobCardData {
   plate_emirate?: string | null
   plate_code?: string | null
   lift_bay?: string | null
+  vehicle_reference_image_url?: string | null
   stage: Stage
   approval_status: "pending" | "approved" | "rejected"
   created_at: string
@@ -42,6 +43,7 @@ export function JobCard({ job }: { job: JobCardData }) {
       <div className="relative aspect-[16/10] overflow-hidden bg-secondary">
         <VehicleVisual
           coverPhoto={job.cover}
+          referenceImage={job.vehicle_reference_image_url}
           make={job.vehicle_make}
           model={job.vehicle_model}
           bodyType={job.body_type}

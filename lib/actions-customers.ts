@@ -94,8 +94,17 @@ export async function updateCustomer(id: string, fd: FormData) {
   if (fd.has("status")) patch.status = String(fd.get("status") || "active")
   const { error } = await supabase.from("customers").update(patch).eq("id", id)
   if (error) throw new Error(error.message)
+  // Corrected name/mobile flow through to this customer's active job cards.
+  if (fd.has("full_name") || fd.has("mobile")) {
+    const jobPatch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (fd.has("full_name")) jobPatch.customer_name = s(fd, "full_name") || "Unnamed Customer"
+    if (fd.has("mobile")) jobPatch.customer_mobile = s(fd, "mobile")
+    await supabase.from("jobs").update(jobPatch).eq("customer_id", id)
+  }
   revalidatePath(`/customers/${id}`)
   revalidatePath("/customers")
+  revalidatePath("/jobs")
+  revalidatePath("/flow")
 }
 
 // Inline create used by the intake wizard — returns the row instead of redirecting.
@@ -275,13 +284,51 @@ export async function getCustomerVehicles(customerId: string) {
   return data ?? []
 }
 
+// Propagate corrected vehicle identity onto every ACTIVE job card linked to this
+// vehicle so Job Card, Car Flow, and Search reflect the correction immediately.
+// Visit-specific mileage is intentionally left untouched. Finalized invoices keep
+// their own issued snapshot (invoices.vehicle_desc/plate) and are not rewritten.
+async function syncVehicleToJobs(
+  supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
+  vehicleId: string,
+  v: Record<string, any>,
+) {
+  const jobPatch = {
+    vehicle_make: v.make ?? null,
+    vehicle_model: v.model ?? null,
+    vehicle_year: v.year ?? null,
+    variant: v.variant ?? null,
+    color: v.color ?? null,
+    plate_emirate: v.plate_emirate ?? null,
+    plate_code: v.plate_code ?? null,
+    plate_number: v.plate_number ?? null,
+    vin: v.vin ?? null,
+    body_type: v.body_type ?? null,
+    vehicle_reference_image_url: v.reference_image_url ?? null,
+    vehicle_image_source: v.image_source ?? null,
+    updated_at: new Date().toISOString(),
+  }
+  await supabase.from("jobs").update(jobPatch).eq("vehicle_id", vehicleId)
+}
+
 export async function updateVehicle(id: string, fd: FormData) {
   const { supabase } = await requireUser()
   const patch = vehiclePayloadFromForm(fd)
   patch.updated_at = new Date().toISOString()
-  const { error } = await supabase.from("vehicles").update(patch).eq("id", id)
+  const { data: updated, error } = await supabase
+    .from("vehicles")
+    .update(patch)
+    .eq("id", id)
+    .select(
+      "make, model, year, variant, color, plate_emirate, plate_code, plate_number, vin, body_type, reference_image_url, image_source",
+    )
+    .single()
   if (error) throw new Error(error.message)
+  await syncVehicleToJobs(supabase, id, updated)
   revalidatePath(`/vehicles/${id}`)
+  revalidatePath("/jobs")
+  revalidatePath("/flow")
+  revalidatePath("/")
 }
 
 // Re-resolve the cached reference image for a master vehicle.
@@ -310,7 +357,17 @@ export async function refreshVehicleMasterImage(id: string) {
     })
     .eq("id", id)
   if (error) throw new Error(error.message)
+  await supabase
+    .from("jobs")
+    .update({
+      vehicle_reference_image_url: image?.url ?? null,
+      vehicle_image_source: image?.source ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("vehicle_id", id)
   revalidatePath(`/vehicles/${id}`)
+  revalidatePath("/jobs")
+  revalidatePath("/flow")
   return { found: !!image }
 }
 

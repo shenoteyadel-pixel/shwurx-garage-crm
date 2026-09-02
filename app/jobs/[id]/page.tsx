@@ -135,7 +135,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           <div>
             <div className="flex flex-wrap items-center gap-3">
               <BrandLogo make={job.vehicle_make} size={36} />
-              <h1 className="text-2xl font-bold tracking-tight">{vehicle}</h1>
+              {job.vehicle_id ? (
+                <Link href={`/vehicles/${job.vehicle_id}`}>
+                  <h1 className="text-2xl font-bold tracking-tight hover:underline">{vehicle}</h1>
+                </Link>
+              ) : (
+                <h1 className="text-2xl font-bold tracking-tight">{vehicle}</h1>
+              )}
               <Badge className={stageMeta.chip}>
                 <span className={`h-1.5 w-1.5 rounded-full ${stageMeta.dot}`} />
                 {stageMeta.label}
@@ -206,13 +212,27 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           <Card className="p-5">
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Customer</h2>
             <div className="space-y-3 text-sm">
-              <div className="font-medium">{job.customer_name}</div>
+              {job.customer_id ? (
+                <Link href={`/customers/${job.customer_id}`} className="font-medium hover:underline">
+                  {job.customer_name}
+                </Link>
+              ) : (
+                <div className="font-medium">{job.customer_name}</div>
+              )}
               <a
                 href={`tel:${job.customer_mobile}`}
                 className="flex items-center gap-2 text-muted-foreground hover:text-foreground"
               >
                 <Phone className="h-4 w-4" /> {job.customer_mobile}
               </a>
+              {job.vehicle_id ? (
+                <Link
+                  href={`/vehicles/${job.vehicle_id}`}
+                  className="flex items-center gap-2 text-primary hover:underline"
+                >
+                  <Car className="h-4 w-4" /> Vehicle service history
+                </Link>
+              ) : null}
             </div>
             <div className="mt-4 space-y-2 border-t border-border pt-4 text-sm">
               <Detail icon={Car} label="Variant" value={job.variant || "—"} />

@@ -21,12 +21,14 @@ import {
   FileText,
   BarChart3,
   Settings,
+  Users,
 } from "lucide-react"
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/flow", label: "Car Flow", icon: Workflow },
   { href: "/jobs", label: "Job Cards", icon: Car },
+  { href: "/customers", label: "Customers", icon: Users },
   { href: "/invoices", label: "Invoices", icon: FileText },
   { href: "/parts", label: "Parts", icon: Package },
   { href: "/purchasing", label: "Purchasing", icon: ShoppingCart },

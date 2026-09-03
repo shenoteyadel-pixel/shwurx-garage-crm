@@ -151,36 +151,71 @@ async function buildHistoryContext(
 }
 
 /** Run the AI diagnostic. Grounds on real history and stores structured output. */
-export async function runAiDiagnostic(jobId: string) {
+export async function runAiDiagnostic(
+  jobId: string,
+  inputs?: { symptoms?: string; observations?: string; error_codes?: string },
+) {
   const { supabase, ctx } = await guard("jobs.edit")
 
   const { data: job, error: jobErr } = await supabase
     .from("jobs")
     .select(
-      "id, job_number, vehicle_id, vehicle_make, vehicle_model, vehicle_year, mileage, complaint",
+      "id, job_number, vehicle_id, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, vin, mileage, complaint, diagnosis, technician_notes",
     )
     .eq("id", jobId)
     .single()
   if (jobErr || !job) throw new Error(jobErr?.message || "Job not found")
 
   const session = await getOrCreateSession(supabase, jobId, ctx.userId)
+
+  // Persist the latest form inputs FIRST so the AI analyses exactly what the
+  // technician currently sees on screen — not a stale/earlier saved version.
+  if (inputs) {
+    const next = {
+      symptoms: inputs.symptoms?.trim() || null,
+      observations: inputs.observations?.trim() || null,
+      error_codes: inputs.error_codes?.trim() || null,
+    }
+    const { error: saveErr } = await supabase.from("diagnostic_sessions").update(next).eq("id", session.id)
+    if (saveErr) throw new Error(saveErr.message)
+    Object.assign(session, next)
+  }
+
+  // Require something to analyse so the model never runs on an empty case.
+  if (!session.symptoms && !session.observations && !session.error_codes && !job.complaint) {
+    throw new Error("Add symptoms, observations, error codes, or a complaint before running the analysis.")
+  }
+
   const history = await buildHistoryContext(supabase, job)
 
-  const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ")
+  const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model, job.variant].filter(Boolean).join(" ")
+  const vehicleExtras = [
+    job.color ? `colour ${job.color}` : null,
+    job.body_type ? `body ${job.body_type}` : null,
+    job.mileage ? `${job.mileage} km` : null,
+    job.vin ? `VIN ${job.vin}` : null,
+    job.plate_number ? `plate ${job.plate_number}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ")
+
   const prompt = [
     `You are an expert automotive master technician assisting a workshop in the UAE. Analyse the case below and return structured diagnostic guidance.`,
     ``,
-    `VEHICLE: ${vehicle || "Unknown"}${job.mileage ? `, ${job.mileage} km` : ""}`,
+    `VEHICLE: ${vehicle || "Unknown"}${vehicleExtras ? ` (${vehicleExtras})` : ""}`,
     `ORIGINAL COMPLAINT: ${job.complaint || "(none recorded)"}`,
     `TECHNICIAN SYMPTOMS: ${session.symptoms || "(none)"}`,
     `TECHNICIAN OBSERVATIONS: ${session.observations || "(none)"}`,
     `ERROR / FAULT CODES: ${session.error_codes || "(none)"}`,
+    `WORKING DIAGNOSIS SO FAR: ${job.diagnosis || "(none)"}`,
+    `TECHNICIAN NOTES: ${job.technician_notes || "(none)"}`,
     ``,
     `WORKSHOP HISTORY (use ONLY these when citing "similar past jobs" — never invent job numbers):`,
     history,
     ``,
     `Rules:`,
     `- Be specific and practical for a working technician.`,
+    `- Ground your reasoning in the vehicle details, symptoms, observations, and error codes provided above.`,
     `- Rank probable causes by likelihood.`,
     `- Only cite past jobs that appear verbatim in the WORKSHOP HISTORY above; otherwise return an empty similarPastJobs array.`,
     `- This is decision-support only; a human technician will verify everything.`,

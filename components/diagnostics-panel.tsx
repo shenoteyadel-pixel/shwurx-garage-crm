@@ -21,6 +21,8 @@ import {
   CircleCheck,
   FlaskConical,
   BadgeCheck,
+  Check,
+  Minus,
 } from "lucide-react"
 
 export type DiagnosticTest = {
@@ -62,11 +64,16 @@ export function DiagnosticsPanel({
   jobId,
   session,
   tests,
+  vehicleSummary,
+  complaint,
 }: {
   jobId: string
   session: DiagnosticSession
   tests: DiagnosticTest[]
+  vehicleSummary?: string
+  complaint?: string | null
 }) {
+  const formRef = React.useRef<HTMLFormElement>(null)
   const [savingInputs, setSavingInputs] = React.useState(false)
   const [inputsSaved, setInputsSaved] = React.useState(false)
   const [running, setRunning] = React.useState(false)
@@ -87,6 +94,7 @@ export function DiagnosticsPanel({
 
       {/* Step 1 — structured inputs */}
       <form
+        ref={formRef}
         action={async (fd) => {
           setSavingInputs(true)
           setInputsSaved(false)
@@ -145,8 +153,16 @@ export function DiagnosticsPanel({
             onClick={async () => {
               setRunning(true)
               setRunError(null)
+              setInputsSaved(false)
               try {
-                await runAiDiagnostic(jobId)
+                // Capture whatever is currently in the form so the AI analyses
+                // the technician's latest input — no separate "Save" step needed.
+                const fd = formRef.current ? new FormData(formRef.current) : null
+                await runAiDiagnostic(jobId, {
+                  symptoms: String(fd?.get("symptoms") ?? ""),
+                  observations: String(fd?.get("observations") ?? ""),
+                  error_codes: String(fd?.get("error_codes") ?? ""),
+                })
               } catch (e) {
                 setRunError(e instanceof Error ? e.message : "Failed to run AI diagnostic")
               } finally {
@@ -158,7 +174,9 @@ export function DiagnosticsPanel({
             {running ? "Analysing…" : ai ? "Re-run AI analysis" : "Run AI analysis"}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">Tip: save your inputs before running so the AI uses them.</p>
+        <p className="text-xs text-muted-foreground">
+          Running the analysis automatically saves your inputs, so the AI always uses your latest notes.
+        </p>
         {runError && <p className="text-xs text-red-400">{runError}</p>}
       </form>
 
@@ -173,6 +191,37 @@ export function DiagnosticsPanel({
               suggestions, not a confirmed diagnosis. A qualified technician must verify each item before any repair or
               customer communication.
             </p>
+          </div>
+
+          {/* Transparency — exactly what this analysis was based on */}
+          <div className="rounded-lg border border-border bg-background/40 p-3">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Analysis based on
+            </div>
+            <dl className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-2">
+              {vehicleSummary && <BasedOnRow label="Vehicle" value={vehicleSummary} used />}
+              <BasedOnRow label="Complaint" value={complaint || "—"} used={!!complaint} />
+              <BasedOnRow label="Symptoms" value={session?.symptoms || "Not provided"} used={!!session?.symptoms} />
+              <BasedOnRow
+                label="Observations"
+                value={session?.observations || "Not provided"}
+                used={!!session?.observations}
+              />
+              <BasedOnRow
+                label="Error codes"
+                value={session?.error_codes || "Not provided"}
+                used={!!session?.error_codes}
+              />
+              <BasedOnRow
+                label="History referenced"
+                value={
+                  ai.similarPastJobs.length
+                    ? `${ai.similarPastJobs.length} past job${ai.similarPastJobs.length > 1 ? "s" : ""}`
+                    : "No matching past jobs"
+                }
+                used={ai.similarPastJobs.length > 0}
+              />
+            </dl>
           </div>
 
           <div>
@@ -284,6 +333,20 @@ export function DiagnosticsPanel({
         <ConfirmForm jobId={jobId} current={session?.confirmed_diagnosis ?? ""} />
       </div>
     </Card>
+  )
+}
+
+function BasedOnRow({ label, value, used }: { label: string; value: string; used: boolean }) {
+  return (
+    <div className="flex items-start gap-1.5">
+      {used ? (
+        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+      ) : (
+        <Minus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+      )}
+      <span className="shrink-0 font-medium text-muted-foreground">{label}:</span>
+      <span className={used ? "text-foreground" : "text-muted-foreground/60"}>{value}</span>
+    </div>
   )
 }
 

@@ -90,6 +90,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       .order("position", { ascending: true })
     diagnosticTests = (dTests ?? []) as DiagnosticTest[]
   }
+  const diagnosticVehicleSummary =
+    [job.vehicle_year, job.vehicle_make, job.vehicle_model, job.variant].filter(Boolean).join(" ") +
+    (job.mileage ? ` · ${Number(job.mileage).toLocaleString()} km` : "")
 
   const { data: staffRows } = await supabase
     .from("profiles")
@@ -240,6 +243,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 jobId={job.id}
                 session={(diagnosticSession as any) ?? null}
                 tests={diagnosticTests}
+                vehicleSummary={diagnosticVehicleSummary}
+                complaint={job.complaint}
               />
               <QuotationBuilder
                 jobId={job.id}
@@ -267,6 +272,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 jobId={job.id}
                 session={(diagnosticSession as any) ?? null}
                 tests={diagnosticTests}
+                vehicleSummary={diagnosticVehicleSummary}
+                complaint={job.complaint}
               />
             </>
           )}

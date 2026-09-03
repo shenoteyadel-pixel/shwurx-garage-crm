@@ -8,7 +8,15 @@ function fmtDate(iso: string | null): string {
 }
 
 /** Read-only customer-facing view of jobs + invoices. Shared by the token portal and the logged-in portal. */
-export function PortalView({ data, headerRight }: { data: PortalData; headerRight?: React.ReactNode }) {
+export function PortalView({
+  data,
+  headerRight,
+  banner,
+}: {
+  data: PortalData
+  headerRight?: React.ReactNode
+  banner?: React.ReactNode
+}) {
   const { customer, jobs, invoices } = data
   const outstanding = invoices.reduce(
     (s, i) => s + Math.max(0, (Number(i.total) || 0) - (Number(i.amount_paid) || 0)),
@@ -31,6 +39,7 @@ export function PortalView({ data, headerRight }: { data: PortalData; headerRigh
       </header>
 
       <div className="mx-auto max-w-3xl px-4 py-6">
+        {banner}
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-border bg-card p-4">
             <p className="text-xs text-muted-foreground">Active Jobs</p>

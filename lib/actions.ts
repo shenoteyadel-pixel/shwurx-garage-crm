@@ -10,6 +10,38 @@ import { sanitizeMileage } from "@/lib/utils"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
 import { notifyUser, notifyByPermission } from "@/lib/actions-notifications"
+import { getSettings } from "@/lib/settings"
+
+/**
+ * When a job reaches "delivered", start the tracking-link grace window for the
+ * customer: stamp expires_at = now + owner-configured days (0 = never). The
+ * token resolver ignores this while any job is still open, so re-stamping on
+ * each delivery simply refreshes the countdown. Best-effort — never blocks the
+ * stage change.
+ */
+async function startTrackingExpiryForDeliveredJob(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  jobId: string,
+) {
+  try {
+    const { data: job } = await supabase.from("jobs").select("customer_id").eq("id", jobId).maybeSingle()
+    if (!job?.customer_id) return
+    const settings = await getSettings()
+    const days = settings.tracking_expire_after_delivery_days ?? 30
+    // 0 = never expire: push the deadline far into the future.
+    const expiresAt =
+      days > 0
+        ? new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+        : new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString()
+    await supabase
+      .from("customer_portal_tokens")
+      .update({ expires_at: expiresAt, expiry_mode: "while_open" })
+      .eq("customer_id", job.customer_id)
+      .eq("revoked", false)
+  } catch {
+    // best-effort; tracking access is not critical to the stage change
+  }
+}
 
 async function requireUser() {
   const supabase = await createClient()
@@ -100,6 +132,7 @@ export async function updateStage(jobId: string, stage: Stage) {
     .update({ stage, updated_at: new Date().toISOString() })
     .eq("id", jobId)
   if (error) throw new Error(error.message)
+  if (stage === "delivered") await startTrackingExpiryForDeliveredJob(supabase, jobId)
   await logAction(ctx, "job.update_stage", "job", jobId, { stage })
   revalidatePath("/")
   revalidatePath(`/jobs/${jobId}`)
@@ -113,6 +146,7 @@ export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: str
   patch.lift_bay = stage === "repair" ? liftBay || null : null
   const { error } = await supabase.from("jobs").update(patch).eq("id", jobId)
   if (error) throw new Error(error.message)
+  if (stage === "delivered") await startTrackingExpiryForDeliveredJob(supabase, jobId)
   revalidatePath("/")
   revalidatePath("/flow")
   revalidatePath(`/jobs/${jobId}`)

@@ -14,6 +14,8 @@ export type Settings = {
   footer_note: string | null
   labour_rate_default: number
   quotation_validity_days: number
+  /** Days a customer's tracking link stays valid after the job is delivered. 0 = never expires. */
+  tracking_expire_after_delivery_days: number
 }
 
 const DEFAULTS: Settings = {
@@ -30,6 +32,7 @@ const DEFAULTS: Settings = {
   footer_note: null,
   labour_rate_default: 0,
   quotation_validity_days: 14,
+  tracking_expire_after_delivery_days: 30,
 }
 
 // Fetch the singleton company settings row (id=1). Falls back to sane defaults

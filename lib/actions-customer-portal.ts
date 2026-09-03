@@ -469,3 +469,37 @@ export async function resendCheckInForJob(jobId: string): Promise<CustomerAccess
     forceResend: true,
   })
 }
+
+/**
+ * Revoke a job customer's existing tracking links and mint a fresh one. Use
+ * when a link may have been shared with the wrong person. Returns the new
+ * absolute tracking URL, or null when the job has no linked customer.
+ */
+export async function regenerateJobTrackingLink(jobId: string): Promise<{ trackingUrl: string | null }> {
+  const ctx = await requirePermission("customers.edit")
+  const svc = createServiceClient()
+  const { data: job } = await svc.from("jobs").select("customer_id").eq("id", jobId).maybeSingle()
+  if (!job?.customer_id) return { trackingUrl: null }
+
+  // Revoke every currently-active link for this customer.
+  await svc
+    .from("customer_portal_tokens")
+    .update({ revoked: true })
+    .eq("customer_id", job.customer_id)
+    .eq("revoked", false)
+
+  const token = randomBytes(24).toString("base64url")
+  const { error } = await svc.from("customer_portal_tokens").insert({
+    customer_id: job.customer_id,
+    token,
+    // Placeholder deadline; ignored while a job is open, re-stamped on delivery.
+    expires_at: new Date(Date.now() + 90 * 86400_000).toISOString(),
+    expiry_mode: "while_open",
+    created_by: ctx.userId,
+  })
+  if (error) throw new Error(error.message)
+
+  await logAction(ctx, "portal.regenerate_tracking", "job", jobId)
+  revalidatePath(`/jobs/${jobId}`)
+  return { trackingUrl: `${appBaseUrl()}/track/${token}` }
+}

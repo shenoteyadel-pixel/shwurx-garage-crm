@@ -22,10 +22,26 @@ export function SettingsForm({ settings }: { settings: Settings }) {
     >
       <Card className="p-6">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Identity</h2>
+        <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+          The legal name, Trade License, and TRN appear on all official documents (Tax Invoice, Approval Certificate).
+          These are legally required — keep them accurate.
+        </p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Company name (display)" name="company_name" defaultValue={settings.company_name} required />
-          <Field label="Legal / registered name" name="legal_name" defaultValue={settings.legal_name} />
-          <Field label="Tax Registration Number (TRN)" name="trn" defaultValue={settings.trn} />
+          <Field
+            label="Legal / registered name"
+            name="legal_name"
+            defaultValue={settings.legal_name}
+            placeholder="SHENOTEY ESKANDER AUTOMOTIVE CENTER"
+            required
+          />
+          <Field label="Company name (display / brand)" name="company_name" defaultValue={settings.company_name} required />
+          <Field label="Trade License No." name="trade_license" defaultValue={settings.trade_license} placeholder="1033544" />
+          <Field
+            label="Tax Registration Number (TRN)"
+            name="trn"
+            defaultValue={settings.trn}
+            placeholder="10044045860003"
+          />
           <Field label="Logo URL (optional)" name="logo_url" defaultValue={settings.logo_url} />
         </div>
 
@@ -83,17 +99,26 @@ function Field({
   defaultValue,
   type = "text",
   required,
+  placeholder,
 }: {
   label: string
   name: string
   defaultValue: string | number | null
   type?: string
   required?: boolean
+  placeholder?: string
 }) {
   return (
     <div>
       <Label htmlFor={name}>{label}</Label>
-      <Input id={name} name={name} type={type} defaultValue={defaultValue ?? ""} required={required} />
+      <Input
+        id={name}
+        name={name}
+        type={type}
+        defaultValue={defaultValue ?? ""}
+        required={required}
+        placeholder={placeholder}
+      />
     </div>
   )
 }

@@ -4,6 +4,7 @@ export type Settings = {
   id: number
   company_name: string
   legal_name: string | null
+  trade_license: string | null
   trn: string | null
   address: string | null
   phone: string | null
@@ -18,8 +19,9 @@ export type Settings = {
 const DEFAULTS: Settings = {
   id: 1,
   company_name: "SHWURX Garage",
-  legal_name: null,
-  trn: null,
+  legal_name: "SHENOTEY ESKANDER AUTOMOTIVE CENTER",
+  trade_license: "1033544",
+  trn: "10044045860003",
   address: null,
   phone: null,
   email: null,

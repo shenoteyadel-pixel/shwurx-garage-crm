@@ -15,25 +15,26 @@ export function DocHeader({
   return (
     <div className="flex items-start justify-between border-b-2 border-[#e51f2b] pb-5">
       <div>
-        <div className="text-2xl font-extrabold tracking-tight">
-          {settings.company_name?.toUpperCase().includes("SHWURX") ? (
-            <>
-              SHWURX<span className="text-[#e51f2b]"> GARAGE</span>
-            </>
-          ) : (
-            settings.company_name
-          )}
+        <div className="text-xl font-extrabold uppercase leading-tight tracking-tight text-neutral-900">
+          {settings.legal_name || settings.company_name}
         </div>
-        <p className="mt-1 text-xs text-neutral-500">
-          {settings.legal_name || "Automotive Workshop & Service Center"}
-        </p>
-        <div className="mt-1 space-y-0.5 text-[11px] text-neutral-500">
+        {settings.company_name && settings.company_name !== settings.legal_name && (
+          <p className="mt-0.5 text-xs font-medium text-[#e51f2b]">
+            {settings.company_name?.toUpperCase().includes("SHWURX") ? "SHWURX Garage" : settings.company_name}
+          </p>
+        )}
+        <div className="mt-1.5 space-y-0.5 text-[11px] text-neutral-500">
           {settings.address && <div>{settings.address}</div>}
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-x-3">
             {settings.phone && <span>Tel {settings.phone}</span>}
             {settings.email && <span>{settings.email}</span>}
           </div>
-          {settings.trn && <div className="font-medium text-neutral-700">TRN: {settings.trn}</div>}
+          {(settings.trade_license || settings.trn) && (
+            <div className="flex flex-wrap gap-x-3 pt-0.5 font-medium text-neutral-700">
+              {settings.trade_license && <span>Trade License: {settings.trade_license}</span>}
+              {settings.trn && <span>TRN: {settings.trn}</span>}
+            </div>
+          )}
         </div>
       </div>
       <div className="text-right">

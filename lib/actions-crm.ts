@@ -33,6 +33,7 @@ export async function saveSettings(formData: FormData) {
   const patch = {
     company_name: String(formData.get("company_name") || "SHWURX Garage"),
     legal_name: str(formData.get("legal_name")),
+    trade_license: str(formData.get("trade_license")),
     trn: str(formData.get("trn")),
     address: str(formData.get("address")),
     phone: str(formData.get("phone")),

@@ -1,13 +1,35 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
-// Routes that must be reachable WITHOUT authentication.
+// Routes that must be reachable WITHOUT staff authentication.
+//
+// These are the customer-facing surfaces. A customer must NEVER be bounced to
+// the staff sign-in page from any of them. Two distinct kinds live here:
+//   1. Tokenized links (NO login of any kind): /track, /approve, /approval,
+//      /customer-access, and their API endpoints. Security is the opaque token,
+//      validated server-side — not a session.
+//   2. The customer portal (/portal), which manages its own customer login at
+//      /portal/login and renders its own landing when signed out. It must not
+//      be intercepted by the staff-login redirect.
 function isPublicPath(path: string): boolean {
+  // Tokenized, no-login customer surfaces.
+  const tokenizedPrefixes = [
+    "/track", // secure vehicle tracking link
+    "/approve", // customer quotation approval (per-item + legacy)
+    "/approval", // spec alias for approval links
+    "/customer-access", // spec alias for customer access links
+    "/api/approve", // approval submit/decision API (approve + approvals)
+    "/api/track", // tracking open-event beacon
+  ]
+  for (const prefix of tokenizedPrefixes) {
+    if (path === prefix || path.startsWith(prefix + "/")) return true
+  }
+
   return (
-    path.startsWith("/auth") || // login, set-password, callback, error
-    path.startsWith("/approve") || // customer quotation approval
-    path.startsWith("/api/approve") ||
-    path.startsWith("/portal/t/") || // public customer job-tracking links
+    path === "/auth" ||
+    path.startsWith("/auth/") || // staff login, set-password, callback, error
+    path === "/portal" ||
+    path.startsWith("/portal/") || // customer portal + /portal/login + /portal/t/<token>
     path === "/manifest.webmanifest" ||
     path === "/favicon.ico"
   )

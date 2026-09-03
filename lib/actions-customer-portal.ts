@@ -308,6 +308,10 @@ export type JobAccessInfo = {
   emailStatus: "sent" | "failed" | "unknown"
   trackingUrl: string | null
   portalUrl: string
+  // Tracking-link open auditing (from the live token row).
+  trackingViews: number
+  trackingFirstOpenedAt: string | null
+  trackingLastOpenedAt: string | null
 }
 
 /**
@@ -328,6 +332,9 @@ export async function getJobCustomerAccess(jobId: string): Promise<JobAccessInfo
     emailStatus: "unknown",
     trackingUrl: null,
     portalUrl: `${base}/portal`,
+    trackingViews: 0,
+    trackingFirstOpenedAt: null,
+    trackingLastOpenedAt: null,
   }
   try {
     await requirePermission("customers.view")
@@ -361,13 +368,14 @@ export async function getJobCustomerAccess(jobId: string): Promise<JobAccessInfo
     let trackingUrl: string | null = null
     const { data: live } = await svc
       .from("customer_portal_tokens")
-      .select("token, expires_at, revoked")
+      .select("token, expires_at, revoked, open_count, first_opened_at, last_opened_at")
       .eq("customer_id", job.customer_id)
       .eq("revoked", false)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle()
-    let token = live && !live.revoked && new Date(live.expires_at).getTime() > Date.now() ? live.token : null
+    const liveValid = !!live && !live.revoked && new Date(live.expires_at).getTime() > Date.now()
+    let token = liveValid ? live!.token : null
     if (!token) {
       token = randomBytes(24).toString("base64url")
       const { error } = await svc.from("customer_portal_tokens").insert({
@@ -397,6 +405,9 @@ export async function getJobCustomerAccess(jobId: string): Promise<JobAccessInfo
             : "unknown",
       trackingUrl,
       portalUrl: `${base}/portal`,
+      trackingViews: liveValid ? Number(live!.open_count ?? 0) : 0,
+      trackingFirstOpenedAt: liveValid ? (live!.first_opened_at ?? null) : null,
+      trackingLastOpenedAt: liveValid ? (live!.last_opened_at ?? null) : null,
     }
   } catch (e) {
     console.log("[v0] getJobCustomerAccess failed:", (e as Error).message)

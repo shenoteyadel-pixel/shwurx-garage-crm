@@ -1,12 +1,9 @@
-import { notFound } from "next/navigation"
-import { resolvePortalToken } from "@/lib/portal-data"
-import { PortalView } from "@/components/portal-view"
+import { redirect } from "next/navigation"
 
-export const metadata = { title: "Your Service Status · SHWURX Garage" }
-
-export default async function PortalTokenPage({ params }: { params: Promise<{ token: string }> }) {
+// Legacy alias. The canonical secure tracking surface is /track/[token], which
+// renders the branded invalid-link notice and records open events. Redirect any
+// old /portal/t/<token> links there so there is exactly one tracking page.
+export default async function LegacyPortalTokenPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
-  const data = await resolvePortalToken(token)
-  if (!data) notFound()
-  return <PortalView data={data} />
+  redirect(`/track/${token}`)
 }

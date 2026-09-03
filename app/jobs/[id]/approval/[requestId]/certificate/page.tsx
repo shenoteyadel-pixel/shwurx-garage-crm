@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
+import { getSettings } from "@/lib/settings"
 import { PrintButton } from "@/components/print-button"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
@@ -46,6 +47,21 @@ export default async function ApprovalCertificatePage({
   const { data: job } = await supabase.from("jobs").select("*").eq("id", id).maybeSingle()
   if (!job) notFound()
 
+  const settings = await getSettings()
+
+  // Lazily assign a permanent certificate number for any decided request.
+  let certificateNumber: string | null = req.certificate_number ?? null
+  const isDecided = ["approved", "partial", "rejected"].includes(String(req.status))
+  if (!certificateNumber && isDecided) {
+    try {
+      const svc = createServiceClient()
+      const { data: assigned } = await svc.rpc("assign_certificate_number", { p_request_id: requestId })
+      if (typeof assigned === "string") certificateNumber = assigned
+    } catch (e) {
+      console.log("[v0] assign_certificate_number failed:", (e as Error).message)
+    }
+  }
+
   const { data: decisionRows } = await supabase
     .from("approval_item_decisions")
     .select("item_key, decision")
@@ -56,6 +72,9 @@ export default async function ApprovalCertificatePage({
   const isWhole = req.mode === "whole"
   const wholeDecision = decisionMap.get("__whole__")
   const decisionFor = (it: SnapItem) => (isWhole ? wholeDecision ?? "rejected" : decisionMap.get(it.key) ?? "rejected")
+
+  const approvedItems = items.filter((it) => decisionFor(it) === "approved")
+  const declinedItems = items.filter((it) => decisionFor(it) !== "approved")
 
   const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
   const decided = req.decided_at ? formatDate(req.decided_at) : "—"
@@ -68,6 +87,9 @@ export default async function ApprovalCertificatePage({
           ? "Declined"
           : String(req.status)
 
+  const legalName = settings.legal_name || settings.company_name
+  const brand = settings.company_name && settings.company_name !== legalName ? settings.company_name : null
+
   return (
     <main className="min-h-screen bg-neutral-200 py-8 print:bg-white print:py-0">
       <div className="mx-auto mb-4 flex max-w-[820px] items-center justify-between px-4 print:hidden">
@@ -78,17 +100,29 @@ export default async function ApprovalCertificatePage({
       </div>
 
       <div className="mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
-        {/* Header */}
+        {/* Header — legal entity is primary */}
         <div className="flex items-start justify-between border-b-2 border-[#e51f2b] pb-5">
           <div>
-            <div className="text-2xl font-extrabold tracking-tight">
-              SHWURX<span className="text-[#e51f2b]"> GARAGE</span>
+            <div className="text-xl font-extrabold uppercase leading-tight tracking-tight">{legalName}</div>
+            {brand && <p className="mt-0.5 text-xs font-medium text-[#e51f2b]">{brand}</p>}
+            <div className="mt-1.5 space-y-0.5 text-[11px] text-neutral-500">
+              {settings.address && <div>{settings.address}</div>}
+              <div className="flex flex-wrap gap-x-3">
+                {settings.phone && <span>Tel {settings.phone}</span>}
+                {settings.email && <span>{settings.email}</span>}
+              </div>
+              {(settings.trade_license || settings.trn) && (
+                <div className="flex flex-wrap gap-x-3 pt-0.5 font-medium text-neutral-700">
+                  {settings.trade_license && <span>Trade License: {settings.trade_license}</span>}
+                  {settings.trn && <span>TRN: {settings.trn}</span>}
+                </div>
+              )}
             </div>
-            <p className="mt-1 text-xs text-neutral-500">Automotive Workshop &amp; Service Center</p>
           </div>
           <div className="text-right">
             <div className="text-lg font-bold uppercase tracking-wide">Approval Certificate</div>
-            <p className="mt-1 font-mono text-sm text-neutral-600">
+            {certificateNumber && <p className="mt-1 font-mono text-sm font-semibold">{certificateNumber}</p>}
+            <p className="mt-0.5 font-mono text-xs text-neutral-600">
               {job.job_number} · v{req.version}
             </p>
             <p className="text-xs text-neutral-500">{decided}</p>
@@ -107,8 +141,9 @@ export default async function ApprovalCertificatePage({
             <div className="font-semibold">{vehicle}</div>
             <div className="text-neutral-600">
               {job.plate_number ? `Plate ${job.plate_number}` : ""}
-              {job.vin ? ` · VIN ${job.vin}` : ""}
+              {job.mileage ? ` · ${Number(job.mileage).toLocaleString()} km` : ""}
             </div>
+            {job.vin && <div className="font-mono text-[11px] text-neutral-500">VIN {job.vin}</div>}
           </div>
           <div>
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Outcome</div>
@@ -129,44 +164,23 @@ export default async function ApprovalCertificatePage({
           </div>
         </div>
 
-        {/* Decisions table */}
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-neutral-300 text-left text-[11px] uppercase tracking-wide text-neutral-500">
-              <th className="py-2 pr-2 font-semibold">Item</th>
-              <th className="py-2 px-2 text-left font-semibold">Category</th>
-              <th className="py-2 px-2 text-right font-semibold">Amount</th>
-              <th className="py-2 pl-2 text-right font-semibold">Decision</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it) => {
-              const d = decisionFor(it)
-              return (
-                <tr key={it.key} className="border-b border-neutral-200 align-top">
-                  <td className="py-3 pr-2">
-                    <div className="font-medium">{it.name}</div>
-                    {it.part_number && <div className="font-mono text-xs text-neutral-500">#{it.part_number}</div>}
-                    {it.detail && <p className="mt-1 text-xs leading-relaxed text-neutral-500">{it.detail}</p>}
-                  </td>
-                  <td className="py-3 px-2 text-neutral-600">
-                    {it.category || (it.kind === "part" ? "Parts" : "Labour")}
-                  </td>
-                  <td className="py-3 px-2 text-right tabular-nums">{formatCurrency(Number(it.gross))}</td>
-                  <td className="py-3 pl-2 text-right">
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-xs font-semibold ${
-                        d === "approved" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
-                      }`}
-                    >
-                      {d === "approved" ? "Approved" : "Declined"}
-                    </span>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        {/* Approved items */}
+        <ItemSection
+          title="Approved — authorized for work"
+          tone="approved"
+          items={approvedItems}
+          emptyText="No items were approved."
+        />
+
+        {/* Declined items */}
+        {declinedItems.length > 0 && (
+          <ItemSection
+            title="Declined — not authorized"
+            tone="declined"
+            items={declinedItems}
+            emptyText=""
+          />
+        )}
 
         {/* Approved totals */}
         <div className="mt-6 flex justify-end">
@@ -180,8 +194,16 @@ export default async function ApprovalCertificatePage({
           </div>
         </div>
 
+        {/* Declaration */}
+        <div className="mt-8 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs leading-relaxed text-neutral-600">
+          <span className="font-semibold text-neutral-800">Customer declaration:</span> I authorize{" "}
+          {legalName} to carry out only the items marked <strong>Approved</strong> above at the stated prices
+          (inclusive of {req.vat_rate}% VAT where applicable). I understand declined items will not be performed or
+          invoiced. This authorization was captured electronically with my signature below.
+        </div>
+
         {/* Signature block */}
-        <div className="mt-10 grid grid-cols-2 gap-8 border-t border-neutral-200 pt-6">
+        <div className="mt-8 grid grid-cols-2 gap-8 border-t border-neutral-200 pt-6">
           <div>
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
               Customer signature
@@ -206,10 +228,12 @@ export default async function ApprovalCertificatePage({
             )}
           </div>
           <div className="text-xs text-neutral-500">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
-              Audit record
-            </div>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Audit record</div>
             <dl className="space-y-1">
+              <div className="flex justify-between gap-3">
+                <dt>Certificate</dt>
+                <dd className="text-right font-mono text-neutral-700">{certificateNumber || "—"}</dd>
+              </div>
               <div className="flex justify-between gap-3">
                 <dt>Signed at</dt>
                 <dd className="text-right text-neutral-700">{decided}</dd>
@@ -232,11 +256,63 @@ export default async function ApprovalCertificatePage({
         <div className="mt-10 border-t border-neutral-200 pt-4 text-center text-xs text-neutral-400">
           This certificate records the customer&apos;s digitally-signed authorization. Only approved items will be
           carried out and invoiced.
-          <br />
-          Thank you for choosing SHWURX Garage.
+          {brand && (
+            <>
+              <br />
+              Thank you for choosing {brand}.
+            </>
+          )}
         </div>
       </div>
     </main>
+  )
+}
+
+function ItemSection({
+  title,
+  tone,
+  items,
+  emptyText,
+}: {
+  title: string
+  tone: "approved" | "declined"
+  items: SnapItem[]
+  emptyText: string
+}) {
+  return (
+    <div className="mt-5">
+      <div
+        className={`mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide ${
+          tone === "approved" ? "text-emerald-700" : "text-red-700"
+        }`}
+      >
+        <span
+          className={`inline-block h-2 w-2 rounded-full ${tone === "approved" ? "bg-emerald-500" : "bg-red-500"}`}
+        />
+        {title}
+      </div>
+      {items.length === 0 ? (
+        emptyText ? <p className="text-xs text-neutral-400">{emptyText}</p> : null
+      ) : (
+        <table className="w-full border-collapse text-sm">
+          <tbody>
+            {items.map((it) => (
+              <tr key={it.key} className="border-b border-neutral-200 align-top">
+                <td className="py-2.5 pr-2">
+                  <div className="font-medium">{it.name}</div>
+                  {it.part_number && <div className="font-mono text-xs text-neutral-500">#{it.part_number}</div>}
+                  {it.detail && <p className="mt-0.5 text-xs leading-relaxed text-neutral-500">{it.detail}</p>}
+                </td>
+                <td className="w-32 py-2.5 px-2 text-neutral-600">
+                  {it.category || (it.kind === "part" ? "Parts" : "Labour")}
+                </td>
+                <td className="w-28 py-2.5 pl-2 text-right tabular-nums">{formatCurrency(Number(it.gross))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   )
 }
 

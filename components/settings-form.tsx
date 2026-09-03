@@ -82,6 +82,25 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           </div>
         </div>
 
+        <h2 className="mb-2 mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Customer tracking
+        </h2>
+        <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+          A customer&apos;s tracking link never expires while their vehicle is still with you. This setting only controls
+          how long the link stays available <strong>after the job is delivered</strong>.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Field
+              label="Expire tracking after delivery (days)"
+              name="tracking_expire_after_delivery_days"
+              type="number"
+              defaultValue={settings.tracking_expire_after_delivery_days}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">Set to 0 to keep tracking links available forever.</p>
+          </div>
+        </div>
+
         <div className="mt-6 flex items-center gap-3">
           <Button type="submit" disabled={pending}>
             {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : null}

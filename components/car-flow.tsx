@@ -451,8 +451,15 @@ function FlowCard({
   onDragEnd: () => void
 }) {
   const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
-  const stage = STAGE_MAP[job.stage]
-  const approval = APPROVAL_BADGE[job.approval_status]
+  const stage = STAGE_MAP[job.stage] ?? {
+    key: job.stage,
+    label: String(job.stage ?? "Unknown"),
+    short: String(job.stage ?? "Unknown"),
+    dot: "bg-muted-foreground",
+    text: "text-muted-foreground",
+    chip: "bg-muted/40 text-muted-foreground border-border",
+  }
+  const approval = APPROVAL_BADGE[job.approval_status] ?? APPROVAL_BADGE.pending
   const payment = job.payment_status ? PAYMENT_BADGE[job.payment_status] : null
   const completion = completionLabel(job.estimated_completion)
 

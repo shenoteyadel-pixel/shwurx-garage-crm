@@ -553,8 +553,8 @@ function NewVehicleForm({
           <Input id="vin" name="vin" placeholder="17-digit VIN" />
         </div>
         <div>
-          <Label htmlFor="mileage">Mileage / km</Label>
-          <Input id="mileage" name="mileage" type="number" min="0" placeholder="e.g. 84000" />
+            <Label htmlFor="mileage">Mileage / km</Label>
+            <Input id="mileage" name="mileage" type="number" min="0" max="2000000" placeholder="e.g. 84000" />
         </div>
       </div>
 
@@ -687,7 +687,7 @@ function VisitStep({
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="mileage">Current mileage / km</Label>
-            <Input id="mileage" name="mileage" type="number" min="0" placeholder="e.g. 84000" />
+            <Input id="mileage" name="mileage" type="number" min="0" max="2000000" placeholder="e.g. 84000" />
           </div>
         </div>
         <div className="mt-4">

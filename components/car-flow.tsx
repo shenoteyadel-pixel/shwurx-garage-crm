@@ -4,12 +4,24 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ZONES, LIFT_BAYS, STAGE_MAP, type Stage, type Zone } from "@/lib/constants"
-import { cn } from "@/lib/utils"
+import { cn, relativeHours } from "@/lib/utils"
 import { VehicleVisual, BrandLogo } from "@/components/vehicle-visual"
 import { UAEPlate } from "@/components/ui"
 import { moveJobLocation } from "@/lib/actions"
 import type { JobCardData } from "@/components/job-card"
-import { Wrench, Loader2, MoveRight } from "lucide-react"
+import {
+  Wrench,
+  Loader2,
+  MoveRight,
+  Gauge,
+  Headset,
+  Clock,
+  CalendarClock,
+  CircleCheck,
+  CircleDashed,
+  CircleX,
+  Wallet,
+} from "lucide-react"
 
 type MoveHandler = (job: Job, stage: Stage, liftBay?: string | null) => void
 const MoveContext = React.createContext<MoveHandler>(() => {})
@@ -367,6 +379,66 @@ function MoveMenu({ job }: { job: Job }) {
   )
 }
 
+/** Time-in-shop, compact (e.g. "3h" / "2d"). */
+function timeInShop(createdAt: string): string {
+  const hrs = relativeHours(createdAt)
+  return hrs < 24 ? `${Math.round(hrs)}h` : `${Math.round(hrs / 24)}d`
+}
+
+/** Expected completion — short date + overdue awareness. */
+function completionLabel(iso?: string | null): { text: string; overdue: boolean } | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  const overdue = d.getTime() < Date.now()
+  const text = d.toLocaleDateString([], { day: "numeric", month: "short" })
+  return { text, overdue }
+}
+
+const APPROVAL_BADGE: Record<JobCardData["approval_status"], { label: string; className: string; Icon: typeof CircleCheck }> = {
+  approved: { label: "Approved", className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300", Icon: CircleCheck },
+  rejected: { label: "Declined", className: "border-red-500/40 bg-red-500/10 text-red-300", Icon: CircleX },
+  pending: { label: "Approval", className: "border-amber-500/40 bg-amber-500/10 text-amber-300", Icon: CircleDashed },
+}
+
+const PAYMENT_BADGE: Record<NonNullable<JobCardData["payment_status"]>, { label: string; className: string } | null> = {
+  none: null,
+  unpaid: { label: "Unpaid", className: "border-red-500/40 bg-red-500/10 text-red-300" },
+  partial: { label: "Part-paid", className: "border-amber-500/40 bg-amber-500/10 text-amber-300" },
+  paid: { label: "Paid", className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" },
+}
+
+/** A single labelled meta cell (icon + value) used in the card's info grid. */
+function MetaCell({
+  Icon,
+  label,
+  value,
+  emphasize,
+}: {
+  Icon: typeof Gauge
+  label: string
+  value: string
+  emphasize?: boolean
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <div className="text-[9px] uppercase leading-none tracking-wide text-muted-foreground">{label}</div>
+        <div className={cn("truncate text-[11px] leading-tight", emphasize ? "font-medium text-foreground" : "text-foreground/90")}>
+          {value}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Standardized premium vehicle card — every job renders the same layout with
+ * key operational info in fixed positions: identity + stage, photo + plate,
+ * vehicle spec, customer, mileage/advisor/technician, and approval + payment
+ * status. This is the single source-of-truth tile used across the board.
+ */
 function FlowCard({
   job,
   pending,
@@ -378,17 +450,33 @@ function FlowCard({
   onDragStart: (id: string) => void
   onDragEnd: () => void
 }) {
-  const vehicle = [job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
-  const stage = STAGE_MAP[job.stage]
+  const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
+  const stage = STAGE_MAP[job.stage] ?? {
+    key: job.stage,
+    label: String(job.stage ?? "Unknown"),
+    short: String(job.stage ?? "Unknown"),
+    dot: "bg-muted-foreground",
+    text: "text-muted-foreground",
+    chip: "bg-muted/40 text-muted-foreground border-border",
+  }
+  const approval = APPROVAL_BADGE[job.approval_status] ?? APPROVAL_BADGE.pending
+  const payment = job.payment_status ? PAYMENT_BADGE[job.payment_status] : null
+  const completion = completionLabel(job.estimated_completion)
+
   return (
     <DragHandleCard job={job} pending={pending} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      <div className="rounded-lg border border-border bg-card p-2 transition hover:border-primary/50">
-        <div className="mb-1.5 flex items-center gap-1.5">
-          <BrandLogo make={job.vehicle_make} size={18} className="shrink-0" />
-          <span className="truncate text-sm font-medium">{vehicle}</span>
+      <div className="overflow-hidden rounded-xl border border-border bg-card transition hover:border-primary/50 hover:shadow-lg hover:shadow-black/20">
+        {/* Identity + stage */}
+        <div className="flex items-center justify-between gap-2 px-2.5 pt-2">
+          <span className="font-mono text-[11px] font-medium text-muted-foreground">{job.job_number}</span>
+          <span className={cn("flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]", stage.chip)}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", stage.dot)} />
+            {stage.short}
+          </span>
         </div>
-        {/* Vehicle image with the real plate attached directly beneath it */}
-        <div className="relative rounded-md bg-gradient-to-b from-muted/40 to-card">
+
+        {/* Photo with plate directly beneath */}
+        <div className="relative mt-2 bg-gradient-to-b from-muted/40 to-card">
           <VehicleVisual
             coverPhoto={job.cover}
             referenceImage={job.vehicle_reference_image_url}
@@ -396,10 +484,10 @@ function FlowCard({
             model={job.vehicle_model}
             bodyType={job.body_type}
             color={job.color}
-            className="h-20 w-full rounded-md"
+            className="h-24 w-full"
           />
           {(job.plate_emirate || job.plate_code || job.plate_number) && (
-            <div className="flex justify-center pb-1">
+            <div className="flex justify-center py-1">
               <UAEPlate
                 emirate={job.plate_emirate}
                 code={job.plate_code}
@@ -409,15 +497,69 @@ function FlowCard({
             </div>
           )}
         </div>
-        <div className="mt-1 truncate text-xs text-muted-foreground">{job.customer_name}</div>
-        <div className="mt-1.5 flex items-center justify-between">
-          <span className={cn("rounded-full border px-1.5 py-0.5 text-[10px]", stage.chip)}>{stage.short}</span>
+
+        <div className="space-y-2 p-2.5 pt-2">
+          {/* Vehicle spec */}
+          <div className="flex items-center gap-1.5">
+            <BrandLogo make={job.vehicle_make} size={20} className="shrink-0" />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold leading-tight">{vehicle}</div>
+              {job.variant && <div className="truncate text-[10px] text-muted-foreground">{job.variant}</div>}
+            </div>
+          </div>
+
+          {/* Customer */}
+          <div className="truncate text-xs text-foreground/90">{job.customer_name}</div>
+
+          {/* Meta grid: mileage, advisor, technician, time in shop */}
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 border-t border-border pt-2">
+            <MetaCell
+              Icon={Gauge}
+              label="Mileage"
+              value={typeof job.mileage === "number" ? `${job.mileage.toLocaleString()} km` : "—"}
+            />
+            <MetaCell Icon={Clock} label="In shop" value={timeInShop(job.created_at)} />
+            <MetaCell Icon={Headset} label="Advisor" value={job.advisor || "Unassigned"} emphasize={!!job.advisor} />
+            <MetaCell
+              Icon={Wrench}
+              label="Technician"
+              value={job.technician || "Unassigned"}
+              emphasize={!!job.technician}
+            />
+          </div>
+
+          {/* Status row: approval + payment + expected completion */}
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-2">
+            <span className={cn("flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]", approval.className)}>
+              <approval.Icon className="h-3 w-3" />
+              {approval.label}
+            </span>
+            {payment && (
+              <span className={cn("flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]", payment.className)}>
+                <Wallet className="h-3 w-3" />
+                {payment.label}
+              </span>
+            )}
+            {completion && (
+              <span
+                className={cn(
+                  "ml-auto flex items-center gap-1 text-[10px]",
+                  completion.overdue ? "font-medium text-red-400" : "text-muted-foreground",
+                )}
+                title="Expected completion"
+              >
+                <CalendarClock className="h-3 w-3" />
+                {completion.text}
+              </span>
+            )}
+          </div>
+
           <Link
             href={`/jobs/${job.id}`}
-            className="text-[10px] text-primary hover:underline"
+            className="block w-full rounded-md border border-border bg-background/60 py-1 text-center text-[11px] font-medium text-primary transition hover:bg-primary/10"
             onClick={(e) => e.stopPropagation()}
           >
-            Open
+            Open job
           </Link>
         </div>
       </div>

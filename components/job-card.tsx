@@ -23,10 +23,14 @@ export interface JobCardData {
   vehicle_reference_image_url?: string | null
   stage: Stage
   approval_status: "pending" | "approved" | "rejected"
+  mileage?: number | null
+  estimated_completion?: string | null
   created_at: string
   updated_at: string
   cover?: string | null
   advisor?: string | null
+  technician?: string | null
+  payment_status?: "none" | "unpaid" | "partial" | "paid"
 }
 
 export function JobCard({ job }: { job: JobCardData }) {

@@ -22,7 +22,7 @@ export default async function FlowPage() {
   const { data: jobsRaw } = await supabase
     .from("jobs")
     .select(
-      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, vehicle_reference_image_url, stage, approval_status, created_at, updated_at",
+      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, vehicle_reference_image_url, stage, approval_status, mileage, advisor_id, technician_id, estimated_completion, created_at, updated_at",
     )
     .neq("stage", "delivered")
     .order("updated_at", { ascending: false })
@@ -38,9 +38,50 @@ export default async function FlowPage() {
     if (!coverByJob.has(p.job_id)) coverByJob.set(p.job_id, p.url)
   }
 
+  // Resolve advisor / technician display names.
+  const staffIds = Array.from(
+    new Set(jobs.flatMap((j) => [j.advisor_id, j.technician_id]).filter((v): v is string => !!v)),
+  )
+  const nameById = new Map<string, string>()
+  if (staffIds.length) {
+    const { data: staff } = await supabase.from("profiles").select("id, full_name").in("id", staffIds)
+    for (const s of staff ?? []) nameById.set(s.id, s.full_name || "")
+  }
+
+  // Latest invoice per job drives the payment badge.
+  const jobIds = jobs.map((j) => j.id)
+  const payByJob = new Map<string, { status: string; total: number; paid: number }>()
+  if (jobIds.length) {
+    const { data: invs } = await supabase
+      .from("invoices")
+      .select("job_id, status, total, amount_paid, created_at")
+      .in("job_id", jobIds)
+      .order("created_at", { ascending: false })
+    for (const inv of invs ?? []) {
+      if (!payByJob.has(inv.job_id)) {
+        payByJob.set(inv.job_id, {
+          status: inv.status ?? "",
+          total: Number(inv.total ?? 0),
+          paid: Number(inv.amount_paid ?? 0),
+        })
+      }
+    }
+  }
+
+  function paymentStatus(jobId: string): JobCardData["payment_status"] {
+    const p = payByJob.get(jobId)
+    if (!p) return "none"
+    if (p.total > 0 && p.paid >= p.total) return "paid"
+    if (p.paid > 0) return "partial"
+    return "unpaid"
+  }
+
   const jobCards: JobCardData[] = jobs.map((j) => ({
     ...(j as any),
     cover: coverByJob.get(j.id) ?? null,
+    advisor: j.advisor_id ? nameById.get(j.advisor_id) ?? null : null,
+    technician: j.technician_id ? nameById.get(j.technician_id) ?? null : null,
+    payment_status: paymentStatus(j.id),
   }))
 
   const zoneCounts = ZONES.map((z) => ({

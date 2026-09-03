@@ -29,3 +29,18 @@ export function relativeHours(from: string | Date, to: string | Date = new Date(
   const ms = new Date(to).getTime() - new Date(from).getTime()
   return ms / 36e5
 }
+
+/** Largest plausible odometer reading (km). Guards against typo values like 49,276,000. */
+export const MAX_MILEAGE_KM = 2_000_000
+
+/**
+ * Normalize a user-entered mileage value. Returns a clean non-negative integer
+ * within a realistic range, or null when the input is empty/invalid/absurd so a
+ * mistyped odometer can't be persisted.
+ */
+export function sanitizeMileage(value: FormDataEntryValue | string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null
+  const n = Math.floor(Number(value))
+  if (!Number.isFinite(n) || n < 0 || n > MAX_MILEAGE_KM) return null
+  return n
+}

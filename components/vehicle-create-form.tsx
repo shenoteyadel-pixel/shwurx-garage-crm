@@ -128,7 +128,7 @@ export function VehicleCreateForm({ customerId }: { customerId: string }) {
           </div>
           <div>
             <Label htmlFor="mileage">Mileage / km</Label>
-            <Input id="mileage" name="mileage" type="number" min="0" placeholder="e.g. 84000" />
+            <Input id="mileage" name="mileage" type="number" min="0" max="2000000" placeholder="e.g. 84000" />
           </div>
         </div>
 

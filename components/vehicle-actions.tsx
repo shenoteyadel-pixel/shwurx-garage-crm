@@ -155,8 +155,8 @@ export function VehicleActions({
               <Input id="engine_number" name="engine_number" defaultValue={vehicle.engine_number ?? ""} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="mileage">Mileage (km)</Label>
-              <Input id="mileage" name="mileage" type="number" defaultValue={vehicle.mileage ?? ""} />
+            <Label htmlFor="mileage">Mileage (km)</Label>
+            <Input id="mileage" name="mileage" type="number" min="0" max="2000000" defaultValue={vehicle.mileage ?? ""} />
             </div>
           </div>
 

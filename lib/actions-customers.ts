@@ -8,6 +8,7 @@ import { randomBytes } from "crypto"
 import type { Stage } from "@/lib/constants"
 import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
+import { sanitizeMileage } from "@/lib/utils"
 import { appBaseUrl } from "@/lib/account-links"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
@@ -248,7 +249,7 @@ function vehiclePayloadFromForm(fd: FormData) {
   const payload: Record<string, unknown> = {}
   for (const f of VEHICLE_TEXT) payload[f] = s(fd, f)
   payload.year = fd.get("year") ? Number(fd.get("year")) : null
-  payload.mileage = fd.get("mileage") ? Number(fd.get("mileage")) : null
+  payload.mileage = sanitizeMileage(fd.get("mileage"))
   if (!payload.body_type) payload.body_type = inferBodyType(payload.make as string, payload.model as string)
   return payload
 }
@@ -323,7 +324,7 @@ export async function createVehicleInline(input: {
         plate_code: input.plate_code?.trim() || null,
         plate_number: input.plate_number?.trim() || null,
         vin: input.vin?.trim() || null,
-        mileage: input.mileage || null,
+        mileage: sanitizeMileage(input.mileage),
         created_by: user.id,
       })
       .select(
@@ -611,6 +612,9 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
     ])
     if (!customer || !vehicle) return { ok: false, error: "Customer or vehicle not found." }
 
+    // Mileage the advisor entered in the wizard (validated); null if none/invalid.
+    const freshMileage = fd.get("mileage") !== null ? sanitizeMileage(fd.get("mileage")) : null
+
     // Snapshot whatever image the vehicle already has. If none yet, it resolves
     // in the background and backfills every linked job (never blocks creation).
     const payload = {
@@ -633,7 +637,7 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
       plate_code: vehicle.plate_code,
       plate_number: vehicle.plate_number,
       vin: vehicle.vin,
-      mileage: fd.get("mileage") ? Number(fd.get("mileage")) : vehicle.mileage,
+      mileage: freshMileage ?? sanitizeMileage(vehicle.mileage),
       complaint: s(fd, "complaint"),
       advisor_id: s(fd, "advisor_id"),
       technician_id: s(fd, "technician_id"),
@@ -647,11 +651,11 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
 
     if (!vehicle.reference_image_url) after(() => backfillVehicleImage(vehicleId))
 
-    // If the wizard collected a fresher mileage, update the master vehicle too.
-    if (fd.get("mileage")) {
+    // If the wizard collected a fresher (valid) mileage, update the master vehicle too.
+    if (freshMileage !== null) {
       await supabase
         .from("vehicles")
-        .update({ mileage: Number(fd.get("mileage")), updated_at: new Date().toISOString() })
+        .update({ mileage: freshMileage, updated_at: new Date().toISOString() })
         .eq("id", vehicleId)
     }
 

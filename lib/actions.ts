@@ -6,6 +6,7 @@ import { redirect } from "next/navigation"
 import { VAT_RATE, type Stage } from "@/lib/constants"
 import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
+import { sanitizeMileage } from "@/lib/utils"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
 import { notifyUser, notifyByPermission } from "@/lib/actions-notifications"
@@ -66,7 +67,7 @@ export async function createJob(formData: FormData) {
     plate_code: String(formData.get("plate_code") || "") || null,
     plate_number: String(formData.get("plate_number") || "") || null,
     vin: String(formData.get("vin") || "") || null,
-    mileage: formData.get("mileage") ? Number(formData.get("mileage")) : null,
+    mileage: sanitizeMileage(formData.get("mileage")),
     complaint: String(formData.get("complaint") || "") || null,
     advisor_id: String(formData.get("advisor_id") || "") || null,
     technician_id: String(formData.get("technician_id") || "") || null,

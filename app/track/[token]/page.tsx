@@ -1,7 +1,8 @@
 import { headers } from "next/headers"
-import { Wrench, CheckCircle2, Clock3 } from "lucide-react"
+import { Wrench } from "lucide-react"
 import { resolveTrackingToken, recordTrackingOpen } from "@/lib/portal-data"
-import { PortalView } from "@/components/portal-view"
+import { loadTrackingDetail } from "@/lib/tracking-data"
+import { TrackExperience } from "@/components/track-experience"
 
 export const metadata = { title: "Track Your Vehicle · SHWURX Garage" }
 
@@ -20,6 +21,10 @@ export default async function TrackTokenPage({ params }: { params: Promise<{ tok
   // customer portal instead of a dead end. Never the staff sign-in page.
   if (result.status === "expired") return <TrackingNotice variant="expired" />
 
+  // Load the full customer-safe detail for the premium tracking experience.
+  const detail = await loadTrackingDetail(result.data.customer.id)
+  if (!detail) return <TrackingNotice variant="invalid" />
+
   // Best-effort audit of the open event (first/last opened, count). Never blocks render.
   const h = await headers()
   await recordTrackingOpen(token, {
@@ -27,32 +32,7 @@ export default async function TrackTokenPage({ params }: { params: Promise<{ tok
     userAgent: h.get("user-agent") ?? null,
   }).catch(() => {})
 
-  const banner =
-    result.status === "completed" ? (
-      <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
-        <div>
-          <p className="text-sm font-semibold text-emerald-200">Your vehicle is ready — job completed</p>
-          <p className="mt-1 text-xs leading-relaxed text-emerald-200/80">
-            All work on your vehicle has been completed and delivered. This link stays available for a short while so
-            you can review your service history and invoices.
-          </p>
-        </div>
-      </div>
-    ) : (
-      <div className="mb-6 flex items-start gap-3 rounded-xl border border-sky-500/30 bg-sky-500/10 p-4">
-        <Clock3 className="mt-0.5 h-5 w-5 shrink-0 text-sky-400" />
-        <div>
-          <p className="text-sm font-semibold text-sky-200">Live tracking active</p>
-          <p className="mt-1 text-xs leading-relaxed text-sky-200/80">
-            Your vehicle is currently with us. This link stays active for the entire time your vehicle is in our care —
-            bookmark it to check back anytime.
-          </p>
-        </div>
-      </div>
-    )
-
-  return <PortalView data={result.data} banner={banner} />
+  return <TrackExperience detail={detail} status={result.status} />
 }
 
 function TrackingNotice({ variant }: { variant: "invalid" | "expired" }) {

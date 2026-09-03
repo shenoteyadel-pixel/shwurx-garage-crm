@@ -17,7 +17,13 @@ function InfoLanding() {
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           Track your vehicle&apos;s service progress and invoices using the secure link shared with you by our team.
         </p>
-        <p className="mt-6 text-xs text-muted-foreground">
+        <a
+          href="/portal/login"
+          className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+        >
+          Sign in to your account
+        </a>
+        <p className="mt-4 text-xs text-muted-foreground">
           Don&apos;t have a link yet? Please contact your service advisor and we&apos;ll send you one.
         </p>
       </div>

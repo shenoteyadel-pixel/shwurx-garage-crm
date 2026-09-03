@@ -12,6 +12,7 @@ import {
   CircleCheck,
   CircleAlert,
   ShieldCheck,
+  Eye,
 } from "lucide-react"
 
 // Job Card "Customer access" panel. Self-loads the live portal/tracking status
@@ -113,6 +114,23 @@ export function JobCustomerAccess({ jobId }: { jobId: string }) {
         )}
       </p>
 
+      {info.trackingViews > 0 ? (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm">
+          <Eye className="h-4 w-4 shrink-0 text-primary" />
+          <span className="text-foreground">
+            Customer viewed tracking · <span className="font-semibold">{info.trackingViews}</span>{" "}
+            {info.trackingViews === 1 ? "view" : "views"}
+            {info.trackingLastOpenedAt && (
+              <span className="text-muted-foreground"> · last {formatWhen(info.trackingLastOpenedAt)}</span>
+            )}
+          </span>
+        </div>
+      ) : (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-background/50 p-3 text-sm text-muted-foreground">
+          <Eye className="h-4 w-4 shrink-0" /> Not opened by customer yet
+        </div>
+      )}
+
       {info.trackingUrl && (
         <div className="mt-3 rounded-lg border border-border bg-background/50 p-3">
           <div className="text-xs uppercase tracking-wide text-muted-foreground">Tracking link</div>
@@ -141,6 +159,18 @@ export function JobCustomerAccess({ jobId }: { jobId: string }) {
       {toast && <p className="mt-2 text-xs text-muted-foreground">{toast}</p>}
     </Card>
   )
+}
+
+function formatWhen(iso: string): string {
+  try {
+    const d = new Date(iso)
+    const today = new Date()
+    const sameDay = d.toDateString() === today.toDateString()
+    const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    return sameDay ? time : `${d.toLocaleDateString([], { day: "numeric", month: "short" })}, ${time}`
+  } catch {
+    return ""
+  }
 }
 
 function Chip({ ok, label }: { ok: boolean; label: string }) {

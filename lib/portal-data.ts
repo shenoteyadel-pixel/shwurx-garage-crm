@@ -116,6 +116,20 @@ export async function loadPortalDataByCustomer(customerId: string): Promise<Port
   }
 }
 
+/**
+ * Best-effort audit of a tracking-link open. Atomically bumps open_count and
+ * first/last opened timestamps via the record_tracking_open RPC. Never throws
+ * into the render path — callers should still guard with .catch().
+ */
+export async function recordTrackingOpen(
+  token: string,
+  _meta?: { ip?: string | null; userAgent?: string | null },
+): Promise<void> {
+  if (!token) return
+  const svc = createServiceClient()
+  await svc.rpc("record_tracking_open", { p_token: token })
+}
+
 export function portalStageProgress(stage: Stage): number {
   const idx = STAGE_ORDER.indexOf(stage)
   if (idx < 0) return 0

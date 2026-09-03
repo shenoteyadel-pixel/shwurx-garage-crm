@@ -2,7 +2,12 @@
 
 import * as React from "react"
 import { Card, Button } from "@/components/ui"
-import { getJobCustomerAccess, resendCheckInForJob, type JobAccessInfo } from "@/lib/actions-customer-portal"
+import {
+  getJobCustomerAccess,
+  resendCheckInForJob,
+  regenerateJobTrackingLink,
+  type JobAccessInfo,
+} from "@/lib/actions-customer-portal"
 import {
   Loader2,
   Copy,
@@ -13,6 +18,7 @@ import {
   CircleAlert,
   ShieldCheck,
   Eye,
+  RefreshCw,
 } from "lucide-react"
 
 // Job Card "Customer access" panel. Self-loads the live portal/tracking status
@@ -22,6 +28,7 @@ export function JobCustomerAccess({ jobId }: { jobId: string }) {
   const [loading, setLoading] = React.useState(true)
   const [copied, setCopied] = React.useState(false)
   const [resending, setResending] = React.useState(false)
+  const [regenerating, setRegenerating] = React.useState(false)
   const [toast, setToast] = React.useState<string | null>(null)
 
   React.useEffect(() => {
@@ -68,6 +75,29 @@ export function JobCustomerAccess({ jobId }: { jobId: string }) {
       setToast("Could not re-send the email.")
     } finally {
       setResending(false)
+    }
+  }
+
+  async function regenerate() {
+    if (!window.confirm("Generate a new tracking link? The previous link will stop working immediately.")) return
+    setRegenerating(true)
+    setToast(null)
+    try {
+      const res = await regenerateJobTrackingLink(jobId)
+      if (res.trackingUrl) {
+        setInfo((prev) =>
+          prev
+            ? { ...prev, trackingUrl: res.trackingUrl, trackingViews: 0, trackingFirstOpenedAt: null, trackingLastOpenedAt: null }
+            : prev,
+        )
+        setToast("New tracking link generated — share it with the customer.")
+      } else {
+        setToast("Could not generate a new link.")
+      }
+    } catch {
+      setToast("Could not generate a new link.")
+    } finally {
+      setRegenerating(false)
     }
   }
 
@@ -152,7 +182,13 @@ export function JobCustomerAccess({ jobId }: { jobId: string }) {
                 <ExternalLink className="h-4 w-4" /> Open
               </Button>
             </a>
+            <Button type="button" variant="outline" size="sm" onClick={regenerate} disabled={regenerating}>
+              {regenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Regenerate
+            </Button>
           </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            This link stays active for the whole time the vehicle is with us — it won&apos;t expire mid-service.
+          </p>
         </div>
       )}
 

@@ -42,3 +42,5 @@ export async function revokePortalTokens(customerId: string) {
   await logAction(ctx, "portal.revoke_tokens", "customer", customerId)
   revalidatePath(`/customers/${customerId}`)
 }
+
+

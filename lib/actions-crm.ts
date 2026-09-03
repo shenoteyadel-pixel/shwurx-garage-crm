@@ -43,6 +43,7 @@ export async function saveSettings(formData: FormData) {
     footer_note: str(formData.get("footer_note")),
     labour_rate_default: num(formData.get("labour_rate_default")),
     quotation_validity_days: num(formData.get("quotation_validity_days"), 14),
+    tracking_expire_after_delivery_days: Math.max(0, num(formData.get("tracking_expire_after_delivery_days"), 30)),
     updated_at: new Date().toISOString(),
   }
   const { error } = await supabase.from("settings").update(patch).eq("id", 1)

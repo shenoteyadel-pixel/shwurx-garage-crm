@@ -143,20 +143,21 @@ export function customerCheckInEmail(opts: {
       <a href="${url}" style="color:#93c5fd;word-break:break-all">${url}</a></p>`
   const body = `
     <p>Hi ${esc(opts.name) || "there"},</p>
-    <p>Your vehicle has been checked in at <strong>${BRAND}</strong>. You can follow every step of the work online.</p>
+    <p>Your vehicle has been checked in at <strong>${BRAND}</strong>. You can follow every step of the work online with the button below — this tracking link stays active for as long as your vehicle is with us.</p>
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0 4px">
       ${row("Vehicle", opts.vehicle || "Your vehicle")}
       ${opts.plate ? row("Plate", opts.plate) : ""}
       ${row("Job Card", opts.jobNumber)}
     </table>
-    ${opts.showSetPassword ? linkRow("Set your password", opts.setPasswordUrl) : ""}
-    ${linkRow("Track your vehicle", opts.trackingUrl)}
-    ${linkRow("Customer portal", opts.portalUrl)}`
-  return shell(
-    "Your vehicle has been checked in",
-    body,
-    opts.showSetPassword
-      ? { label: "Set password & track", url: opts.setPasswordUrl }
-      : { label: "Track my vehicle", url: opts.trackingUrl },
-  )
+    ${linkRow("Track your vehicle (always available)", opts.trackingUrl)}
+    ${linkRow("Customer portal", opts.portalUrl)}
+    ${
+      opts.showSetPassword
+        ? `<p style="margin:14px 0 0;font-size:13px;color:#8b93a1">Optional: <a href="${opts.setPasswordUrl}" style="color:#93c5fd">set a password</a> to sign in to your customer portal. You do not need this to track your vehicle.</p>`
+        : ""
+    }`
+  // The primary button is ALWAYS the durable tracking link — never the
+  // short-lived set-password link, which previously caused customers to think
+  // "the tracking link expired" within hours.
+  return shell("Your vehicle has been checked in", body, { label: "Track my vehicle", url: opts.trackingUrl })
 }

@@ -13,6 +13,7 @@ import { JobPhotos } from "@/components/job-photos"
 import { StaffAssign } from "@/components/staff-assign"
 import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
+import { DiagnosticsPanel, type DiagnosticTest } from "@/components/diagnostics-panel"
 import { TechnicianJobCard } from "@/components/technician-job-card"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { RefreshVehicleImageButton } from "@/components/refresh-vehicle-image"
@@ -71,6 +72,24 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .select("id, part_name, quantity, status, supplier, cost, notes")
     .eq("job_id", id)
     .order("created_at")
+
+  // AI Diagnostic Assistant: session + technician-verified test workflow.
+  const { data: diagnosticSession } = await supabase
+    .from("diagnostic_sessions")
+    .select(
+      "id, symptoms, observations, error_codes, ai_output, ai_model, ai_generated_at, confirmed_diagnosis, confirmed_at",
+    )
+    .eq("job_id", id)
+    .maybeSingle()
+  let diagnosticTests: DiagnosticTest[] = []
+  if (diagnosticSession) {
+    const { data: dTests } = await supabase
+      .from("diagnostic_tests")
+      .select("id, description, source, status, result_note, performed_at")
+      .eq("session_id", diagnosticSession.id)
+      .order("position", { ascending: true })
+    diagnosticTests = (dTests ?? []) as DiagnosticTest[]
+  }
 
   const { data: staffRows } = await supabase
     .from("profiles")
@@ -217,6 +236,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           {showPrices ? (
             <>
               <RepairDetails job={job as any} />
+              <DiagnosticsPanel
+                jobId={job.id}
+                session={(diagnosticSession as any) ?? null}
+                tests={diagnosticTests}
+              />
               <QuotationBuilder
                 jobId={job.id}
                 initialItems={quoteItems}
@@ -239,6 +263,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 parts={techParts}
               />
               <RepairDetails job={job as any} />
+              <DiagnosticsPanel
+                jobId={job.id}
+                session={(diagnosticSession as any) ?? null}
+                tests={diagnosticTests}
+              />
             </>
           )}
         </div>

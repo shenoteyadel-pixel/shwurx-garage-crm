@@ -125,7 +125,14 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
         </Card>
       )}
 
-      <InvoiceActions invoiceId={id} status={inv.status} balance={balance} />
+      <InvoiceActions
+        invoiceId={id}
+        status={inv.status}
+        balance={balance}
+        paymentLinkUrl={inv.payment_link_url}
+        paymentLinkLabel={inv.payment_link_label}
+        paymentLinkEnabled={inv.payment_link_enabled}
+      />
       </div>
     </AppShell>
   )

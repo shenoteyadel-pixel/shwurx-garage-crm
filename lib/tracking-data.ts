@@ -77,6 +77,8 @@ export interface TrackInvoice {
   total: number
   amountPaid: number
   outstanding: number
+  payLinkUrl: string | null
+  payLinkLabel: string | null
 }
 
 export interface TrackQuote {
@@ -321,7 +323,7 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
   let invoice: TrackInvoice | null = null
   const { data: inv } = await svc
     .from("invoices")
-    .select("invoice_number, status, total, amount_paid")
+    .select("invoice_number, status, total, amount_paid, payment_link_url, payment_link_label, payment_link_enabled")
     .eq("job_id", primary.id)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -329,12 +331,17 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
   if (inv) {
     const total = Number(inv.total) || 0
     const amountPaid = Number(inv.amount_paid) || 0
+    const outstanding = Math.max(0, total - amountPaid)
+    // Only expose the PAY NOW link when staff enabled it AND there is a balance due.
+    const linkLive = !!inv.payment_link_enabled && !!inv.payment_link_url && outstanding > 0.01
     invoice = {
       invoiceNumber: (inv.invoice_number as string) ?? null,
       status: (inv.status as string) ?? null,
       total,
       amountPaid,
-      outstanding: Math.max(0, total - amountPaid),
+      outstanding,
+      payLinkUrl: linkLive ? (inv.payment_link_url as string) : null,
+      payLinkLabel: linkLive ? ((inv.payment_link_label as string) ?? null) : null,
     }
   }
 

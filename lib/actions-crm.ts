@@ -401,3 +401,54 @@ export async function cancelInvoice(invoiceId: string) {
   revalidatePath(`/invoices/${invoiceId}`)
   revalidatePath("/invoices")
 }
+
+/* ===================== Manual online payment link ===================== */
+
+function normalizePaymentUrl(raw: string | null): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  // Require an explicit, safe scheme so we never render a javascript:/data: link.
+  let url: URL
+  try {
+    url = new URL(trimmed)
+  } catch {
+    throw new Error("Enter a valid payment link starting with https://")
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error("Payment link must be an http(s) URL")
+  }
+  return url.toString()
+}
+
+/** Set (or update) the manual PAY NOW link shown to the customer for an invoice. */
+export async function setInvoicePaymentLink(invoiceId: string, formData: FormData) {
+  const { supabase, ctx } = await guard("payments.record")
+  const url = normalizePaymentUrl(str(formData.get("payment_link_url")))
+  const label = str(formData.get("payment_link_label"))
+  const enabled = formData.get("payment_link_enabled") === "on" && !!url
+  const { error } = await supabase
+    .from("invoices")
+    .update({ payment_link_url: url, payment_link_label: label, payment_link_enabled: enabled, updated_at: new Date().toISOString() })
+    .eq("id", invoiceId)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "invoice.payment_link.set", "invoice", invoiceId, { enabled })
+  revalidatePath(`/invoices/${invoiceId}`)
+  revalidatePath("/invoices")
+}
+
+/** Set (or update) the manual PAY NOW / deposit link shown to the customer for a quotation. */
+export async function setQuotationPaymentLink(quotationId: string, formData: FormData) {
+  const { supabase, ctx } = await guard("payments.record")
+  const url = normalizePaymentUrl(str(formData.get("payment_link_url")))
+  const label = str(formData.get("payment_link_label"))
+  const enabled = formData.get("payment_link_enabled") === "on" && !!url
+  const { error } = await supabase
+    .from("quotations")
+    .update({ payment_link_url: url, payment_link_label: label, payment_link_enabled: enabled, updated_at: new Date().toISOString() })
+    .eq("id", quotationId)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "quotation.payment_link.set", "quotation", quotationId, { enabled })
+  revalidatePath(`/quotations/${quotationId}`)
+  revalidatePath("/quotations")
+}

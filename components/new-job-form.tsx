@@ -33,6 +33,7 @@ import {
   ExternalLink,
   CircleCheck,
   CircleAlert,
+  TriangleAlert,
 } from "lucide-react"
 
 type Staff = { id: string; full_name: string | null; role: string }
@@ -620,33 +621,43 @@ function VisitStep({
   staff: Staff[]
   onBack: () => void
 }) {
+  const router = useRouter()
   const [vehiclePhotos, setVehiclePhotos] = React.useState<string[]>([])
   const [damagePhotos, setDamagePhotos] = React.useState<string[]>([])
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [result, setResult] = React.useState<Extract<JobCreateResult, { ok: true }> | null>(null)
+  const [duplicate, setDuplicate] = React.useState<Extract<JobCreateResult, { duplicate: true }> | null>(null)
+
+  async function submit(fd: FormData) {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await createJobFromMaster(fd)
+      if (res.ok) {
+        setResult(res)
+        return
+      }
+      if ("duplicate" in res) {
+        setDuplicate(res)
+        return
+      }
+      setError(res.error)
+    } catch (e: any) {
+      setError(e?.message ?? "Could not create the job card. Please try again.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <form
       action={async (fd) => {
-        setSubmitting(true)
-        setError(null)
         fd.set("customer_id", customer.id)
         fd.set("vehicle_id", vehicle.id)
         fd.set("photo_urls", vehiclePhotos.join(","))
         fd.set("damage_urls", damagePhotos.join(","))
-        try {
-          const res = await createJobFromMaster(fd)
-          if (!res.ok) {
-            setError(res.error)
-            return
-          }
-          setResult(res)
-        } catch (e: any) {
-          setError(e?.message ?? "Could not create the job card. Please try again.")
-        } finally {
-          setSubmitting(false)
-        }
+        await submit(fd)
       }}
       className="space-y-6"
     >
@@ -655,6 +666,15 @@ function VisitStep({
           result={result}
           customerEmail={customer.email ?? null}
           customerMobile={customer.mobile ?? null}
+        />
+      )}
+      {duplicate && (
+        <DuplicateJobDialog
+          duplicate={duplicate}
+          vehicleLabel={[vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || "this vehicle"}
+          busy={submitting}
+          onOpenExisting={() => router.push(`/jobs/${duplicate.existing.jobId}`)}
+          onCancel={() => setDuplicate(null)}
         />
       )}
       <Card className="p-5">
@@ -761,6 +781,92 @@ function VisitStep({
 }
 
 /* ---------------- Success popup ---------------- */
+function DuplicateJobDialog({
+  duplicate,
+  vehicleLabel,
+  busy,
+  onOpenExisting,
+  onCancel,
+}: {
+  duplicate: Extract<JobCreateResult, { duplicate: true }>
+  vehicleLabel: string
+  busy: boolean
+  onOpenExisting: () => void
+  onCancel: () => void
+}) {
+  const { existing } = duplicate
+  const created = new Date(existing.createdAt).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-hidden />
+      <Card
+        role="alertdialog"
+        aria-modal="true"
+        aria-label="Vehicle already has an active job"
+        className="relative z-10 w-full max-w-md overflow-hidden p-0"
+      >
+        <div className="flex items-start gap-3 border-b border-border p-5">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-400">
+            <TriangleAlert className="h-6 w-6" />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-balance">This vehicle already has an active job</h2>
+            <p className="text-xs text-muted-foreground">{vehicleLabel}</p>
+          </div>
+        </div>
+
+        <div className="space-y-4 p-5">
+          <p className="text-sm text-muted-foreground text-pretty">
+            To avoid duplicate job cards, continue on the existing job instead of opening a new one.
+          </p>
+          <div className="rounded-lg border border-border bg-background/40 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium">{existing.jobNumber}</span>
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">
+                {existing.stageLabel}
+              </span>
+            </div>
+            <dl className="mt-2 space-y-1 text-xs text-muted-foreground">
+              <div className="flex justify-between gap-3">
+                <dt>Opened</dt>
+                <dd className="text-foreground">{created}</dd>
+              </div>
+              {existing.advisorName && (
+                <div className="flex justify-between gap-3">
+                  <dt>Advisor</dt>
+                  <dd className="text-foreground">{existing.advisorName}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Button type="button" onClick={onOpenExisting} disabled={busy} className="w-full justify-center">
+              <ExternalLink className="h-4 w-4" /> Open existing job
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={busy}
+              className="w-full justify-center"
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
 function JobSuccessDialog({
   result,
   customerEmail,

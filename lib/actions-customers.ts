@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { after } from "next/server"
 import { randomBytes } from "crypto"
-import type { Stage } from "@/lib/constants"
+import { type Stage, STAGE_MAP } from "@/lib/constants"
 import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
 import { sanitizeMileage } from "@/lib/utils"
@@ -592,6 +592,29 @@ export type JobCreateResult =
       access: import("@/lib/actions-customer-portal").CustomerAccessResult
     }
   | { ok: false; error: string }
+  // The vehicle already has an open (non-delivered) job. A vehicle may only have
+  // one active job at a time (enforced by the jobs_one_active_per_vehicle DB
+  // index), so the wizard shows an "already has an active job" prompt with
+  // Open Existing / Cancel instead of creating a duplicate.
+  | {
+      ok: false
+      duplicate: true
+      existing: {
+        jobId: string
+        jobNumber: string
+        stage: Stage
+        stageLabel: string
+        createdAt: string
+        advisorName: string | null
+      }
+    }
+
+// Resolve an advisor's display name for the duplicate-job prompt.
+async function advisorNameFor(supabase: any, advisorId: string | null): Promise<string | null> {
+  if (!advisorId) return null
+  const { data } = await supabase.from("profiles").select("full_name").eq("id", advisorId).maybeSingle()
+  return data?.full_name ?? null
+}
 
 // The intake wizard resolves (or creates) a customer + vehicle first, then calls
 // this with their ids. We snapshot the vehicle/customer fields onto the job so the
@@ -611,6 +634,36 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
       supabase.from("vehicles").select("*").eq("id", vehicleId).single(),
     ])
     if (!customer || !vehicle) return { ok: false, error: "Customer or vehicle not found." }
+
+    // Duplicate guard: a vehicle may only have one open (non-delivered) job at a
+    // time. This stops double-submits (the exact cause of the two Audi Q7 rows
+    // created 5s apart) and any accidental re-creation while a job is in flight.
+    // The DB index jobs_one_active_per_vehicle enforces the same rule as a hard
+    // backstop against concurrent races.
+    {
+      const { data: existing } = await supabase
+        .from("jobs")
+        .select("id, job_number, stage, created_at, advisor_id")
+        .eq("vehicle_id", vehicleId)
+        .neq("stage", "delivered")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (existing) {
+        return {
+          ok: false,
+          duplicate: true,
+          existing: {
+            jobId: existing.id,
+            jobNumber: existing.job_number,
+            stage: existing.stage as Stage,
+            stageLabel: STAGE_MAP[existing.stage as Stage]?.label ?? existing.stage,
+            createdAt: existing.created_at,
+            advisorName: await advisorNameFor(supabase, existing.advisor_id),
+          },
+        }
+      }
+    }
 
     // Mileage the advisor entered in the wizard (validated); null if none/invalid.
     const freshMileage = fd.get("mileage") !== null ? sanitizeMileage(fd.get("mileage")) : null
@@ -647,7 +700,37 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
     }
 
     const { data: job, error } = await supabase.from("jobs").insert(payload).select("id").single()
-    if (error) return { ok: false, error: error.message }
+    if (error) {
+      // 23505 = the jobs_one_active_per_vehicle partial unique index fired,
+      // meaning a concurrent request already opened an active job for this
+      // vehicle between our check above and this insert. Degrade gracefully to
+      // the same "already has an active job" prompt instead of a hard error.
+      if (error.code === "23505") {
+        const { data: existing } = await supabase
+          .from("jobs")
+          .select("id, job_number, stage, created_at, advisor_id")
+          .eq("vehicle_id", vehicleId)
+          .neq("stage", "delivered")
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (existing) {
+          return {
+            ok: false,
+            duplicate: true,
+            existing: {
+              jobId: existing.id,
+              jobNumber: existing.job_number,
+              stage: existing.stage as Stage,
+              stageLabel: STAGE_MAP[existing.stage as Stage]?.label ?? existing.stage,
+              createdAt: existing.created_at,
+              advisorName: await advisorNameFor(supabase, existing.advisor_id),
+            },
+          }
+        }
+      }
+      return { ok: false, error: error.message }
+    }
 
     if (!vehicle.reference_image_url) after(() => backfillVehicleImage(vehicleId))
 
@@ -667,7 +750,10 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
     ]
     if (rows.length) await supabase.from("vehicle_photos").insert(rows)
 
-    await logAction(ctx, "job.create", "job", job.id, { job_number: payload.job_number })
+    await logAction(ctx, "job.create", "job", job.id, {
+      job_number: payload.job_number,
+      vehicle_id: vehicleId,
+    })
 
     const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || "Vehicle"
     const plate = [vehicle.plate_emirate, vehicle.plate_code, vehicle.plate_number].filter(Boolean).join(" ") || null

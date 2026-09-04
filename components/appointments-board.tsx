@@ -30,13 +30,12 @@ import {
   findCustomerForAppointment,
   assignDriver,
   updateFulfillmentStatus,
-  FULFILLMENT_FLOW,
   type AppointmentRow,
   type AppointmentStatus,
   type CustomerMatch,
   type DriverOption,
-  type FulfillmentStatus,
 } from "@/lib/actions-appointments"
+import { FULFILLMENT_FLOW, type FulfillmentStatus } from "@/lib/appointments-fulfillment"
 
 const TYPE_META: Record<string, { label: string; tone: string; icon: typeof MapPin }> = {
   pickup: { label: "Pickup", tone: "bg-primary/15 text-primary", icon: MapPin },

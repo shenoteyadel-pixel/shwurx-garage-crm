@@ -14,8 +14,10 @@ import {
   Phone,
   MessageCircle,
   KeyRound,
+  ClipboardCheck,
 } from "lucide-react"
 import { VehicleVisual } from "@/components/vehicle-visual"
+import { TrackInspectionDiagram } from "@/components/track-inspection-diagram"
 import type { TrackingDetail, TrackMilestone, TrackPhoto } from "@/lib/tracking-data"
 import type { TrackingStatus } from "@/lib/portal-data"
 
@@ -264,6 +266,17 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
               <PhotoGroup label="Before" photos={detail.beforePhotos} />
             )}
             {detail.afterPhotos.length > 0 && <PhotoGroup label="After" photos={detail.afterPhotos} />}
+          </section>
+        )}
+
+        {/* ---------- Vehicle condition (inspection diagram) ---------- */}
+        {detail.inspection && (
+          <section className="rounded-2xl border border-border bg-card p-5">
+            <SectionHeader icon={<ClipboardCheck className="h-4 w-4" />} title="Vehicle condition at check-in" />
+            <p className="mb-3 mt-1 text-xs leading-relaxed text-muted-foreground">
+              This is the documented condition of your vehicle when we received it. Tap any point to see details.
+            </p>
+            <TrackInspectionDiagram inspection={detail.inspection} />
           </section>
         )}
 

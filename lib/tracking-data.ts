@@ -52,6 +52,24 @@ export interface TrackPhoto {
   caption: string | null
 }
 
+export interface TrackInspectionMarker {
+  id: string
+  view: string
+  xPct: number
+  yPct: number
+  damageType: string
+  severity: string | null
+  locationLabel: string | null
+  note: string | null
+  photos: { id: string; url: string }[]
+}
+
+export interface TrackInspection {
+  odometer: number | null
+  fuelLevel: string | null
+  markers: TrackInspectionMarker[]
+}
+
 export interface TrackInvoice {
   invoiceNumber: string | null
   status: string | null
@@ -94,6 +112,7 @@ export interface TrackingDetail {
   parts: TrackPart[]
   beforePhotos: TrackPhoto[]
   afterPhotos: TrackPhoto[]
+  inspection: TrackInspection | null
   invoice: TrackInvoice | null
   otherActiveJobs: number
 }
@@ -255,6 +274,44 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
     else beforePhotos.push(photo)
   }
 
+  // Vehicle condition inspection (customer-safe: diagram, markers, marker photos —
+  // never internal odometer edits or staff notes beyond the documented condition).
+  let inspection: TrackInspection | null = null
+  const { data: inspectionRow } = await svc
+    .from("vehicle_inspections")
+    .select("id, odometer, fuel_level")
+    .eq("job_id", primary.id)
+    .eq("inspection_type", "check_in")
+    .maybeSingle()
+  if (inspectionRow) {
+    const { data: markerRows } = await svc
+      .from("inspection_markers")
+      .select(
+        "id, view, x_pct, y_pct, damage_type, severity, location_label, note, position, inspection_marker_photos(id, url)",
+      )
+      .eq("inspection_id", inspectionRow.id)
+      .order("position", { ascending: true })
+    const markers: TrackInspectionMarker[] = (markerRows ?? []).map((m: any) => ({
+      id: m.id as string,
+      view: m.view as string,
+      xPct: Number(m.x_pct),
+      yPct: Number(m.y_pct),
+      damageType: m.damage_type as string,
+      severity: (m.severity as string) ?? null,
+      locationLabel: (m.location_label as string) ?? null,
+      note: (m.note as string) ?? null,
+      photos: (m.inspection_marker_photos ?? []).map((p: any) => ({ id: p.id as string, url: p.url as string })),
+    }))
+    // Only surface an inspection to the customer once it actually has markers.
+    if (markers.length > 0) {
+      inspection = {
+        odometer: inspectionRow.odometer != null ? Number(inspectionRow.odometer) : null,
+        fuelLevel: (inspectionRow.fuel_level as string) ?? null,
+        markers,
+      }
+    }
+  }
+
   // Invoice for the primary job.
   let invoice: TrackInvoice | null = null
   const { data: inv } = await svc
@@ -306,6 +363,7 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
     parts,
     beforePhotos,
     afterPhotos,
+    inspection,
     invoice,
     otherActiveJobs: Math.max(0, openJobs.length - 1),
   }

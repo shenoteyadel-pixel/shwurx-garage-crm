@@ -115,7 +115,7 @@ export interface TrackingDetail {
   parts: TrackPart[]
   beforePhotos: TrackPhoto[]
   afterPhotos: TrackPhoto[]
-  inspection: TrackInspection | null
+  inspection: TrackInspection
   invoice: TrackInvoice | null
   otherActiveJobs: number
 }
@@ -281,7 +281,13 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
 
   // Vehicle condition inspection (customer-safe: diagram, markers, marker photos —
   // never internal odometer edits or staff notes beyond the documented condition).
-  let inspection: TrackInspection | null = null
+  //
+  // The inspection section ALWAYS renders on the customer tracking page — for
+  // every vehicle, including existing jobs and jobs with zero recorded damage
+  // (which show a clean "no damage recorded" state). We never gate it on the
+  // marker count. When no inspection record exists yet we synthesize an empty
+  // one for display only (no DB write here).
+  let markers: TrackInspectionMarker[] = []
   const { data: inspectionRow } = await svc
     .from("vehicle_inspections")
     .select("id, odometer, fuel_level, status")
@@ -297,7 +303,7 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
       .eq("inspection_id", inspectionRow.id)
       .is("deleted_at", null)
       .order("position", { ascending: true })
-    const markers: TrackInspectionMarker[] = (markerRows ?? []).map((m: any) => ({
+    markers = (markerRows ?? []).map((m: any) => ({
       id: m.id as string,
       view: m.view as string,
       xPct: Number(m.x_pct),
@@ -308,18 +314,12 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
       note: (m.note as string) ?? null,
       photos: (m.inspection_marker_photos ?? []).map((p: any) => ({ id: p.id as string, url: p.url as string })),
     }))
-    // Surface the inspection to the customer when it has documented damage OR
-    // has been completed (a completed inspection with no markers is a valid,
-    // meaningful result: the vehicle was checked and no damage was recorded).
-    const isCompleted = (inspectionRow.status as string) === "completed"
-    if (markers.length > 0 || isCompleted) {
-      inspection = {
-        odometer: inspectionRow.odometer != null ? Number(inspectionRow.odometer) : null,
-        fuelLevel: (inspectionRow.fuel_level as string) ?? null,
-        completed: isCompleted,
-        markers,
-      }
-    }
+  }
+  const inspection: TrackInspection = {
+    odometer: inspectionRow?.odometer != null ? Number(inspectionRow.odometer) : null,
+    fuelLevel: (inspectionRow?.fuel_level as string) ?? null,
+    completed: (inspectionRow?.status as string) === "completed",
+    markers,
   }
 
   // Invoice for the primary job.

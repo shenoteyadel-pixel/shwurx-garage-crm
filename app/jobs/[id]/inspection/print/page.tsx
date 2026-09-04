@@ -94,7 +94,7 @@ export default async function InspectionReportPage({ params }: { params: Promise
                   {v.label} {vm.length > 0 && `(${vm.length})`}
                 </div>
                 <div className="relative aspect-square w-full text-neutral-700">
-                  <VehicleSchematic view={v.key} />
+                  <VehicleSchematic view={v.key} bodyType={job.body_type} />
                   {vm.map((m) => {
                     const d = DAMAGE_MAP[m.damage_type as keyof typeof DAMAGE_MAP]
                     return (

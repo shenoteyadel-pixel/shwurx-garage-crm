@@ -6,14 +6,8 @@ import type { MarkerView, DamageType } from "@/lib/actions-inspections"
 import type { InspectionMarker } from "@/components/inspection/inspection-panel"
 import { cn } from "@/lib/utils"
 import { ZoomIn, ZoomOut, RotateCcw, X } from "lucide-react"
-
-const VIEW_IMAGE: Record<MarkerView, string> = {
-  top: "/inspection/car-top.png",
-  front: "/inspection/car-front.png",
-  rear: "/inspection/car-rear.png",
-  left: "/inspection/car-left.png",
-  right: "/inspection/car-right.png",
-}
+import { VehicleSchematic } from "@/components/inspection/vehicle-schematics"
+import type { BodyType } from "@/lib/body-type"
 
 /**
  * The premium multi-view inspection stage: the whole vehicle shown from every
@@ -30,6 +24,7 @@ function ClickableView({
   selectedId,
   completed,
   big,
+  bodyType,
   onAdd,
   onSelect,
   onDelete,
@@ -39,6 +34,7 @@ function ClickableView({
   selectedId: string | null
   completed: boolean
   big?: boolean
+  bodyType?: BodyType | string | null
   onAdd: (view: MarkerView, x: number, y: number) => void
   onSelect: (id: string) => void
   onDelete: (id: string) => void
@@ -63,17 +59,14 @@ function ClickableView({
         ref={ref}
         onClick={handleClick}
         className={cn(
-          "relative w-full overflow-hidden rounded-lg border border-border/60 bg-[#0a0a0a] transition",
+          "relative w-full overflow-hidden rounded-lg border border-border/60 bg-background/60 transition",
           big ? "aspect-[3/4]" : "aspect-square",
           !completed && "cursor-crosshair hover:border-primary/40",
         )}
       >
-        <img
-          src={VIEW_IMAGE[cfg.key] || "/placeholder.svg"}
-          alt={`${cfg.label} view of vehicle`}
-          className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-          draggable={false}
-        />
+        <div className="pointer-events-none absolute inset-0 p-2">
+          <VehicleSchematic view={cfg.key} bodyType={bodyType} />
+        </div>
         {viewMarkers.map((m) => {
           const d = DAMAGE_MAP[m.damage_type]
           const isSel = m.id === selectedId
@@ -118,6 +111,7 @@ export function InspectionStage({
   selectedId,
   activeType,
   completed,
+  bodyType,
   onAdd,
   onSelect,
   onDelete,
@@ -126,12 +120,13 @@ export function InspectionStage({
   selectedId: string | null
   activeType: DamageType
   completed: boolean
+  bodyType?: BodyType | string | null
   onAdd: (view: MarkerView, x: number, y: number) => void
   onSelect: (id: string) => void
   onDelete: (id: string) => void
 }) {
   const [zoom, setZoom] = React.useState(1)
-  const shared = { markers, selectedId, completed, onAdd, onSelect, onDelete }
+  const shared = { markers, selectedId, completed, bodyType, onAdd, onSelect, onDelete }
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-border bg-background/40 p-4">

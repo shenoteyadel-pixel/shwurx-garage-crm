@@ -288,6 +288,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 jobId={job.id}
                 inspection={inspectionData}
                 printHref={`/jobs/${job.id}/inspection/print`}
+                bodyType={job.body_type}
               />
               <DiagnosticsPanel
                 jobId={job.id}
@@ -322,6 +323,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 jobId={job.id}
                 inspection={inspectionData}
                 printHref={`/jobs/${job.id}/inspection/print`}
+                bodyType={job.body_type}
               />
               <DiagnosticsPanel
                 jobId={job.id}

@@ -20,6 +20,8 @@ export interface PortalInvoice {
   total: number | null
   amount_paid: number | null
   created_at: string
+  pay_link_url: string | null
+  pay_link_label: string | null
 }
 
 export interface PortalData {
@@ -120,7 +122,9 @@ export async function loadPortalDataByCustomer(customerId: string): Promise<Port
       .order("created_at", { ascending: false }),
     svc
       .from("invoices")
-      .select("id, invoice_number, status, total, amount_paid, created_at, job_id")
+      .select(
+        "id, invoice_number, status, total, amount_paid, created_at, job_id, payment_link_url, payment_link_label, payment_link_enabled",
+      )
       .order("created_at", { ascending: false }),
   ])
 
@@ -146,14 +150,20 @@ export async function loadPortalDataByCustomer(customerId: string): Promise<Port
 
   const portalInvoices: PortalInvoice[] = (invoices ?? [])
     .filter((inv) => inv.job_id && jobIds.has(inv.job_id))
-    .map((inv) => ({
-      id: inv.id,
-      invoice_number: inv.invoice_number,
-      status: inv.status,
-      total: inv.total,
-      amount_paid: inv.amount_paid,
-      created_at: inv.created_at,
-    }))
+    .map((inv) => {
+      const bal = Math.max(0, (Number(inv.total) || 0) - (Number(inv.amount_paid) || 0))
+      const linkLive = !!(inv as any).payment_link_enabled && !!(inv as any).payment_link_url && bal > 0.01
+      return {
+        id: inv.id,
+        invoice_number: inv.invoice_number,
+        status: inv.status,
+        total: inv.total,
+        amount_paid: inv.amount_paid,
+        created_at: inv.created_at,
+        pay_link_url: linkLive ? ((inv as any).payment_link_url as string) : null,
+        pay_link_label: linkLive ? (((inv as any).payment_link_label as string) ?? null) : null,
+      }
+    })
 
   return {
     customer: { id: customer.id, full_name: customer.full_name, phone: customer.mobile },

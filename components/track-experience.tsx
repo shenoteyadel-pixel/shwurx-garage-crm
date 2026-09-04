@@ -15,6 +15,7 @@ import {
   MessageCircle,
   KeyRound,
   ClipboardCheck,
+  CreditCard,
 } from "lucide-react"
 import { VehicleVisual } from "@/components/vehicle-visual"
 import { TrackInspectionDiagram } from "@/components/track-inspection-diagram"
@@ -322,6 +323,17 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
                   <span className="font-semibold text-foreground">Outstanding</span>
                   <span className="text-lg font-bold text-amber-300">AED {money(detail.invoice.outstanding)}</span>
                 </div>
+              )}
+              {detail.invoice.outstanding > 0 && detail.invoice.payLinkUrl && (
+                <a
+                  href={detail.invoice.payLinkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground transition hover:opacity-90"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  {detail.invoice.payLinkLabel || "Pay Now"} · AED {money(detail.invoice.outstanding)}
+                </a>
               )}
               {detail.invoice.outstanding === 0 && detail.invoice.total > 0 && (
                 <div className="flex items-center gap-2 border-t border-border pt-2 text-emerald-300">

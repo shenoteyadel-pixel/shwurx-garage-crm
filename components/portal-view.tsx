@@ -1,4 +1,4 @@
-import { Car, FileText, Clock, CheckCircle2, AlertCircle } from "lucide-react"
+import { Car, FileText, Clock, CheckCircle2, AlertCircle, CreditCard } from "lucide-react"
 import { portalStageProgress, type PortalData } from "@/lib/portal-data"
 import { formatCurrency } from "@/lib/utils"
 
@@ -119,6 +119,7 @@ export function PortalView({
                   <th className="px-4 py-3 font-medium">Date</th>
                   <th className="px-4 py-3 text-right font-medium">Total</th>
                   <th className="px-4 py-3 text-right font-medium">Balance</th>
+                  <th className="px-4 py-3 text-right font-medium">Pay</th>
                 </tr>
               </thead>
               <tbody>
@@ -131,6 +132,20 @@ export function PortalView({
                       <td className="px-4 py-3 text-right">{formatCurrency(inv.total)}</td>
                       <td className={`px-4 py-3 text-right font-medium ${bal > 0 ? "text-amber-400" : "text-emerald-400"}`}>
                         {bal > 0 ? formatCurrency(bal) : "Paid"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {inv.pay_link_url ? (
+                          <a
+                            href={inv.pay_link_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground transition hover:opacity-90"
+                          >
+                            <CreditCard className="h-3.5 w-3.5" /> {inv.pay_link_label || "Pay Now"}
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </td>
                     </tr>
                   )

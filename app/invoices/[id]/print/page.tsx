@@ -102,6 +102,24 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
           </div>
         </div>
 
+        {(() => {
+          const balance = Number(inv.total) - Number(inv.amount_paid)
+          const linkLive = !!inv.payment_link_enabled && !!inv.payment_link_url && balance > 0.01
+          if (!linkLive) return null
+          return (
+            <div className="mt-6 flex justify-end print:hidden">
+              <a
+                href={inv.payment_link_url as string}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg bg-neutral-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-neutral-700"
+              >
+                {(inv.payment_link_label as string) || "Pay Now"} · {formatCurrency(balance)}
+              </a>
+            </div>
+          )
+        })()}
+
         {inv.notes && <p className="mt-6 whitespace-pre-wrap text-sm text-neutral-600">{inv.notes}</p>}
 
         <DocFooter settings={settings} />

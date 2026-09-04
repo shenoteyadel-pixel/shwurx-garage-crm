@@ -246,6 +246,7 @@ export async function runAiDiagnostic(
     .from("diagnostic_tests")
     .select("description")
     .eq("session_id", session.id)
+    .is("deleted_at", null)
   const have = new Set((existingTests ?? []).map((t) => t.description.trim().toLowerCase()))
   const toInsert = result.recommendedTests
     .filter((t) => !have.has(t.test.trim().toLowerCase()))
@@ -313,12 +314,17 @@ export async function updateDiagnosticTest(formData: FormData) {
 }
 
 export async function deleteDiagnosticTest(formData: FormData) {
-  const { supabase } = await guard("jobs.edit")
+  const { supabase, ctx } = await guard("jobs.edit")
   const jobId = String(formData.get("job_id") || "")
   const testId = String(formData.get("test_id") || "")
   if (!jobId || !testId) throw new Error("Missing test")
-  const { error } = await supabase.from("diagnostic_tests").delete().eq("id", testId)
+  // Soft delete: archive so it can be restored from the Recycle Bin.
+  const { error } = await supabase
+    .from("diagnostic_tests")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+    .eq("id", testId)
   if (error) throw new Error(error.message)
+  await logAction(ctx, "diagnostic_test_archived", "job", jobId, { testId })
   revalidatePath(`/jobs/${jobId}`)
 }
 

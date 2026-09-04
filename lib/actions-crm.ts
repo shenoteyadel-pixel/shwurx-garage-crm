@@ -80,8 +80,14 @@ export async function saveSupplier(formData: FormData) {
 }
 
 export async function deleteSupplier(id: string) {
-  const { supabase } = await guard("parts.manage")
-  await supabase.from("suppliers").delete().eq("id", id)
+  const { supabase, ctx } = await guard("parts.manage")
+  // Soft delete: archive so it can be restored from the Recycle Bin.
+  const { error } = await supabase
+    .from("suppliers")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+    .eq("id", id)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "supplier_archived", "supplier", id)
   revalidatePath("/suppliers")
 }
 
@@ -129,8 +135,14 @@ export async function saveInventoryItem(formData: FormData) {
 }
 
 export async function deleteInventoryItem(id: string) {
-  const { supabase } = await guard("parts.manage")
-  await supabase.from("inventory_items").delete().eq("id", id)
+  const { supabase, ctx } = await guard("parts.manage")
+  // Soft delete: archive so it can be restored from the Recycle Bin.
+  const { error } = await supabase
+    .from("inventory_items")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+    .eq("id", id)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "inventory_item_archived", "inventory_item", id)
   revalidatePath("/inventory")
 }
 

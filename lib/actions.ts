@@ -300,10 +300,15 @@ export async function addPhotos(jobId: string, urls: string[], kind: PhotoKind) 
 }
 
 export async function deletePhoto(photoId: string, jobId: string) {
-  const { supabase } = await guard("jobs.update_status")
-  // If this photo was the cover, clear the cover so nothing points at a deleted URL.
+  const { supabase, ctx } = await guard("jobs.update_status")
+  // If this photo was the cover, clear the cover so nothing points at an archived URL.
   const { data: photo } = await supabase.from("vehicle_photos").select("url").eq("id", photoId).maybeSingle()
-  await supabase.from("vehicle_photos").delete().eq("id", photoId)
+  // Soft delete: archive so it can be restored from the Recycle Bin.
+  await supabase
+    .from("vehicle_photos")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+    .eq("id", photoId)
+  await logAction(ctx, "photo_archived", "job", jobId, { photoId })
   if (photo?.url) {
     await supabase.from("jobs").update({ cover_photo_url: null }).eq("id", jobId).eq("cover_photo_url", photo.url)
   }
@@ -520,8 +525,13 @@ export async function updatePart(partId: string, jobId: string, formData: FormDa
 }
 
 export async function deletePart(partId: string, jobId: string) {
-  const { supabase } = await guard("jobs.update_status")
-  await supabase.from("parts_requests").delete().eq("id", partId)
+  const { supabase, ctx } = await guard("jobs.update_status")
+  // Soft delete: archive so it can be restored from the Recycle Bin.
+  await supabase
+    .from("parts_requests")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+    .eq("id", partId)
+  await logAction(ctx, "part_archived", "job", jobId, { partId })
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/parts")
 }

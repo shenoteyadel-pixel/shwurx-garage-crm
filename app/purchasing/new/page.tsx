@@ -15,8 +15,8 @@ export default async function NewPOPage({
   const supabase = await createClient()
 
   const [{ data: suppliers }, { data: items }, { data: jobs }] = await Promise.all([
-    supabase.from("suppliers").select("id, name").order("name"),
-    supabase.from("inventory_items").select("id, name, cost_price, unit").order("name"),
+    supabase.from("suppliers").select("id, name").is("deleted_at", null).order("name"),
+    supabase.from("inventory_items").select("id, name, cost_price, unit").is("deleted_at", null).order("name"),
     supabase.from("jobs").select("id, job_number, customer_name").neq("stage", "delivered").order("created_at", { ascending: false }),
   ])
 

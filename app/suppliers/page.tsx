@@ -9,7 +9,7 @@ export default async function SuppliersPage() {
   const user = await getShellUser()
   const supabase = await createClient()
 
-  const { data: suppliers } = await supabase.from("suppliers").select("*").order("name")
+  const { data: suppliers } = await supabase.from("suppliers").select("*").is("deleted_at", null).order("name")
   const { data: pos } = await supabase
     .from("purchase_orders")
     .select("supplier_id, total, amount_paid, status")

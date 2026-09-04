@@ -40,7 +40,7 @@ export default async function ReportsPage({
       .gte("order_date", from)
       .lte("order_date", to)
       .neq("status", "cancelled"),
-    supabase.from("inventory_items").select("quantity, cost_price"),
+    supabase.from("inventory_items").select("quantity, cost_price").is("deleted_at", null),
   ])
 
   const inv = invoices ?? []

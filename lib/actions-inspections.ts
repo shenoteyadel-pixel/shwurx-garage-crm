@@ -154,9 +154,13 @@ export async function updateInspectionMarker(input: {
 export async function deleteInspectionMarker(jobId: string, markerId: string) {
   const { supabase, ctx } = await guard("jobs.edit")
   if (!jobId || !markerId) throw new Error("Missing marker")
-  const { error } = await supabase.from("inspection_markers").delete().eq("id", markerId)
+  // Soft delete: archive so it can be restored from the Recycle Bin.
+  const { error } = await supabase
+    .from("inspection_markers")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+    .eq("id", markerId)
   if (error) throw new Error(error.message)
-  await logAction(ctx, "inspection_marker_deleted", "job", jobId, { markerId })
+  await logAction(ctx, "inspection_marker_archived", "job", jobId, { markerId })
   revalidatePath(`/jobs/${jobId}`)
 }
 
@@ -171,7 +175,12 @@ export async function clearInspectionMarkers(jobId: string) {
     .eq("inspection_type", "check_in")
     .maybeSingle()
   if (!inspection) return
-  const { error } = await supabase.from("inspection_markers").delete().eq("inspection_id", inspection.id)
+  // Soft delete: archive active markers so they can be restored from the Recycle Bin.
+  const { error } = await supabase
+    .from("inspection_markers")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+    .eq("inspection_id", inspection.id)
+    .is("deleted_at", null)
   if (error) throw new Error(error.message)
   await logAction(ctx, "inspection_markers_cleared", "job", jobId)
   revalidatePath(`/jobs/${jobId}`)

@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   CalendarClock,
   Inbox,
+  Trash2,
 } from "lucide-react"
 
 // Each item declares the permissions that reveal it. `anyOf` = show when the
@@ -45,6 +46,7 @@ const NAV = [
   { href: "/reports", label: "Reports", icon: BarChart3, anyOf: ["reports.view"] },
   { href: "/users", label: "Users & Roles", icon: ShieldCheck, anyOf: ["users.manage", "permissions.manage"] },
   { href: "/settings", label: "Settings", icon: Settings, anyOf: ["settings.manage"] },
+  { href: "/recycle-bin", label: "Recycle Bin", icon: Trash2, ownerOnly: true },
 ] as const
 
 export function AppShell({
@@ -58,8 +60,13 @@ export function AppShell({
   const [open, setOpen] = useState(false)
   const perms = new Set(user.permissions ?? [])
   const has = (anyOf?: readonly string[]) => !anyOf || anyOf.some((p) => perms.has(p))
+  const isOwner = user.role === "owner"
   const canCreateJob = perms.has("jobs.create")
-  const visibleNav = NAV.filter((item) => has((item as { anyOf?: readonly string[] }).anyOf))
+  const visibleNav = NAV.filter((item) => {
+    const meta = item as { anyOf?: readonly string[]; ownerOnly?: boolean }
+    if (meta.ownerOnly) return isOwner
+    return has(meta.anyOf)
+  })
 
   const nav = (
     <nav className="flex flex-col gap-1">

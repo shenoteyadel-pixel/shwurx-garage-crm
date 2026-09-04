@@ -121,7 +121,7 @@ export async function createJob(formData: FormData) {
   if (rows.length) await supabase.from("vehicle_photos").insert(rows)
 
   await logAction(ctx, "job.create", "job", data.id, { job_number: payload.job_number })
-  revalidatePath("/")
+  revalidatePath("/crm")
   redirect(`/jobs/${data.id}`)
 }
 
@@ -134,7 +134,7 @@ export async function updateStage(jobId: string, stage: Stage) {
   if (error) throw new Error(error.message)
   if (stage === "delivered") await startTrackingExpiryForDeliveredJob(supabase, jobId)
   await logAction(ctx, "job.update_stage", "job", jobId, { stage })
-  revalidatePath("/")
+  revalidatePath("/crm")
   revalidatePath(`/jobs/${jobId}`)
 }
 
@@ -147,7 +147,7 @@ export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: str
   const { error } = await supabase.from("jobs").update(patch).eq("id", jobId)
   if (error) throw new Error(error.message)
   if (stage === "delivered") await startTrackingExpiryForDeliveredJob(supabase, jobId)
-  revalidatePath("/")
+  revalidatePath("/crm")
   revalidatePath("/flow")
   revalidatePath(`/jobs/${jobId}`)
 }
@@ -190,7 +190,7 @@ export async function refreshVehicleImage(jobId: string) {
     .eq("id", jobId)
   if (error) throw new Error(error.message)
 
-  revalidatePath("/")
+  revalidatePath("/crm")
   revalidatePath("/flow")
   revalidatePath(`/jobs/${jobId}`)
   return { found: true }
@@ -231,7 +231,7 @@ export async function refreshAllVehicleImages() {
     }
   }
 
-  revalidatePath("/")
+  revalidatePath("/crm")
   revalidatePath("/flow")
   return { total: (jobs ?? []).length, updated, found }
 }
@@ -278,7 +278,7 @@ export async function updateJobDetails(jobId: string, formData: FormData) {
   const { error } = await supabase.from("jobs").update(patch).eq("id", jobId)
   if (error) throw new Error(error.message)
   revalidatePath(`/jobs/${jobId}`)
-  revalidatePath("/")
+  revalidatePath("/crm")
 }
 
 export async function addPhotos(jobId: string, urls: string[], kind: "vehicle" | "damage") {
@@ -443,7 +443,7 @@ export async function sendApproval(jobId: string) {
     .eq("id", jobId)
   if (error) throw new Error(error.message)
   revalidatePath(`/jobs/${jobId}`)
-  revalidatePath("/")
+  revalidatePath("/crm")
 }
 
 /* ---------------- Parts ---------------- */

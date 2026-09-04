@@ -428,7 +428,7 @@ export async function updateVehicle(id: string, fd: FormData) {
   revalidatePath(`/vehicles/${id}`)
   revalidatePath("/jobs")
   revalidatePath("/flow")
-  revalidatePath("/")
+  revalidatePath("/crm")
   return { identityChanged: identityChanged && !isCustom }
 }
 
@@ -557,7 +557,7 @@ export async function refreshAllMasterVehicleImages(opts?: { onlyMissing?: boole
       .eq("vehicle_id", v.id)
     updated++
   }
-  revalidatePath("/")
+  revalidatePath("/crm")
   revalidatePath("/flow")
   revalidatePath("/vehicles")
   return { total: (vehicles ?? []).length, scanned, updated, skipped }
@@ -713,7 +713,7 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
       portalUrl: `${base}/portal`,
     })
 
-    revalidatePath("/")
+    revalidatePath("/crm")
     revalidatePath(`/customers/${customerId}`)
     revalidatePath(`/vehicles/${vehicleId}`)
     revalidatePath("/jobs")

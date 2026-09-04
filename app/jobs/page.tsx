@@ -24,7 +24,7 @@ export default async function JobsPage({
   let query = supabase
     .from("jobs")
     .select(
-      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, vehicle_reference_image_url, stage, approval_status, created_at, updated_at, vehicle_photos(url)",
+      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, vehicle_reference_image_url, cover_photo_url, stage, approval_status, created_at, updated_at",
     )
     .order("updated_at", { ascending: false })
 
@@ -35,7 +35,8 @@ export default async function JobsPage({
 
   const cards: JobCardData[] = (jobs ?? []).map((j: any) => ({
     ...j,
-    cover: j.vehicle_photos?.[0]?.url ?? null,
+    // Explicit cover only — a parts/document photo can never become the card image.
+    cover: j.cover_photo_url ?? null,
   }))
 
   return (

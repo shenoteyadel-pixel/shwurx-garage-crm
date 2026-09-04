@@ -281,20 +281,58 @@ export async function updateJobDetails(jobId: string, formData: FormData) {
   revalidatePath("/crm")
 }
 
-export async function addPhotos(jobId: string, urls: string[], kind: "vehicle" | "damage") {
+// Photo categories. "vehicle" = exterior/general car shots; the cover photo is
+// chosen explicitly (see setCoverPhoto), never auto-derived from these.
+export type PhotoKind = "vehicle" | "damage" | "parts" | "document" | "other"
+const PHOTO_KINDS: PhotoKind[] = ["vehicle", "damage", "parts", "document", "other"]
+
+export async function addPhotos(jobId: string, urls: string[], kind: PhotoKind) {
   const { supabase } = await guard("jobs.update_status")
   if (!urls.length) return
+  const safeKind: PhotoKind = PHOTO_KINDS.includes(kind) ? kind : "other"
   const { error } = await supabase
     .from("vehicle_photos")
-    .insert(urls.map((url) => ({ job_id: jobId, url, kind })))
+    .insert(urls.map((url) => ({ job_id: jobId, url, kind: safeKind })))
   if (error) throw new Error(error.message)
   revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/flow")
+  revalidatePath("/crm")
 }
 
 export async function deletePhoto(photoId: string, jobId: string) {
   const { supabase } = await guard("jobs.update_status")
+  // If this photo was the cover, clear the cover so nothing points at a deleted URL.
+  const { data: photo } = await supabase.from("vehicle_photos").select("url").eq("id", photoId).maybeSingle()
   await supabase.from("vehicle_photos").delete().eq("id", photoId)
+  if (photo?.url) {
+    await supabase.from("jobs").update({ cover_photo_url: null }).eq("id", jobId).eq("cover_photo_url", photo.url)
+  }
   revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/flow")
+  revalidatePath("/crm")
+}
+
+/** Set the explicit vehicle cover photo for a job. This is the ONLY way a cover is chosen. */
+export async function setCoverPhoto(jobId: string, url: string) {
+  const { supabase } = await guard("jobs.update_status")
+  if (!jobId || !url) throw new Error("Missing job or photo")
+  const { error } = await supabase.from("jobs").update({ cover_photo_url: url }).eq("id", jobId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/flow")
+  revalidatePath("/crm")
+  revalidatePath("/jobs")
+}
+
+/** Remove the explicit vehicle cover photo, reverting to the professional placeholder. */
+export async function clearCoverPhoto(jobId: string) {
+  const { supabase } = await guard("jobs.update_status")
+  const { error } = await supabase.from("jobs").update({ cover_photo_url: null }).eq("id", jobId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/flow")
+  revalidatePath("/crm")
+  revalidatePath("/jobs")
 }
 
 /* ---------------- Quotation ---------------- */

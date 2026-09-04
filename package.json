@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "backup": "node --env-file-if-exists=/vercel/share/.env.project scripts/backup-database.mjs",
+    "restore": "node --env-file-if-exists=/vercel/share/.env.project scripts/restore-database.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "latest",

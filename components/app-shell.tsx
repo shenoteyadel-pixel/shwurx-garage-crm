@@ -24,6 +24,7 @@ import {
   Settings,
   Users,
   ShieldCheck,
+  CalendarClock,
 } from "lucide-react"
 
 // Each item declares the permissions that reveal it. `anyOf` = show when the
@@ -32,6 +33,7 @@ const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all"] },
   { href: "/jobs", label: "Job Cards", icon: Car, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
+  { href: "/appointments", label: "Appointments", icon: CalendarClock, anyOf: ["appointments.view"] },
   { href: "/customers", label: "Customers", icon: Users, anyOf: ["customers.view"] },
   { href: "/invoices", label: "Invoices", icon: FileText, anyOf: ["invoices.view"] },
   { href: "/parts", label: "Parts", icon: Package, anyOf: ["parts.view"] },

@@ -20,6 +20,7 @@ function isPublicPath(path: string): boolean {
     "/customer-access", // spec alias for customer access links
     "/api/approve", // approval submit/decision API (approve + approvals)
     "/api/track", // tracking open-event beacon
+    "/api/public", // website ingestion: /track, /appointments, /leads (anon RPC only)
   ]
   for (const prefix of tokenizedPrefixes) {
     if (path === prefix || path.startsWith(prefix + "/")) return true

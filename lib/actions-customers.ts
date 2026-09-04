@@ -11,7 +11,7 @@ import { resolveVehicleImage } from "@/lib/vehicle-image"
 import { sanitizeMileage } from "@/lib/utils"
 import { appBaseUrl } from "@/lib/account-links"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
-import type { Permission, Role } from "@/lib/rbac/roles"
+import type { Permission } from "@/lib/rbac/roles"
 
 /**
  * Resolve and persist a vehicle's CarsXE reference image OUT OF BAND.
@@ -592,14 +592,13 @@ export type JobCreateResult =
       access: import("@/lib/actions-customer-portal").CustomerAccessResult
     }
   | { ok: false; error: string }
-  // The vehicle already has an open (non-delivered) job. The wizard shows a
-  // "vehicle already has an active job" prompt with Open Existing / Cancel. A
-  // privileged role (owner / GM / workshop manager) may resubmit with
-  // allow_duplicate=1 to intentionally open a second concurrent job.
+  // The vehicle already has an open (non-delivered) job. A vehicle may only have
+  // one active job at a time (enforced by the jobs_one_active_per_vehicle DB
+  // index), so the wizard shows an "already has an active job" prompt with
+  // Open Existing / Cancel instead of creating a duplicate.
   | {
       ok: false
       duplicate: true
-      canOverride: boolean
       existing: {
         jobId: string
         jobNumber: string
@@ -610,12 +609,12 @@ export type JobCreateResult =
       }
     }
 
-// Roles allowed to intentionally open a second concurrent job for a vehicle.
-const DUPLICATE_OVERRIDE_ROLES: ReadonlySet<Role> = new Set<Role>([
-  "owner",
-  "general_manager",
-  "workshop_manager",
-])
+// Resolve an advisor's display name for the duplicate-job prompt.
+async function advisorNameFor(supabase: any, advisorId: string | null): Promise<string | null> {
+  if (!advisorId) return null
+  const { data } = await supabase.from("profiles").select("full_name").eq("id", advisorId).maybeSingle()
+  return data?.full_name ?? null
+}
 
 // The intake wizard resolves (or creates) a customer + vehicle first, then calls
 // this with their ids. We snapshot the vehicle/customer fields onto the job so the
@@ -639,10 +638,9 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
     // Duplicate guard: a vehicle may only have one open (non-delivered) job at a
     // time. This stops double-submits (the exact cause of the two Audi Q7 rows
     // created 5s apart) and any accidental re-creation while a job is in flight.
-    // Privileged roles can intentionally override to run concurrent jobs.
-    const allowDuplicate = s(fd, "allow_duplicate") === "1"
-    const canOverride = DUPLICATE_OVERRIDE_ROLES.has(ctx.role)
-    if (!(allowDuplicate && canOverride)) {
+    // The DB index jobs_one_active_per_vehicle enforces the same rule as a hard
+    // backstop against concurrent races.
+    {
       const { data: existing } = await supabase
         .from("jobs")
         .select("id, job_number, stage, created_at, advisor_id")
@@ -652,26 +650,16 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
         .limit(1)
         .maybeSingle()
       if (existing) {
-        let advisorName: string | null = null
-        if (existing.advisor_id) {
-          const { data: adv } = await supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("id", existing.advisor_id)
-            .maybeSingle()
-          advisorName = adv?.full_name ?? null
-        }
         return {
           ok: false,
           duplicate: true,
-          canOverride,
           existing: {
             jobId: existing.id,
             jobNumber: existing.job_number,
             stage: existing.stage as Stage,
             stageLabel: STAGE_MAP[existing.stage as Stage]?.label ?? existing.stage,
             createdAt: existing.created_at,
-            advisorName,
+            advisorName: await advisorNameFor(supabase, existing.advisor_id),
           },
         }
       }
@@ -712,7 +700,37 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
     }
 
     const { data: job, error } = await supabase.from("jobs").insert(payload).select("id").single()
-    if (error) return { ok: false, error: error.message }
+    if (error) {
+      // 23505 = the jobs_one_active_per_vehicle partial unique index fired,
+      // meaning a concurrent request already opened an active job for this
+      // vehicle between our check above and this insert. Degrade gracefully to
+      // the same "already has an active job" prompt instead of a hard error.
+      if (error.code === "23505") {
+        const { data: existing } = await supabase
+          .from("jobs")
+          .select("id, job_number, stage, created_at, advisor_id")
+          .eq("vehicle_id", vehicleId)
+          .neq("stage", "delivered")
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (existing) {
+          return {
+            ok: false,
+            duplicate: true,
+            existing: {
+              jobId: existing.id,
+              jobNumber: existing.job_number,
+              stage: existing.stage as Stage,
+              stageLabel: STAGE_MAP[existing.stage as Stage]?.label ?? existing.stage,
+              createdAt: existing.created_at,
+              advisorName: await advisorNameFor(supabase, existing.advisor_id),
+            },
+          }
+        }
+      }
+      return { ok: false, error: error.message }
+    }
 
     if (!vehicle.reference_image_url) after(() => backfillVehicleImage(vehicleId))
 
@@ -735,7 +753,6 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
     await logAction(ctx, "job.create", "job", job.id, {
       job_number: payload.job_number,
       vehicle_id: vehicleId,
-      ...(allowDuplicate && canOverride ? { duplicate_override: true } : {}),
     })
 
     const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || "Vehicle"

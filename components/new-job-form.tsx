@@ -628,24 +628,21 @@ function VisitStep({
   const [error, setError] = React.useState<string | null>(null)
   const [result, setResult] = React.useState<Extract<JobCreateResult, { ok: true }> | null>(null)
   const [duplicate, setDuplicate] = React.useState<Extract<JobCreateResult, { duplicate: true }> | null>(null)
-  // The last submitted form data, kept so a privileged override can resubmit the
-  // exact same intake with allow_duplicate set.
-  const pendingFd = React.useRef<FormData | null>(null)
 
   async function submit(fd: FormData) {
     setSubmitting(true)
     setError(null)
     try {
       const res = await createJobFromMaster(fd)
-      if ("duplicate" in res && res.duplicate) {
+      if (res.ok) {
+        setResult(res)
+        return
+      }
+      if ("duplicate" in res) {
         setDuplicate(res)
         return
       }
-      if (!res.ok) {
-        setError(res.error)
-        return
-      }
-      setResult(res)
+      setError(res.error)
     } catch (e: any) {
       setError(e?.message ?? "Could not create the job card. Please try again.")
     } finally {
@@ -660,7 +657,6 @@ function VisitStep({
         fd.set("vehicle_id", vehicle.id)
         fd.set("photo_urls", vehiclePhotos.join(","))
         fd.set("damage_urls", damagePhotos.join(","))
-        pendingFd.current = fd
         await submit(fd)
       }}
       className="space-y-6"
@@ -679,17 +675,6 @@ function VisitStep({
           busy={submitting}
           onOpenExisting={() => router.push(`/jobs/${duplicate.existing.jobId}`)}
           onCancel={() => setDuplicate(null)}
-          onOverride={
-            duplicate.canOverride
-              ? async () => {
-                  const fd = pendingFd.current
-                  if (!fd) return
-                  fd.set("allow_duplicate", "1")
-                  setDuplicate(null)
-                  await submit(fd)
-                }
-              : undefined
-          }
         />
       )}
       <Card className="p-5">
@@ -802,14 +787,12 @@ function DuplicateJobDialog({
   busy,
   onOpenExisting,
   onCancel,
-  onOverride,
 }: {
   duplicate: Extract<JobCreateResult, { duplicate: true }>
   vehicleLabel: string
   busy: boolean
   onOpenExisting: () => void
   onCancel: () => void
-  onOverride?: () => void
 }) {
   const { existing } = duplicate
   const created = new Date(existing.createdAt).toLocaleString("en-GB", {
@@ -877,16 +860,6 @@ function DuplicateJobDialog({
             >
               Cancel
             </Button>
-            {onOverride && (
-              <button
-                type="button"
-                onClick={onOverride}
-                disabled={busy}
-                className="mt-1 text-center text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground disabled:opacity-50"
-              >
-                {busy ? "Creating…" : "Open a second job anyway"}
-              </button>
-            )}
           </div>
         </div>
       </Card>

@@ -160,6 +160,23 @@ export async function deleteInspectionMarker(jobId: string, markerId: string) {
   revalidatePath(`/jobs/${jobId}`)
 }
 
+/** Remove every marker on this job's inspection (scoped clear, not a bulk wipe). */
+export async function clearInspectionMarkers(jobId: string) {
+  const { supabase, ctx } = await guard("jobs.edit")
+  if (!jobId) throw new Error("Missing job_id")
+  const { data: inspection } = await supabase
+    .from("vehicle_inspections")
+    .select("id")
+    .eq("job_id", jobId)
+    .eq("inspection_type", "check_in")
+    .maybeSingle()
+  if (!inspection) return
+  const { error } = await supabase.from("inspection_markers").delete().eq("inspection_id", inspection.id)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "inspection_markers_cleared", "job", jobId)
+  revalidatePath(`/jobs/${jobId}`)
+}
+
 /** Attach already-uploaded photo URLs to a marker. */
 export async function addMarkerPhotos(jobId: string, markerId: string, urls: string[]) {
   const { supabase, ctx } = await guard("jobs.edit")

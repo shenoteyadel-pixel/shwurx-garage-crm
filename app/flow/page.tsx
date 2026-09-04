@@ -22,24 +22,19 @@ export default async function FlowPage() {
   const { data: jobsRaw } = await supabase
     .from("jobs")
     .select(
-      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, vehicle_reference_image_url, stage, approval_status, mileage, advisor_id, technician_id, estimated_completion, created_at, updated_at",
+      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, vehicle_reference_image_url, cover_photo_url, stage, approval_status, mileage, advisor_id, technician_id, estimated_completion, created_at, updated_at",
     )
     .neq("stage", "delivered")
     .order("updated_at", { ascending: false })
 
   const jobs = jobsRaw ?? []
 
-  // Only genuine vehicle/cover shots may become the Car Flow cover. Inspection
-  // and damage photos must never hijack it — those jobs fall back to the CarsXE
-  // reference image instead.
-  const { data: photos } = await supabase
-    .from("vehicle_photos")
-    .select("job_id, url, kind, created_at")
-    .in("kind", ["vehicle", "cover"])
-    .order("created_at", { ascending: true })
+  // The Car Flow cover is ONLY the explicitly chosen cover photo. Damage,
+  // parts, and document photos can never become it; jobs without a chosen
+  // cover fall back to the CarsXE reference image / placeholder.
   const coverByJob = new Map<string, string>()
-  for (const p of photos ?? []) {
-    if (!coverByJob.has(p.job_id)) coverByJob.set(p.job_id, p.url)
+  for (const j of jobs) {
+    if (j.cover_photo_url) coverByJob.set(j.id, j.cover_photo_url)
   }
 
   // Resolve advisor / technician display names.

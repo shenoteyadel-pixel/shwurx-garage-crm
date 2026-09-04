@@ -185,8 +185,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const role = profile?.role || "advisor"
   const showPrices = canViewPrices(role)
 
-  // Cover photo for the vehicle visual = first vehicle-kind photo
-  const coverPhoto = (photos ?? []).find((p: any) => p.kind === "vehicle")?.url ?? (photos ?? [])[0]?.url ?? null
+  // Cover photo = the explicitly chosen cover only. Never auto-derived from
+  // uploaded photos, so a parts/document shot can never become the vehicle image.
+  const coverPhoto = job.cover_photo_url ?? null
 
   // Prices-free lists for the technician job card
   const techLabour = quoteItems
@@ -274,7 +275,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <JobPhotos jobId={job.id} photos={(photos ?? []) as any} />
+              <JobPhotos jobId={job.id} photos={(photos ?? []) as any} coverUrl={coverPhoto} />
 
           {showPrices ? (
             <>

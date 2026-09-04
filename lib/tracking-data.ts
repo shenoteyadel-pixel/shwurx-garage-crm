@@ -143,7 +143,7 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
   const { data: jobs } = await svc
     .from("jobs")
     .select(
-      "id, job_number, stage, created_at, updated_at, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, mileage, complaint, technician_id, estimated_completion, approval_status, approved_at, vehicle_reference_image_url",
+      "id, job_number, stage, created_at, updated_at, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, mileage, complaint, technician_id, estimated_completion, approval_status, approved_at, vehicle_reference_image_url, cover_photo_url",
     )
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
@@ -238,15 +238,20 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
     .order("created_at", { ascending: true })
   const beforePhotos: TrackPhoto[] = []
   const afterPhotos: TrackPhoto[] = []
+  // Only vehicle-facing photos are shown to the customer. Parts and document
+  // photos stay internal and never appear on the tracking page.
+  const CUSTOMER_KINDS = new Set(["vehicle", "cover", "damage"])
   for (const p of photoRows ?? []) {
+    const k = (p.kind as string)?.toLowerCase() ?? ""
+    const isAfter = k.includes("after")
+    if (!isAfter && !CUSTOMER_KINDS.has(k)) continue
     const photo: TrackPhoto = {
       id: p.id as string,
       url: p.url as string,
       kind: (p.kind as string) ?? null,
       caption: (p.caption as string) ?? null,
     }
-    const k = (p.kind as string)?.toLowerCase() ?? ""
-    if (k.includes("after")) afterPhotos.push(photo)
+    if (isAfter) afterPhotos.push(photo)
     else beforePhotos.push(photo)
   }
 
@@ -285,7 +290,8 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
     color: primary.color ?? null,
     plate,
     mileage: primary.mileage != null ? Number(primary.mileage) : null,
-    referenceImage: primary.vehicle_reference_image_url ?? null,
+    // Prefer the explicitly chosen cover photo; otherwise the CarsXE reference image.
+    referenceImage: primary.cover_photo_url ?? primary.vehicle_reference_image_url ?? null,
     jobNumber: primary.job_number ?? null,
     stage,
     stageLabel: meta?.label ?? stage,

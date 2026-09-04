@@ -102,6 +102,12 @@ export function TrackInspectionDiagram({ inspection }: { inspection: TrackInspec
         </div>
       )}
 
+      {markers.length === 0 && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-600 dark:text-emerald-400">
+          No damage was recorded during the check-in inspection — your vehicle was received in good condition.
+        </div>
+      )}
+
       {/* Diagram spread */}
       <div className="rounded-xl border border-border bg-background/40 p-4">
         <div className="mx-auto max-w-md">

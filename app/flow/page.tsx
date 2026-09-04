@@ -29,9 +29,13 @@ export default async function FlowPage() {
 
   const jobs = jobsRaw ?? []
 
+  // Only genuine vehicle/cover shots may become the Car Flow cover. Inspection
+  // and damage photos must never hijack it — those jobs fall back to the CarsXE
+  // reference image instead.
   const { data: photos } = await supabase
     .from("vehicle_photos")
-    .select("job_id, url, created_at")
+    .select("job_id, url, kind, created_at")
+    .in("kind", ["vehicle", "cover"])
     .order("created_at", { ascending: true })
   const coverByJob = new Map<string, string>()
   for (const p of photos ?? []) {

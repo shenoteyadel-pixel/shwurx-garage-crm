@@ -115,7 +115,7 @@ export interface TrackingDetail {
   parts: TrackPart[]
   beforePhotos: TrackPhoto[]
   afterPhotos: TrackPhoto[]
-  inspection: TrackInspection | null
+  inspection: TrackInspection
   invoice: TrackInvoice | null
   otherActiveJobs: number
 }

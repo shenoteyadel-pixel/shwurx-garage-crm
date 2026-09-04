@@ -31,7 +31,7 @@ export default async function FlowPage() {
 
   // The Car Flow cover is ONLY the explicitly chosen cover photo. Damage,
   // parts, and document photos can never become it; jobs without a chosen
-  // cover fall back to the CarsXE reference image / placeholder.
+  // cover fall back to the model-aware, colour-accurate vehicle visual.
   const coverByJob = new Map<string, string>()
   for (const j of jobs) {
     if (j.cover_photo_url) coverByJob.set(j.id, j.cover_photo_url)

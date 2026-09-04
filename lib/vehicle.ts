@@ -355,6 +355,21 @@ const VEHICLE_DB: MakeDef[] = [
       { canonical: "GS", profile: "sedan", test: /^gs/ },
     ],
   },
+  {
+    canonical: "Jaguar",
+    aliases: ["jaguar", "jag", "jaguer", "jagaur"],
+    defaultProfile: "sedan_luxury",
+    models: [
+      // "E-PACE" / "F-PACE" / "I-PACE" -> compact & mid luxury SUVs.
+      { canonical: "E-PACE", profile: "suv", test: /^epace/ },
+      { canonical: "F-PACE", profile: "suv", test: /^fpace/ },
+      { canonical: "I-PACE", profile: "suv", test: /^ipace/ },
+      { canonical: "F-Type", profile: "sports", test: /^ftype/ },
+      { canonical: "XE", profile: "sedan", test: /^xe/ },
+      { canonical: "XF", profile: "sedan", test: /^xf/ },
+      { canonical: "XJ", profile: "sedan_luxury", test: /^xj/ },
+    ],
+  },
 ]
 
 // Generic keyword rules for makes not in the structured DB (final safety net).

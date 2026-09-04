@@ -8,3 +8,6 @@ node_modules
 .next/
 .env*.local
 .DS_Store
+
+# Database file backups (contain real data — keep out of Git)
+/backups/

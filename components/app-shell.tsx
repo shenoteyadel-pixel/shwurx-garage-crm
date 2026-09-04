@@ -150,7 +150,7 @@ function Brand({ compact }: { compact?: boolean }) {
       {!compact && (
         <div className="leading-tight">
           <div className="text-sm font-bold tracking-tight">
-            SHWURX <span className="text-primary">Garage</span>
+            SHWURX <span className="text-primary">Auto Service Center</span>
           </div>
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Workshop CRM</div>
         </div>

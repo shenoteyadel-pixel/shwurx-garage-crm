@@ -21,7 +21,7 @@ export default async function ApproveRequestPage({ params }: { params: Promise<{
           </div>
           <div className="leading-tight">
             <div className="text-sm font-bold tracking-tight">
-              SHWURX <span className="text-primary">Garage</span>
+              SHWURX <span className="text-primary">Auto Service Center</span>
             </div>
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Repair Approval</div>
           </div>

@@ -2,8 +2,8 @@ import "server-only"
 import { Resend } from "resend"
 
 const FROM_DOMAIN = process.env.RESEND_EMAIL_DOMAIN
-const FROM = FROM_DOMAIN ? `Shwurx Garage <no-reply@${FROM_DOMAIN}>` : "Shwurx Garage <onboarding@resend.dev>"
-const BRAND = "Shwurx Garage"
+const FROM = FROM_DOMAIN ? `SHWURX Auto Service Center <no-reply@${FROM_DOMAIN}>` : "SHWURX Auto Service Center <onboarding@resend.dev>"
+const BRAND = "SHWURX Auto Service Center"
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 

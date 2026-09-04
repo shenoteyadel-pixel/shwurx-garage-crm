@@ -21,7 +21,7 @@ export default function TrackEntryPage() {
             <Wrench className="h-5 w-5 text-primary-foreground" />
           </div>
           <span className="text-base font-bold tracking-tight">
-            SHWURX <span className="text-primary">Garage</span>
+            SHWURX <span className="text-primary">Auto Service Center</span>
           </span>
         </div>
 

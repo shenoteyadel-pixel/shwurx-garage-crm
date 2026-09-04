@@ -100,8 +100,11 @@ export interface TrackingDetail {
   color: string | null
   plate: string | null
   mileage: number | null
-  // The customer's real cover photo, if one was set. Absent -> colour-accurate placeholder.
+  // The customer's real cover photo, if one was set.
   coverPhoto: string | null
+  // The resolved make/model reference photo (CarsXE). Shown when there is no
+  // cover photo; falls back to the colour-accurate silhouette only if neither exists.
+  referenceImage: string | null
   jobNumber: string | null
   stage: Stage
   stageLabel: string
@@ -363,9 +366,10 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
     color: primary.color ?? null,
     plate,
     mileage: primary.mileage != null ? Number(primary.mileage) : null,
-    // Only the explicitly chosen cover photo. When absent, the tracking hero shows
-    // the colour-accurate placeholder (never the mismatched CarsXE stock image).
+    // Show a real photo of the car: the chosen cover photo first, else the
+    // resolved make/model reference photo; the silhouette is the last resort.
     coverPhoto: primary.cover_photo_url ?? null,
+    referenceImage: primary.vehicle_reference_image_url ?? null,
     jobNumber: primary.job_number ?? null,
     stage,
     stageLabel: meta?.label ?? stage,

@@ -5,13 +5,13 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { after } from "next/server"
 import { randomBytes } from "crypto"
-import type { Stage } from "@/lib/constants"
+import { type Stage, STAGE_MAP } from "@/lib/constants"
 import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
 import { sanitizeMileage } from "@/lib/utils"
 import { appBaseUrl } from "@/lib/account-links"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
-import type { Permission } from "@/lib/rbac/roles"
+import type { Permission, Role } from "@/lib/rbac/roles"
 
 /**
  * Resolve and persist a vehicle's CarsXE reference image OUT OF BAND.
@@ -592,6 +592,30 @@ export type JobCreateResult =
       access: import("@/lib/actions-customer-portal").CustomerAccessResult
     }
   | { ok: false; error: string }
+  // The vehicle already has an open (non-delivered) job. The wizard shows a
+  // "vehicle already has an active job" prompt with Open Existing / Cancel. A
+  // privileged role (owner / GM / workshop manager) may resubmit with
+  // allow_duplicate=1 to intentionally open a second concurrent job.
+  | {
+      ok: false
+      duplicate: true
+      canOverride: boolean
+      existing: {
+        jobId: string
+        jobNumber: string
+        stage: Stage
+        stageLabel: string
+        createdAt: string
+        advisorName: string | null
+      }
+    }
+
+// Roles allowed to intentionally open a second concurrent job for a vehicle.
+const DUPLICATE_OVERRIDE_ROLES: ReadonlySet<Role> = new Set<Role>([
+  "owner",
+  "general_manager",
+  "workshop_manager",
+])
 
 // The intake wizard resolves (or creates) a customer + vehicle first, then calls
 // this with their ids. We snapshot the vehicle/customer fields onto the job so the
@@ -611,6 +635,47 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
       supabase.from("vehicles").select("*").eq("id", vehicleId).single(),
     ])
     if (!customer || !vehicle) return { ok: false, error: "Customer or vehicle not found." }
+
+    // Duplicate guard: a vehicle may only have one open (non-delivered) job at a
+    // time. This stops double-submits (the exact cause of the two Audi Q7 rows
+    // created 5s apart) and any accidental re-creation while a job is in flight.
+    // Privileged roles can intentionally override to run concurrent jobs.
+    const allowDuplicate = s(fd, "allow_duplicate") === "1"
+    const canOverride = DUPLICATE_OVERRIDE_ROLES.has(ctx.role)
+    if (!(allowDuplicate && canOverride)) {
+      const { data: existing } = await supabase
+        .from("jobs")
+        .select("id, job_number, stage, created_at, advisor_id")
+        .eq("vehicle_id", vehicleId)
+        .neq("stage", "delivered")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (existing) {
+        let advisorName: string | null = null
+        if (existing.advisor_id) {
+          const { data: adv } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", existing.advisor_id)
+            .maybeSingle()
+          advisorName = adv?.full_name ?? null
+        }
+        return {
+          ok: false,
+          duplicate: true,
+          canOverride,
+          existing: {
+            jobId: existing.id,
+            jobNumber: existing.job_number,
+            stage: existing.stage as Stage,
+            stageLabel: STAGE_MAP[existing.stage as Stage]?.label ?? existing.stage,
+            createdAt: existing.created_at,
+            advisorName,
+          },
+        }
+      }
+    }
 
     // Mileage the advisor entered in the wizard (validated); null if none/invalid.
     const freshMileage = fd.get("mileage") !== null ? sanitizeMileage(fd.get("mileage")) : null
@@ -667,7 +732,11 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
     ]
     if (rows.length) await supabase.from("vehicle_photos").insert(rows)
 
-    await logAction(ctx, "job.create", "job", job.id, { job_number: payload.job_number })
+    await logAction(ctx, "job.create", "job", job.id, {
+      job_number: payload.job_number,
+      vehicle_id: vehicleId,
+      ...(allowDuplicate && canOverride ? { duplicate_override: true } : {}),
+    })
 
     const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || "Vehicle"
     const plate = [vehicle.plate_emirate, vehicle.plate_code, vehicle.plate_number].filter(Boolean).join(" ") || null

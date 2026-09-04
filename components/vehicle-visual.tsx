@@ -54,27 +54,26 @@ export function BrandLogo({
   )
 }
 
-/* ---------------- Vehicle Visual (real photo or color-accurate placeholder) ----------------
+/* ---------------- Vehicle Visual (real photo, else silhouette) ----------------
  *
- * There are only TWO image concepts here, and they must never be mixed:
+ * Priority — show the most real, most specific image available:
  *
- *   1. REAL CHOSEN PHOTO — a photo a human explicitly selected for this vehicle:
- *        - `coverPhoto`: the job's cover photo (uploaded + "Set as Vehicle Cover Photo"), or
- *        - `referenceImage` when `referenceImageSource === "custom"` (a URL a user set by hand).
- *      A real chosen photo ALWAYS wins and is shown as-is — never recolored.
+ *   1. `coverPhoto`  — the job's chosen cover photo (a real photo of THIS car).
+ *   2. `referenceImage` — the resolved make/model reference photo (e.g. the
+ *      CarsXE studio render). This is a real photograph of the correct
+ *      make/model; it is shown regardless of source. Model accuracy comes
+ *      first: a correct model in a slightly different colour reads far better
+ *      than a flat graphic.
+ *   3. Silhouette — the colour-accurate parametric drawing, used ONLY as a
+ *      last resort when no photo exists at all, so a card is never empty.
  *
- *   2. COLOR-ACCURATE PLACEHOLDER — when there is no real chosen photo, we draw the
- *      parametric silhouette from make/model/body-type and the vehicle's DB `color`.
- *
- * Auto-fetched stock images (CarsXE, `image_source === "carsxe"`) are deliberately NOT
- * displayed: they are real photos in an arbitrary colour (often grey) that do not match
- * the stored vehicle colour, so they are treated as "no real photo" and replaced by the
- * colour-accurate placeholder. The stored reference URL is left untouched in the DB.
+ * `referenceImageSource` is accepted for backward compatibility but no longer
+ * gates display — any available reference photo is shown.
  */
 export function VehicleVisual({
   coverPhoto,
   referenceImage,
-  referenceImageSource,
+  referenceImageSource: _referenceImageSource,
   make,
   model,
   bodyType,
@@ -84,7 +83,7 @@ export function VehicleVisual({
 }: {
   coverPhoto?: string | null
   referenceImage?: string | null
-  /** Provenance of `referenceImage`: only "custom" (human-set) images are displayed. */
+  /** Deprecated: accepted but no longer used to gate display. */
   referenceImageSource?: string | null
   make?: string | null
   model?: string | null
@@ -99,11 +98,9 @@ export function VehicleVisual({
   const profile = resolveVehicleProfile(make, model, bodyType)
   const label = `${make ?? ""} ${model ?? ""}`.trim() || "Vehicle"
 
-  // Real chosen photo: the cover photo, or a custom (human-set) reference image.
-  // Auto-fetched stock images (source !== "custom") are ignored on purpose.
+  // Prefer the real cover photo, then the resolved make/model reference photo.
   const activePhoto = coverPhoto && !coverFailed ? coverPhoto : null
-  const activeCustom =
-    !activePhoto && referenceImage && referenceImageSource === "custom" && !refFailed ? referenceImage : null
+  const activeRef = !activePhoto && referenceImage && !refFailed ? referenceImage : null
 
   return (
     <div className={cn("relative overflow-hidden bg-gradient-to-b from-muted/50 to-card", className)}>
@@ -116,10 +113,10 @@ export function VehicleVisual({
           onError={() => setCoverFailed(true)}
           crossOrigin="anonymous"
         />
-      ) : activeCustom ? (
+      ) : activeRef ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={activeCustom || "/placeholder.svg"}
+          src={activeRef || "/placeholder.svg"}
           alt={alt || label}
           className="h-full w-full object-cover"
           onError={() => setRefFailed(true)}

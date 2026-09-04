@@ -53,6 +53,7 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
         <div className="relative h-60 w-full sm:h-72">
           <VehicleVisual
             coverPhoto={detail.coverPhoto}
+            referenceImage={detail.referenceImage}
             make={detail.make}
             model={detail.model}
             bodyType={detail.bodyType}

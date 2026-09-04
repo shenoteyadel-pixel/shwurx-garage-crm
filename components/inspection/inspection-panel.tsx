@@ -98,10 +98,14 @@ export function InspectionPanel({
 
   async function removeSelected() {
     if (!selected) return
+    await removeMarker(selected.id)
+  }
+
+  async function removeMarker(markerId: string) {
     setBusy(true)
     try {
-      await deleteInspectionMarker(jobId, selected.id)
-      setSelectedId(null)
+      await deleteInspectionMarker(jobId, markerId)
+      setSelectedId((cur) => (cur === markerId ? null : cur))
     } finally {
       setBusy(false)
     }
@@ -225,6 +229,7 @@ export function InspectionPanel({
                   setSelectedId(id)
                   setPendingPhotos([])
                 }}
+                onDelete={removeMarker}
               />
 
               {/* Right rail */}
@@ -272,10 +277,10 @@ export function InspectionPanel({
                       <button
                         onClick={removeSelected}
                         disabled={busy}
-                        className="text-muted-foreground hover:text-primary"
-                        aria-label="Remove marker"
+                        className="inline-flex items-center gap-1 rounded-md border border-primary/40 px-2 py-1 text-[10px] font-medium text-primary transition hover:bg-primary/10 disabled:opacity-50"
+                        aria-label="Delete this marker"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-3 w-3" /> Delete marker
                       </button>
                     )}
                   </div>

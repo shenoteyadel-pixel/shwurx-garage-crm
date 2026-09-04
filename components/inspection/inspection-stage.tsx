@@ -5,7 +5,7 @@ import { DAMAGE_MAP } from "@/lib/inspection-config"
 import type { MarkerView, DamageType } from "@/lib/actions-inspections"
 import type { InspectionMarker } from "@/components/inspection/inspection-panel"
 import { cn } from "@/lib/utils"
-import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react"
+import { ZoomIn, ZoomOut, RotateCcw, X } from "lucide-react"
 
 const VIEW_IMAGE: Record<MarkerView, string> = {
   top: "/inspection/car-top.png",
@@ -32,6 +32,7 @@ function ClickableView({
   big,
   onAdd,
   onSelect,
+  onDelete,
 }: {
   cfg: ViewCfg
   markers: InspectionMarker[]
@@ -40,6 +41,7 @@ function ClickableView({
   big?: boolean
   onAdd: (view: MarkerView, x: number, y: number) => void
   onSelect: (id: string) => void
+  onDelete: (id: string) => void
 }) {
   const ref = React.useRef<HTMLDivElement>(null)
   const viewMarkers = markers.filter((m) => m.view === cfg.key)
@@ -76,19 +78,34 @@ function ClickableView({
           const d = DAMAGE_MAP[m.damage_type]
           const isSel = m.id === selectedId
           return (
-            <button
-              key={m.id}
-              onClick={(e) => {
-                e.stopPropagation()
-                onSelect(m.id)
-              }}
-              aria-label={`${d.label} marker`}
-              className={cn(
-                "absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md transition",
-                isSel ? "z-10 h-5 w-5 ring-2 ring-primary ring-offset-1 ring-offset-background" : "h-3.5 w-3.5",
+            <React.Fragment key={m.id}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSelect(m.id)
+                }}
+                aria-label={`${d.label} marker`}
+                className={cn(
+                  "absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md transition",
+                  isSel ? "z-10 h-5 w-5 ring-2 ring-primary ring-offset-1 ring-offset-background" : "h-3.5 w-3.5",
+                )}
+                style={{ left: `${m.x_pct}%`, top: `${m.y_pct}%`, backgroundColor: d.hex }}
+              />
+              {isSel && !completed && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete(m.id)
+                  }}
+                  aria-label="Delete this marker"
+                  title="Delete this marker"
+                  className="absolute z-20 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-primary text-white shadow-md transition hover:scale-110"
+                  style={{ left: `calc(${m.x_pct}% + 14px)`, top: `calc(${m.y_pct}% - 12px)` }}
+                >
+                  <X className="h-3 w-3" strokeWidth={3} />
+                </button>
               )}
-              style={{ left: `${m.x_pct}%`, top: `${m.y_pct}%`, backgroundColor: d.hex }}
-            />
+            </React.Fragment>
           )
         })}
       </div>
@@ -103,6 +120,7 @@ export function InspectionStage({
   completed,
   onAdd,
   onSelect,
+  onDelete,
 }: {
   markers: InspectionMarker[]
   selectedId: string | null
@@ -110,9 +128,10 @@ export function InspectionStage({
   completed: boolean
   onAdd: (view: MarkerView, x: number, y: number) => void
   onSelect: (id: string) => void
+  onDelete: (id: string) => void
 }) {
   const [zoom, setZoom] = React.useState(1)
-  const shared = { markers, selectedId, completed, onAdd, onSelect }
+  const shared = { markers, selectedId, completed, onAdd, onSelect, onDelete }
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-border bg-background/40 p-4">

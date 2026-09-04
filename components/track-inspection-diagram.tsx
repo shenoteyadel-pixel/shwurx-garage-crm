@@ -21,6 +21,8 @@ function ReadOnlyView({
   label,
   big,
   bodyType,
+  make,
+  model,
   markers,
   selectedId,
   onSelect,
@@ -29,6 +31,8 @@ function ReadOnlyView({
   label: string
   big?: boolean
   bodyType?: BodyType | string | null
+  make?: string | null
+  model?: string | null
   markers: TrackInspectionMarker[]
   selectedId: string | null
   onSelect: (id: string) => void
@@ -43,7 +47,7 @@ function ReadOnlyView({
         }`}
       >
         <div className="pointer-events-none absolute inset-0 p-2">
-          <VehicleSchematic view={viewKey} bodyType={bodyType} />
+          <VehicleSchematic view={viewKey} make={make} model={model} bodyType={bodyType} />
         </div>
         {viewMarkers.map((m) => {
           const isSel = m.id === selectedId
@@ -67,9 +71,13 @@ function ReadOnlyView({
 export function TrackInspectionDiagram({
   inspection,
   bodyType,
+  make,
+  model,
 }: {
   inspection: TrackInspection
   bodyType?: BodyType | string | null
+  make?: string | null
+  model?: string | null
 }) {
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const { markers } = inspection
@@ -105,13 +113,13 @@ export function TrackInspectionDiagram({
         <div className="mx-auto max-w-md">
           <div className="grid grid-cols-3 items-center gap-x-3 gap-y-2">
             <div />
-            <ReadOnlyView viewKey="front" label="Front" bodyType={bodyType} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
+            <ReadOnlyView viewKey="front" label="Front" bodyType={bodyType} make={make} model={model} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
             <div />
-            <ReadOnlyView viewKey="left" label="Left Side" bodyType={bodyType} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
-            <ReadOnlyView viewKey="top" label="Top" big bodyType={bodyType} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
-            <ReadOnlyView viewKey="right" label="Right Side" bodyType={bodyType} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
+            <ReadOnlyView viewKey="left" label="Left Side" bodyType={bodyType} make={make} model={model} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
+            <ReadOnlyView viewKey="top" label="Top" big bodyType={bodyType} make={make} model={model} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
+            <ReadOnlyView viewKey="right" label="Right Side" bodyType={bodyType} make={make} model={model} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
             <div />
-            <ReadOnlyView viewKey="rear" label="Rear" bodyType={bodyType} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
+            <ReadOnlyView viewKey="rear" label="Rear" bodyType={bodyType} make={make} model={model} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
             <div />
           </div>
         </div>

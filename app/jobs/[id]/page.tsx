@@ -54,6 +54,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .from("vehicle_photos")
     .select("id, url, kind, caption")
     .eq("job_id", id)
+    .is("deleted_at", null)
     .order("created_at")
 
   const { data: quotation } = await supabase
@@ -72,6 +73,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .from("parts_requests")
     .select("id, part_name, quantity, status, supplier, cost, notes")
     .eq("job_id", id)
+    .is("deleted_at", null)
     .order("created_at")
 
   // AI Diagnostic Assistant: session + technician-verified test workflow.
@@ -88,6 +90,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       .from("diagnostic_tests")
       .select("id, description, source, status, result_note, performed_at")
       .eq("session_id", diagnosticSession.id)
+      .is("deleted_at", null)
       .order("position", { ascending: true })
     diagnosticTests = (dTests ?? []) as DiagnosticTest[]
   }
@@ -110,6 +113,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         "id, view, x_pct, y_pct, damage_type, severity, location_label, note, position, inspection_marker_photos(id, url)",
       )
       .eq("inspection_id", inspectionRow.id)
+      .is("deleted_at", null)
       .order("position", { ascending: true })
     inspectionMarkers = mk ?? []
   }

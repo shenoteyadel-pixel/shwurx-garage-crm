@@ -11,8 +11,8 @@ export default async function InventoryPage() {
   const supabase = await createClient()
 
   const [{ data: items }, { data: suppliers }, { data: movements }] = await Promise.all([
-    supabase.from("inventory_items").select("*").order("name"),
-    supabase.from("suppliers").select("id, name").order("name"),
+    supabase.from("inventory_items").select("*").is("deleted_at", null).order("name"),
+    supabase.from("suppliers").select("id, name").is("deleted_at", null).order("name"),
     supabase
       .from("stock_movements")
       .select("id, item_id, kind, quantity, unit_cost, reference, note, created_at, inventory_items(name)")

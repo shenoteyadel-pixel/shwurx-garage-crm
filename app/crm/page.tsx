@@ -35,7 +35,7 @@ export default async function DashboardPage() {
     if (j.cover_photo_url) coverByJob.set(j.id, j.cover_photo_url)
   }
 
-  const { data: parts } = await supabase.from("parts_requests").select("status")
+  const { data: parts } = await supabase.from("parts_requests").select("status").is("deleted_at", null)
   const { data: quotes } = await supabase.from("quotations").select("total, job_id, created_at")
 
   const jobCards: JobCardData[] = jobs.map((j) => ({

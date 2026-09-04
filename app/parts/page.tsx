@@ -21,6 +21,7 @@ export default async function PartsPage({ searchParams }: { searchParams: Promis
   let query = supabase
     .from("parts_requests")
     .select("id, part_name, quantity, status, supplier, cost, created_at, jobs(id, job_number, customer_name, vehicle_make, vehicle_model, stage, approval_status)")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
   if (status) query = query.eq("status", status)
 

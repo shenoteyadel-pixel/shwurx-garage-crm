@@ -241,6 +241,7 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
     .from("parts_requests")
     .select("part_name, quantity, status")
     .eq("job_id", primary.id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: true })
   const parts: TrackPart[] = (partsRows ?? []).map((p) => {
     const status = (p.status as string) || "required"
@@ -257,6 +258,7 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
     .from("vehicle_photos")
     .select("id, url, kind, caption, created_at")
     .eq("job_id", primary.id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: true })
   const beforePhotos: TrackPhoto[] = []
   const afterPhotos: TrackPhoto[] = []
@@ -293,6 +295,7 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
         "id, view, x_pct, y_pct, damage_type, severity, location_label, note, position, inspection_marker_photos(id, url)",
       )
       .eq("inspection_id", inspectionRow.id)
+      .is("deleted_at", null)
       .order("position", { ascending: true })
     const markers: TrackInspectionMarker[] = (markerRows ?? []).map((m: any) => ({
       id: m.id as string,

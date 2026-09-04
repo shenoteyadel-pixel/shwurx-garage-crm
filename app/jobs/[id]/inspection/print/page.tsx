@@ -29,6 +29,7 @@ export default async function InspectionReportPage({ params }: { params: Promise
     .from("inspection_markers")
     .select("id, view, x_pct, y_pct, damage_type, severity, location_label, note, position")
     .eq("inspection_id", inspection.id)
+    .is("deleted_at", null)
     .order("position", { ascending: true })
 
   const markers = markerRows ?? []

@@ -67,6 +67,7 @@ export interface TrackInspectionMarker {
 export interface TrackInspection {
   odometer: number | null
   fuelLevel: string | null
+  completed: boolean
   markers: TrackInspectionMarker[]
 }
 
@@ -279,7 +280,7 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
   let inspection: TrackInspection | null = null
   const { data: inspectionRow } = await svc
     .from("vehicle_inspections")
-    .select("id, odometer, fuel_level")
+    .select("id, odometer, fuel_level, status")
     .eq("job_id", primary.id)
     .eq("inspection_type", "check_in")
     .maybeSingle()
@@ -302,11 +303,15 @@ export async function loadTrackingDetail(customerId: string): Promise<TrackingDe
       note: (m.note as string) ?? null,
       photos: (m.inspection_marker_photos ?? []).map((p: any) => ({ id: p.id as string, url: p.url as string })),
     }))
-    // Only surface an inspection to the customer once it actually has markers.
-    if (markers.length > 0) {
+    // Surface the inspection to the customer when it has documented damage OR
+    // has been completed (a completed inspection with no markers is a valid,
+    // meaningful result: the vehicle was checked and no damage was recorded).
+    const isCompleted = (inspectionRow.status as string) === "completed"
+    if (markers.length > 0 || isCompleted) {
       inspection = {
         odometer: inspectionRow.odometer != null ? Number(inspectionRow.odometer) : null,
         fuelLevel: (inspectionRow.fuel_level as string) ?? null,
+        completed: isCompleted,
         markers,
       }
     }

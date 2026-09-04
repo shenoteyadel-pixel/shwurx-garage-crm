@@ -48,7 +48,7 @@ export function BrandLogo({
         height={size}
         className="h-full w-full object-contain"
         onError={() => setFailed(true)}
-        crossOrigin="anonymous"
+        referrerPolicy="no-referrer"
       />
     </div>
   )
@@ -111,7 +111,7 @@ export function VehicleVisual({
           alt={alt || label}
           className="h-full w-full object-cover"
           onError={() => setCoverFailed(true)}
-          crossOrigin="anonymous"
+          referrerPolicy="no-referrer"
         />
       ) : activeRef ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -120,7 +120,7 @@ export function VehicleVisual({
           alt={alt || label}
           className="h-full w-full object-cover"
           onError={() => setRefFailed(true)}
-          crossOrigin="anonymous"
+          referrerPolicy="no-referrer"
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center p-1.5">

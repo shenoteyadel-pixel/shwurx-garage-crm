@@ -42,17 +42,44 @@ export async function POST(request: Request) {
     if (error) return jsonWithCors(request, { ok: false, error: error.message }, 400)
     if (!data?.ok) return jsonWithCors(request, data, 400)
 
+    const logisticsType = String(body?.metadata?.logistics?.type ?? "dropoff")
+    const typeLabel =
+      logisticsType === "pickup_delivery"
+        ? "Pickup & Delivery"
+        : logisticsType === "pickup"
+          ? "Pickup"
+          : null
+
     // Best-effort staff alert (never blocks the customer's booking).
     try {
       const service = body?.serviceInterest ?? body?.service_interest
       await notifyByPermission("appointments.manage", {
-        title: "New website booking",
-        body: `${name} requested an appointment${service ? ` for ${service}` : ""}.`,
-        type: "info",
+        title: typeLabel ? `New ${typeLabel} booking` : "New website booking",
+        body: `${name} requested an appointment${service ? ` for ${service}` : ""}${
+          typeLabel ? ` — ${typeLabel} required (assign a driver).` : "."
+        }`,
+        type: typeLabel ? "warning" : "info",
         link: "/appointments",
       })
     } catch {
       /* notification is best-effort */
+    }
+
+    // Best-effort customer confirmation email (never blocks the booking).
+    const email = String(body?.email ?? "").trim()
+    if (email) {
+      try {
+        const { sendAppointmentConfirmationEmail } = await import("@/lib/email")
+        await sendAppointmentConfirmationEmail({
+          to: email,
+          name,
+          serviceInterest: (body?.serviceInterest ?? body?.service_interest ?? null) as string | null,
+          logisticsType,
+          logistics: (body?.metadata?.logistics ?? null) as Record<string, unknown> | null,
+        })
+      } catch {
+        /* email is best-effort */
+      }
     }
 
     return jsonWithCors(request, data)

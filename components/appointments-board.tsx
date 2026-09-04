@@ -16,6 +16,10 @@ import {
   CalendarCog,
   UserCheck,
   ArrowRight,
+  MapPin,
+  Truck,
+  ExternalLink,
+  User,
 } from "lucide-react"
 import {
   confirmAppointment,
@@ -24,10 +28,21 @@ import {
   markNoShow,
   convertAppointmentToJob,
   findCustomerForAppointment,
+  assignDriver,
+  updateFulfillmentStatus,
+  FULFILLMENT_FLOW,
   type AppointmentRow,
   type AppointmentStatus,
   type CustomerMatch,
+  type DriverOption,
+  type FulfillmentStatus,
 } from "@/lib/actions-appointments"
+
+const TYPE_META: Record<string, { label: string; tone: string; icon: typeof MapPin }> = {
+  pickup: { label: "Pickup", tone: "bg-primary/15 text-primary", icon: MapPin },
+  pickup_delivery: { label: "Pickup & Delivery", tone: "bg-primary/15 text-primary", icon: Truck },
+  dropoff: { label: "Drop-off", tone: "bg-muted text-muted-foreground", icon: Car },
+}
 
 const STATUS_META: Record<AppointmentStatus, { label: string; tone: string }> = {
   pending: { label: "New request", tone: "bg-amber-500/15 text-amber-400" },
@@ -48,9 +63,11 @@ const GROUPS: { key: string; label: string; statuses: AppointmentStatus[] }[] = 
 export function AppointmentsBoard({
   appointments,
   canManage,
+  drivers = [],
 }: {
   appointments: AppointmentRow[]
   canManage: boolean
+  drivers?: DriverOption[]
 }) {
   const grouped = useMemo(() => {
     return GROUPS.map((g) => ({
@@ -68,7 +85,7 @@ export function AppointmentsBoard({
           </h2>
           <div className="grid gap-3">
             {group.items.map((a) => (
-              <AppointmentCard key={a.id} appointment={a} canManage={canManage} />
+              <AppointmentCard key={a.id} appointment={a} canManage={canManage} drivers={drivers} />
             ))}
           </div>
         </section>
@@ -77,7 +94,15 @@ export function AppointmentsBoard({
   )
 }
 
-function AppointmentCard({ appointment: a, canManage }: { appointment: AppointmentRow; canManage: boolean }) {
+function AppointmentCard({
+  appointment: a,
+  canManage,
+  drivers,
+}: {
+  appointment: AppointmentRow
+  canManage: boolean
+  drivers: DriverOption[]
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [rescheduleOpen, setRescheduleOpen] = useState(false)
@@ -87,6 +112,10 @@ function AppointmentCard({ appointment: a, canManage }: { appointment: Appointme
   const meta = STATUS_META[a.status]
   const vehicle = [a.vehicle_make, a.vehicle_model, a.vehicle_year].filter(Boolean).join(" ")
   const isActive = ["pending", "confirmed", "rescheduled"].includes(a.status)
+  const type = a.appointment_type ?? "dropoff"
+  const typeMeta = TYPE_META[type] ?? TYPE_META.dropoff
+  const TypeIcon = typeMeta.icon
+  const needsLogistics = type === "pickup" || type === "pickup_delivery"
 
   function run(fn: () => Promise<unknown>) {
     setError(null)
@@ -107,6 +136,11 @@ function AppointmentCard({ appointment: a, canManage }: { appointment: Appointme
           <div className="flex items-center gap-2">
             <span className="truncate font-medium text-foreground">{a.name}</span>
             <Badge className={meta.tone}>{meta.label}</Badge>
+            {needsLogistics ? (
+              <Badge className={`inline-flex items-center gap-1 ${typeMeta.tone}`}>
+                <TypeIcon className="h-3 w-3" /> {typeMeta.label}
+              </Badge>
+            ) : null}
             {a.source ? <Badge className="bg-muted text-muted-foreground">{a.source}</Badge> : null}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -147,6 +181,10 @@ function AppointmentCard({ appointment: a, canManage }: { appointment: Appointme
           ) : null}
         </div>
       </div>
+
+      {needsLogistics ? (
+        <LogisticsPanel appointment={a} canManage={canManage} drivers={drivers} run={run} pending={pending} />
+      ) : null}
 
       {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
 
@@ -195,6 +233,169 @@ function AppointmentCard({ appointment: a, canManage }: { appointment: Appointme
         }}
       />
     </Card>
+  )
+}
+
+function LogisticsPanel({
+  appointment: a,
+  canManage,
+  drivers,
+  run,
+  pending,
+}: {
+  appointment: AppointmentRow
+  canManage: boolean
+  drivers: DriverOption[]
+  run: (fn: () => Promise<unknown>) => void
+  pending: boolean
+}) {
+  const isDelivery = a.appointment_type === "pickup_delivery"
+  const current = a.fulfillment_status ?? "booked"
+  const currentIdx = FULFILLMENT_FLOW.findIndex((s) => s.value === current)
+
+  // For pickup-only bookings, hide the delivery-only stages from the stepper.
+  const flow = isDelivery
+    ? FULFILLMENT_FLOW
+    : FULFILLMENT_FLOW.filter((s) => !["ready_for_delivery", "en_route_delivery", "delivered"].includes(s.value))
+
+  const pickupLine = [a.pickup_address, a.pickup_area, a.pickup_emirate].filter(Boolean).join(", ")
+  const pickupWhen = [a.pickup_date ? formatDate(a.pickup_date) : null, a.pickup_time].filter(Boolean).join(" · ")
+  const deliveryLine = a.delivery_same_as_pickup
+    ? "Same as pickup address"
+    : [a.delivery_address].filter(Boolean).join(", ")
+  const deliveryWhen = [a.delivery_date ? formatDate(a.delivery_date) : null, a.delivery_time]
+    .filter(Boolean)
+    .join(" · ")
+
+  return (
+    <div className="mt-4 rounded-xl border border-border bg-muted/30 p-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {/* Pickup */}
+        <div>
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 text-primary" /> Pickup
+          </p>
+          <p className="mt-1 text-sm text-foreground">{pickupLine || "Address on file"}</p>
+          {a.pickup_building ? <p className="text-xs text-muted-foreground">{a.pickup_building}</p> : null}
+          {pickupWhen ? <p className="mt-0.5 text-xs text-muted-foreground">{pickupWhen}</p> : null}
+          {a.pickup_instructions ? (
+            <p className="mt-1 text-xs italic text-muted-foreground">“{a.pickup_instructions}”</p>
+          ) : null}
+          {a.pickup_maps_url ? (
+            <a
+              href={a.pickup_maps_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              Open in Maps <ExternalLink className="h-3 w-3" />
+            </a>
+          ) : null}
+        </div>
+
+        {/* Delivery */}
+        {isDelivery ? (
+          <div>
+            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <Truck className="h-3.5 w-3.5 text-primary" /> Delivery
+            </p>
+            <p className="mt-1 text-sm text-foreground">{deliveryLine || "Return address on file"}</p>
+            {deliveryWhen ? <p className="mt-0.5 text-xs text-muted-foreground">{deliveryWhen}</p> : null}
+            {a.delivery_instructions ? (
+              <p className="mt-1 text-xs italic text-muted-foreground">“{a.delivery_instructions}”</p>
+            ) : null}
+            {!a.delivery_same_as_pickup && a.delivery_maps_url ? (
+              <a
+                href={a.delivery_maps_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                Open in Maps <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Driver assignment */}
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <User className="h-3.5 w-3.5" /> Driver
+        </span>
+        {a.assigned_driver_name ? (
+          <Badge className="bg-emerald-500/15 text-emerald-400">{a.assigned_driver_name}</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">Not assigned</span>
+        )}
+        {canManage ? (
+          <select
+            value={a.assigned_driver_id ?? ""}
+            disabled={pending}
+            onChange={(e) => {
+              const id = e.target.value
+              if (id) run(() => assignDriver(a.id, id))
+            }}
+            className="h-8 rounded-lg border border-input bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          >
+            <option value="">{a.assigned_driver_id ? "Reassign…" : "Assign driver…"}</option>
+            {drivers.length === 0 ? (
+              <option value="" disabled>
+                No drivers available
+              </option>
+            ) : (
+              drivers.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.full_name}
+                </option>
+              ))
+            )}
+          </select>
+        ) : null}
+      </div>
+
+      {/* Fulfillment stepper */}
+      <div className="mt-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fulfillment</p>
+        <div className="flex flex-wrap gap-1.5">
+          {flow.map((s) => {
+            const idx = FULFILLMENT_FLOW.findIndex((f) => f.value === s.value)
+            const done = idx <= currentIdx
+            const isCurrent = s.value === current
+            return canManage ? (
+              <button
+                key={s.value}
+                type="button"
+                disabled={pending || isCurrent}
+                onClick={() => run(() => updateFulfillmentStatus(a.id, s.value as FulfillmentStatus))}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition disabled:cursor-default ${
+                  isCurrent
+                    ? "bg-primary text-primary-foreground"
+                    : done
+                      ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+                      : "bg-muted text-muted-foreground hover:bg-muted/70"
+                }`}
+              >
+                {s.label}
+              </button>
+            ) : (
+              <span
+                key={s.value}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                  isCurrent
+                    ? "bg-primary text-primary-foreground"
+                    : done
+                      ? "bg-emerald-500/15 text-emerald-400"
+                      : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {s.label}
+              </span>
+            )
+          })}
+        </div>
+      </div>
+    </div>
   )
 }
 

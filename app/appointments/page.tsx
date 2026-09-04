@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell"
 import { Card } from "@/components/ui"
 import { CalendarClock } from "lucide-react"
 import { AppointmentsBoard } from "@/components/appointments-board"
-import type { AppointmentRow } from "@/lib/actions-appointments"
+import { listDrivers, type AppointmentRow, type DriverOption } from "@/lib/actions-appointments"
 
 export const metadata = { title: "Appointments · SHWURX Auto Service Center" }
 export const dynamic = "force-dynamic"
@@ -18,12 +18,20 @@ export default async function AppointmentsPage() {
   const { data } = await supabase
     .from("appointments")
     .select(
-      "id, name, phone, email, vehicle_make, vehicle_model, vehicle_year, plate_number, service_interest, preferred_date, preferred_time, notes, source, status, customer_id, job_id, confirmed_at, cancelled_at, created_at",
+      "id, name, phone, email, vehicle_make, vehicle_model, vehicle_year, plate_number, service_interest, preferred_date, preferred_time, notes, source, status, customer_id, job_id, confirmed_at, cancelled_at, created_at, appointment_type, fulfillment_status, assigned_driver_id, assigned_driver_name, driver_assigned_at, pickup_address, pickup_maps_url, pickup_building, pickup_area, pickup_emirate, pickup_date, pickup_time, pickup_instructions, delivery_same_as_pickup, delivery_address, delivery_maps_url, delivery_date, delivery_time, delivery_instructions",
     )
     .order("created_at", { ascending: false })
 
   const appointments = (data ?? []) as AppointmentRow[]
   const canManage = user.permissions.includes("appointments.manage")
+  let drivers: DriverOption[] = []
+  if (canManage) {
+    try {
+      drivers = await listDrivers()
+    } catch {
+      drivers = []
+    }
+  }
   const activeCount = appointments.filter((a) =>
     ["pending", "confirmed", "rescheduled"].includes(a.status),
   ).length
@@ -53,7 +61,7 @@ export default async function AppointmentsPage() {
             </div>
           </Card>
         ) : (
-          <AppointmentsBoard appointments={appointments} canManage={canManage} />
+          <AppointmentsBoard appointments={appointments} canManage={canManage} drivers={drivers} />
         )}
       </div>
     </AppShell>

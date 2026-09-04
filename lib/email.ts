@@ -73,6 +73,75 @@ export function resetPasswordEmail(opts: { fullName: string; url: string }) {
   )
 }
 
+/**
+ * Booking confirmation sent to the customer immediately after submitting the
+ * public appointment form. For pickup / pickup+delivery bookings it echoes the
+ * logistics they entered and tells them a driver will be arranged.
+ */
+export async function sendAppointmentConfirmationEmail(opts: {
+  to: string
+  name: string
+  serviceInterest: string | null
+  logisticsType: string
+  logistics: Record<string, unknown> | null
+}): Promise<SendResult> {
+  const isPickup = opts.logisticsType === "pickup" || opts.logisticsType === "pickup_delivery"
+  const isDelivery = opts.logisticsType === "pickup_delivery"
+  const typeLabel = isDelivery ? "Pickup & Delivery" : isPickup ? "Pickup" : "Drop-off at garage"
+
+  const pickup = (opts.logistics?.pickup ?? null) as Record<string, unknown> | null
+  const delivery = (opts.logistics?.delivery ?? null) as Record<string, unknown> | null
+
+  const row = (label: string, value: string) =>
+    value
+      ? `<tr><td style="padding:4px 0;color:#8b93a1;font-size:12px;text-transform:uppercase;letter-spacing:1px;width:120px">${label}</td>
+          <td style="padding:4px 0;color:#ffffff;font-size:14px;font-weight:600">${esc(value)}</td></tr>`
+      : ""
+
+  const pickupBlock =
+    isPickup && pickup
+      ? `<p style="margin:16px 0 4px;font-size:13px;font-weight:700;color:#ffffff">Pickup details</p>
+         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 4px">
+           ${row("Address", String(pickup.address ?? ""))}
+           ${row("Area", String(pickup.area ?? ""))}
+           ${row("Emirate", String(pickup.emirate ?? ""))}
+           ${row("Preferred", [pickup.date, pickup.time].filter(Boolean).join(" "))}
+         </table>`
+      : ""
+
+  const deliveryBlock =
+    isDelivery && delivery
+      ? `<p style="margin:16px 0 4px;font-size:13px;font-weight:700;color:#ffffff">Delivery details</p>
+         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 4px">
+           ${row("Return to", delivery.sameAsPickup ? "Same as pickup address" : String(delivery.address ?? ""))}
+           ${row("Preferred", [delivery.date, delivery.time].filter(Boolean).join(" "))}
+         </table>`
+      : ""
+
+  const nextStep = isPickup
+    ? "Our team will call you shortly to confirm the details and arrange a driver to collect your vehicle."
+    : "Our team will call you shortly to confirm your appointment time."
+
+  const body = `
+    <p>Hi ${esc(opts.name) || "there"},</p>
+    <p>Thanks for booking with <strong>${BRAND}</strong>. We've received your request and it's now with our team.</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0 4px">
+      ${row("Service type", typeLabel)}
+      ${row("Service", opts.serviceInterest ?? "")}
+    </table>
+    ${pickupBlock}
+    ${deliveryBlock}
+    <p style="margin-top:14px">${nextStep}</p>`
+
+  const domain = process.env.RESEND_EMAIL_DOMAIN
+  const siteUrl = domain ? `https://${domain}` : "https://shwurxgarage.ae"
+  return sendEmail({
+    to: opts.to,
+    subject: `We received your ${typeLabel} request — ${BRAND}`,
+    html: shell("Your booking is confirmed", body, { label: "Visit our website", url: siteUrl }),
+  })
+}
+
 export function customerWelcomeEmail(opts: { name: string; url: string }) {
   return shell(
     "Track your vehicle online",

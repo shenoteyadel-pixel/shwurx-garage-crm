@@ -24,6 +24,39 @@ export const INSPECTION_VIEWS: { key: MarkerView; label: string }[] = [
   { key: "right", label: "Right" },
 ]
 
+/**
+ * Photoreal 3D render sets (professional studio look, brand-neutral, transparent
+ * background) keyed by body type. Each body type maps to one of five generated
+ * sets. Left/right reuse the single side profile (right is mirrored). When a
+ * body type has no render set we fall back to the vector line-art below.
+ */
+const RENDER_SET: Record<BodyType, string> = {
+  sedan: "sedan",
+  hatchback: "sedan",
+  wagon: "sedan",
+  coupe: "coupe",
+  sports: "coupe",
+  convertible: "coupe",
+  suv: "suv",
+  pickup: "pickup",
+  van: "van",
+}
+
+/** File name (within the render set) for each inspection view. */
+const RENDER_VIEW_FILE: Record<MarkerView, string> = {
+  top: "top",
+  front: "front",
+  rear: "rear",
+  left: "side",
+  right: "side",
+}
+
+function renderSrc(bodyType: BodyType, view: MarkerView): string | null {
+  const set = RENDER_SET[bodyType]
+  if (!set) return null
+  return `/inspection/renders/${set}/${RENDER_VIEW_FILE[view]}.png`
+}
+
 /* Flat fill + outline for the car body panels */
 const body = {
   fill: "currentColor",
@@ -391,6 +424,21 @@ export function VehicleSchematic({
   const bodyType = resolveBodyType(typeof bodyTypeRaw === "string" ? bodyTypeRaw : bodyTypeRaw ?? null)
   const stance = STANCE_BY_TYPE[bodyType]
   const open = bodyType === "convertible"
+
+  // Prefer the professional photoreal 3D render when a set exists for this body
+  // type; the right side reuses the (front-left-facing) side render, mirrored.
+  const src = renderSrc(bodyType, view)
+  if (src) {
+    return (
+      <img
+        src={src || "/placeholder.svg"}
+        alt={`${bodyType} ${view} view`}
+        draggable={false}
+        className="h-full w-full object-contain"
+        style={view === "right" ? { transform: "scaleX(-1)" } : undefined}
+      />
+    )
+  }
 
   return (
     <svg

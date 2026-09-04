@@ -14,6 +14,7 @@ import { StaffAssign } from "@/components/staff-assign"
 import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
 import { DiagnosticsPanel, type DiagnosticTest } from "@/components/diagnostics-panel"
+import { InspectionPanel } from "@/components/inspection/inspection-panel"
 import { TechnicianJobCard } from "@/components/technician-job-card"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { RefreshVehicleImageButton } from "@/components/refresh-vehicle-image"
@@ -93,6 +94,45 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const diagnosticVehicleSummary =
     [job.vehicle_year, job.vehicle_make, job.vehicle_model, job.variant].filter(Boolean).join(" ") +
     (job.mileage ? ` · ${Number(job.mileage).toLocaleString()} km` : "")
+
+  // Vehicle inspection (check-in): header + damage markers + per-marker photos.
+  const { data: inspectionRow } = await supabase
+    .from("vehicle_inspections")
+    .select("id, status, odometer, fuel_level, general_notes, signature_data_url, signed_by_name")
+    .eq("job_id", id)
+    .eq("inspection_type", "check_in")
+    .maybeSingle()
+  let inspectionMarkers: any[] = []
+  if (inspectionRow) {
+    const { data: mk } = await supabase
+      .from("inspection_markers")
+      .select(
+        "id, view, x_pct, y_pct, damage_type, severity, location_label, note, position, inspection_marker_photos(id, url)",
+      )
+      .eq("inspection_id", inspectionRow.id)
+      .order("position", { ascending: true })
+    inspectionMarkers = mk ?? []
+  }
+  const inspectionData = {
+    id: inspectionRow?.id ?? null,
+    status: (inspectionRow?.status ?? "in_progress") as "in_progress" | "completed",
+    odometer: inspectionRow?.odometer ?? null,
+    fuel_level: inspectionRow?.fuel_level ?? null,
+    general_notes: inspectionRow?.general_notes ?? null,
+    signature_data_url: inspectionRow?.signature_data_url ?? null,
+    signed_by_name: inspectionRow?.signed_by_name ?? null,
+    markers: inspectionMarkers.map((m) => ({
+      id: m.id,
+      view: m.view,
+      x_pct: Number(m.x_pct),
+      y_pct: Number(m.y_pct),
+      damage_type: m.damage_type,
+      severity: m.severity,
+      location_label: m.location_label,
+      note: m.note,
+      photos: (m.inspection_marker_photos ?? []).map((p: any) => ({ id: p.id, url: p.url })),
+    })),
+  }
 
   const { data: staffRows } = await supabase
     .from("profiles")
@@ -239,6 +279,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           {showPrices ? (
             <>
               <RepairDetails job={job as any} />
+              <InspectionPanel
+                jobId={job.id}
+                inspection={inspectionData}
+                printHref={`/jobs/${job.id}/inspection/print`}
+              />
               <DiagnosticsPanel
                 jobId={job.id}
                 session={(diagnosticSession as any) ?? null}
@@ -268,6 +313,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 parts={techParts}
               />
               <RepairDetails job={job as any} />
+              <InspectionPanel
+                jobId={job.id}
+                inspection={inspectionData}
+                printHref={`/jobs/${job.id}/inspection/print`}
+              />
               <DiagnosticsPanel
                 jobId={job.id}
                 session={(diagnosticSession as any) ?? null}

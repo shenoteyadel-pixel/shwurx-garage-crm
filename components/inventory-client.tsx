@@ -14,7 +14,7 @@ type Item = {
   category: string | null
   brand: string | null
   unit: string
-  cost_price: number
+  cost_price?: number | null
   sale_price: number
   quantity: number
   reorder_level: number
@@ -39,10 +39,14 @@ export function InventoryClient({
   items,
   suppliers,
   movements,
+  canViewCosts = true,
+  canViewSuppliers = true,
 }: {
   items: Item[]
   suppliers: Supplier[]
   movements: Movement[]
+  canViewCosts?: boolean
+  canViewSuppliers?: boolean
 }) {
   const [q, setQ] = useState("")
   const [tab, setTab] = useState<"stock" | "history">("stock")
@@ -60,6 +64,7 @@ export function InventoryClient({
 
   const stockValue = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.cost_price) || 0), 0)
   const lowStock = items.filter((i) => Number(i.reorder_level) > 0 && Number(i.quantity) <= Number(i.reorder_level))
+  const showHistory = canViewCosts
 
   return (
     <>
@@ -67,7 +72,8 @@ export function InventoryClient({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Store &amp; Inventory</h1>
           <p className="text-sm text-muted-foreground">
-            {items.length} items · stock value {formatCurrency(stockValue)}
+            {items.length} items
+            {canViewCosts && <> · stock value {formatCurrency(stockValue)}</>}
             {lowStock.length > 0 && <span className="text-amber-400"> · {lowStock.length} low</span>}
           </p>
         </div>
@@ -101,12 +107,14 @@ export function InventoryClient({
         <TabBtn active={tab === "stock"} onClick={() => setTab("stock")}>
           Stock List
         </TabBtn>
-        <TabBtn active={tab === "history"} onClick={() => setTab("history")}>
-          Movement History
-        </TabBtn>
+        {showHistory && (
+          <TabBtn active={tab === "history"} onClick={() => setTab("history")}>
+            Movement History
+          </TabBtn>
+        )}
       </div>
 
-      {tab === "stock" ? (
+      {tab === "stock" || !showHistory ? (
         filtered.length === 0 ? (
           <Empty onNew={() => setFormOpen(true)} />
         ) : (
@@ -117,7 +125,7 @@ export function InventoryClient({
                   <tr>
                     <th className="px-4 py-3 font-semibold">Item</th>
                     <th className="px-4 py-3 font-semibold">Location</th>
-                    <th className="px-4 py-3 text-right font-semibold">Cost</th>
+                    {canViewCosts && <th className="px-4 py-3 text-right font-semibold">Cost</th>}
                     <th className="px-4 py-3 text-right font-semibold">Sale</th>
                     <th className="px-4 py-3 text-right font-semibold">Qty</th>
                     <th className="px-4 py-3 text-right font-semibold">Actions</th>
@@ -136,7 +144,9 @@ export function InventoryClient({
                           </div>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">{i.location || "—"}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(i.cost_price)}</td>
+                        {canViewCosts && (
+                          <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(i.cost_price ?? 0)}</td>
+                        )}
                         <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(i.sale_price)}</td>
                         <td className="px-4 py-3 text-right">
                           <span className={`tabular-nums font-semibold ${low ? "text-amber-400" : ""}`}>
@@ -212,7 +222,13 @@ export function InventoryClient({
       )}
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title={editing ? "Edit Item" : "New Item"}>
-        <ItemForm item={editing} suppliers={suppliers} onDone={() => setFormOpen(false)} />
+        <ItemForm
+          item={editing}
+          suppliers={suppliers}
+          canViewCosts={canViewCosts}
+          canViewSuppliers={canViewSuppliers}
+          onDone={() => setFormOpen(false)}
+        />
       </Modal>
 
       <Modal
@@ -225,13 +241,27 @@ export function InventoryClient({
             : ""
         }
       >
-        {moveItem && <MovementForm move={moveItem} onDone={() => setMoveItem(null)} />}
+        {moveItem && (
+          <MovementForm move={moveItem} canViewCosts={canViewCosts} onDone={() => setMoveItem(null)} />
+        )}
       </Modal>
     </>
   )
 }
 
-function ItemForm({ item, suppliers, onDone }: { item: Item | null; suppliers: Supplier[]; onDone: () => void }) {
+function ItemForm({
+  item,
+  suppliers,
+  canViewCosts,
+  canViewSuppliers,
+  onDone,
+}: {
+  item: Item | null
+  suppliers: Supplier[]
+  canViewCosts: boolean
+  canViewSuppliers: boolean
+  onDone: () => void
+}) {
   const [pending, start] = useTransition()
   const [delPending, startDel] = useTransition()
   return (
@@ -252,21 +282,25 @@ function ItemForm({ item, suppliers, onDone }: { item: Item | null; suppliers: S
         <F label="Brand" name="brand" defaultValue={item?.brand} />
         <F label="Unit" name="unit" defaultValue={item?.unit ?? "pcs"} />
         <F label="Location / Shelf" name="location" defaultValue={item?.location} />
-        <F label="Cost price (AED)" name="cost_price" type="number" defaultValue={item?.cost_price} />
+        {canViewCosts && (
+          <F label="Cost price (AED)" name="cost_price" type="number" defaultValue={item?.cost_price} />
+        )}
         <F label="Sale price (AED)" name="sale_price" type="number" defaultValue={item?.sale_price} />
         <F label="Reorder level" name="reorder_level" type="number" defaultValue={item?.reorder_level} />
         {!item && <F label="Opening quantity" name="quantity" type="number" defaultValue={0} />}
-        <div className={item ? "sm:col-span-2" : ""}>
-          <Label htmlFor="supplier_id">Default supplier</Label>
-          <Select id="supplier_id" name="supplier_id" defaultValue={item?.supplier_id ?? ""}>
-            <option value="">— None —</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
-        </div>
+        {canViewSuppliers && (
+          <div className={item ? "sm:col-span-2" : ""}>
+            <Label htmlFor="supplier_id">Default supplier</Label>
+            <Select id="supplier_id" name="supplier_id" defaultValue={item?.supplier_id ?? ""}>
+              <option value="">— None —</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
       </div>
       <div>
         <Label htmlFor="notes">Notes</Label>
@@ -303,9 +337,11 @@ function ItemForm({ item, suppliers, onDone }: { item: Item | null; suppliers: S
 
 function MovementForm({
   move,
+  canViewCosts,
   onDone,
 }: {
   move: { item: Item; kind: "in" | "out" | "adjust" }
+  canViewCosts: boolean
   onDone: () => void
 }) {
   const [pending, start] = useTransition()
@@ -332,7 +368,9 @@ function MovementForm({
         defaultValue={kind === "adjust" ? item.quantity : ""}
         required
       />
-      {kind === "in" && <F label="Unit cost (AED)" name="unit_cost" type="number" defaultValue={item.cost_price} />}
+      {kind === "in" && canViewCosts && (
+        <F label="Unit cost (AED)" name="unit_cost" type="number" defaultValue={item.cost_price ?? undefined} />
+      )}
       <F label="Reference" name="reference" placeholder={kind === "out" ? "Job / issued to" : "Supplier invoice / reason"} />
       <div>
         <Label htmlFor="note">Note</Label>

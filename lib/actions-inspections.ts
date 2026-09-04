@@ -186,6 +186,16 @@ export async function clearInspectionMarkers(jobId: string) {
   revalidatePath(`/jobs/${jobId}`)
 }
 
+/** Set the vehicle body type used to draw the brand-neutral inspection diagram. */
+export async function setJobBodyType(jobId: string, bodyType: string) {
+  const { supabase, ctx } = await guard("jobs.edit")
+  if (!jobId) return
+  const { error } = await supabase.from("jobs").update({ body_type: bodyType }).eq("id", jobId)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "job_body_type_set", "job", jobId, { bodyType })
+  revalidatePath(`/jobs/${jobId}`)
+}
+
 /** Attach already-uploaded photo URLs to a marker. */
 export async function addMarkerPhotos(jobId: string, markerId: string, urls: string[]) {
   const { supabase, ctx } = await guard("jobs.edit")

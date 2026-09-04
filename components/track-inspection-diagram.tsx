@@ -3,22 +3,9 @@
 import * as React from "react"
 import { DAMAGE_MAP, DAMAGE_TYPES } from "@/lib/inspection-config"
 import type { TrackInspection, TrackInspectionMarker } from "@/lib/tracking-data"
-
-const VIEW_IMAGE: Record<string, string> = {
-  top: "/inspection/car-top.png",
-  front: "/inspection/car-front.png",
-  rear: "/inspection/car-rear.png",
-  left: "/inspection/car-left.png",
-  right: "/inspection/car-right.png",
-}
-
-const VIEW_LABELS: { key: string; label: string; big?: boolean }[] = [
-  { key: "front", label: "Front" },
-  { key: "left", label: "Left Side" },
-  { key: "top", label: "Top", big: true },
-  { key: "right", label: "Right Side" },
-  { key: "rear", label: "Rear" },
-]
+import { VehicleSchematic } from "@/components/inspection/vehicle-schematics"
+import type { MarkerView } from "@/lib/actions-inspections"
+import type { BodyType } from "@/lib/body-type"
 
 function damageHex(type: string): string {
   return DAMAGE_MAP[type as keyof typeof DAMAGE_MAP]?.hex ?? "#10b981"
@@ -33,13 +20,15 @@ function ReadOnlyView({
   viewKey,
   label,
   big,
+  bodyType,
   markers,
   selectedId,
   onSelect,
 }: {
-  viewKey: string
+  viewKey: MarkerView
   label: string
   big?: boolean
+  bodyType?: BodyType | string | null
   markers: TrackInspectionMarker[]
   selectedId: string | null
   onSelect: (id: string) => void
@@ -49,16 +38,13 @@ function ReadOnlyView({
     <div className="flex flex-col items-center gap-1">
       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
       <div
-        className={`relative w-full overflow-hidden rounded-lg border border-border/60 bg-[#0a0a0a] ${
+        className={`relative w-full overflow-hidden rounded-lg border border-border/60 bg-background/60 ${
           big ? "aspect-[3/4]" : "aspect-square"
         }`}
       >
-        <img
-          src={VIEW_IMAGE[viewKey] || "/placeholder.svg"}
-          alt={`${label} view of vehicle`}
-          className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-          draggable={false}
-        />
+        <div className="pointer-events-none absolute inset-0 p-2">
+          <VehicleSchematic view={viewKey} bodyType={bodyType} />
+        </div>
         {viewMarkers.map((m) => {
           const isSel = m.id === selectedId
           return (
@@ -78,7 +64,13 @@ function ReadOnlyView({
   )
 }
 
-export function TrackInspectionDiagram({ inspection }: { inspection: TrackInspection }) {
+export function TrackInspectionDiagram({
+  inspection,
+  bodyType,
+}: {
+  inspection: TrackInspection
+  bodyType?: BodyType | string | null
+}) {
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const { markers } = inspection
 
@@ -113,13 +105,13 @@ export function TrackInspectionDiagram({ inspection }: { inspection: TrackInspec
         <div className="mx-auto max-w-md">
           <div className="grid grid-cols-3 items-center gap-x-3 gap-y-2">
             <div />
-            <ReadOnlyView viewKey="front" label="Front" markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
+            <ReadOnlyView viewKey="front" label="Front" bodyType={bodyType} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
             <div />
-            <ReadOnlyView viewKey="left" label="Left Side" markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
-            <ReadOnlyView viewKey="top" label="Top" big markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
-            <ReadOnlyView viewKey="right" label="Right Side" markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
+            <ReadOnlyView viewKey="left" label="Left Side" bodyType={bodyType} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
+            <ReadOnlyView viewKey="top" label="Top" big bodyType={bodyType} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
+            <ReadOnlyView viewKey="right" label="Right Side" bodyType={bodyType} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
             <div />
-            <ReadOnlyView viewKey="rear" label="Rear" markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
+            <ReadOnlyView viewKey="rear" label="Rear" bodyType={bodyType} markers={markers} selectedId={selectedId} onSelect={setSelectedId} />
             <div />
           </div>
         </div>

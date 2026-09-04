@@ -14,10 +14,13 @@ import {
   deleteMarkerPhoto,
   saveInspectionDetails,
   completeInspection,
+  setJobBodyType,
   type MarkerView,
   type DamageType,
   type Severity,
 } from "@/lib/actions-inspections"
+import { BODY_TYPES, BODY_TYPE_LABELS, normalizeBodyType, type BodyType } from "@/lib/body-type"
+import { useRouter } from "next/navigation"
 import { SignaturePad } from "@/components/inspection/signature-pad"
 import { cn } from "@/lib/utils"
 import { Trash2, MapPin, FileDown, Check, Loader2 } from "lucide-react"
@@ -53,12 +56,28 @@ export function InspectionPanel({
   jobId,
   inspection,
   printHref,
+  bodyType: initialBodyType,
 }: {
   jobId: string
   inspection: InspectionData
   printHref: string
+  bodyType?: string | null
 }) {
+  const router = useRouter()
   const [tab, setTab] = React.useState<Tab>("Inspection Map")
+  const [bodyType, setBodyType] = React.useState<BodyType>(normalizeBodyType(initialBodyType) ?? "sedan")
+  const bodyTypeKnown = normalizeBodyType(initialBodyType) != null
+
+  async function handleBodyType(next: BodyType) {
+    const prev = bodyType
+    setBodyType(next) // optimistic
+    try {
+      await setJobBodyType(jobId, next)
+      router.refresh()
+    } catch {
+      setBodyType(prev) // revert on failure
+    }
+  }
   const [activeType, setActiveType] = React.useState<DamageType>("scratch")
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -217,6 +236,27 @@ export function InspectionPanel({
               </div>
             </form>
 
+            {/* Body-type picker: controls the brand-neutral diagram silhouette */}
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background/40 px-3 py-2">
+              <span className="text-xs font-medium text-muted-foreground">Vehicle body type</span>
+              <Select
+                aria-label="Vehicle body type"
+                value={bodyType}
+                onChange={(e) => handleBodyType(e.target.value as BodyType)}
+                disabled={completed}
+                className="h-8 w-auto text-sm"
+              >
+                {BODY_TYPES.map((b) => (
+                  <option key={b} value={b}>
+                    {BODY_TYPE_LABELS[b]}
+                  </option>
+                ))}
+              </Select>
+              {!bodyTypeKnown && (
+                <span className="text-[11px] text-amber-500">Not set for this vehicle — using a neutral shape. Pick the correct type.</span>
+              )}
+            </div>
+
             <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
               {/* Stage */}
               <InspectionStage
@@ -224,6 +264,7 @@ export function InspectionPanel({
                 selectedId={selectedId}
                 activeType={activeType}
                 completed={completed}
+                bodyType={bodyType}
                 onAdd={handleAdd}
                 onSelect={(id) => {
                   setSelectedId(id)

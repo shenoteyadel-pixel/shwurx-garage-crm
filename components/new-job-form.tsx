@@ -397,7 +397,6 @@ function VehicleStep({
                 className="flex items-center gap-3 rounded-lg border border-border p-3 text-left hover:border-primary hover:bg-accent"
               >
                 <VehicleVisual
-                  referenceImage={v.reference_image_url}
                   make={v.make}
                   model={v.model}
                   color={v.color}
@@ -683,7 +682,6 @@ function VisitStep({
         </button>
         <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-background/40 p-3">
           <VehicleVisual
-            referenceImage={vehicle.reference_image_url}
             make={vehicle.make}
             model={vehicle.model}
             color={vehicle.color}

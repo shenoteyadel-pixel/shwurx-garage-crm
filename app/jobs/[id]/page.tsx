@@ -225,6 +225,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             <VehicleVisual
               coverPhoto={coverPhoto}
               referenceImage={job.vehicle_reference_image_url}
+              referenceImageSource={job.vehicle_image_source}
               make={job.vehicle_make}
               model={job.vehicle_model}
               bodyType={job.body_type}

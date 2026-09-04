@@ -1,47 +1,47 @@
-import { Wrench, Gauge, Cog, Sparkles, ShieldCheck, Battery } from "lucide-react"
+import { Cpu, CalendarCheck, Cog, Package, SprayCan, Gauge } from "lucide-react"
 
 export type SiteService = {
   slug: string
   title: string
-  icon: typeof Wrench
+  icon: typeof Cpu
   summary: string
 }
 
 export const SITE_SERVICES: SiteService[] = [
   {
-    slug: "major-service",
-    title: "Major & Minor Service",
-    icon: Wrench,
-    summary: "Full manufacturer-schedule servicing with genuine parts and a detailed digital report.",
+    slug: "diagnostics-programming",
+    title: "Diagnostics & Programming",
+    icon: Cpu,
+    summary: "Dealer level diagnostics for all premium brands.",
   },
   {
-    slug: "diagnostics",
-    title: "Computer Diagnostics",
-    icon: Gauge,
-    summary: "Dealer-level fault scanning to pinpoint issues fast — no guesswork, no surprises.",
+    slug: "scheduled-maintenance",
+    title: "Scheduled Maintenance",
+    icon: CalendarCheck,
+    summary: "Keep your vehicle at its best.",
   },
   {
-    slug: "engine-repair",
-    title: "Engine & Mechanical",
+    slug: "mechanical-repair",
+    title: "Mechanical Repair",
     icon: Cog,
-    summary: "From timing chains to full rebuilds, handled by specialist technicians.",
+    summary: "Expert repair for all systems.",
   },
   {
-    slug: "detailing",
-    title: "Detailing & Care",
-    icon: Sparkles,
-    summary: "Interior and exterior detailing, ceramic coating, and paint correction.",
+    slug: "parts-procurement",
+    title: "Parts & Procurement",
+    icon: Package,
+    summary: "Genuine & OEM parts sourcing.",
   },
   {
-    slug: "ac-electrical",
-    title: "A/C & Electrical",
-    icon: Battery,
-    summary: "Climate systems, batteries, and electrical faults diagnosed and repaired.",
+    slug: "body-paint",
+    title: "Body & Paint",
+    icon: SprayCan,
+    summary: "Professional bodywork and refinishing.",
   },
   {
-    slug: "inspection",
-    title: "Pre-Purchase Inspection",
-    icon: ShieldCheck,
-    summary: "A thorough independent check before you buy, with an honest written verdict.",
+    slug: "performance-upgrades",
+    title: "Performance & Upgrades",
+    icon: Gauge,
+    summary: "Unlock the full potential.",
   },
 ]

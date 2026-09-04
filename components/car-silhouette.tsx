@@ -65,15 +65,20 @@ const P: Record<VehicleProfile, Proto> = {
     cowlX: 100, rfX: 122, rbX: 200, deckX: 214, deckY: 46, rear: "box",
     wR: 19, ax1: 66, ax2: 184, round: 5,
   },
+  // Compact crossover (e.g. Jaguar E-PACE): short overhangs, a raked
+  // coupe-like falling roofline and a sloped tail — reads clearly smaller and
+  // sportier than a full-size SUV.
   suv: {
-    fx: 24, rx: 222, bottom: 92, noseY: 60, hoodY: 51, roofY: 29,
-    cowlX: 100, rfX: 120, rbX: 178, deckX: 210, deckY: 33, rear: "box",
-    wR: 21, ax1: 66, ax2: 180, round: 5,
+    fx: 30, rx: 214, bottom: 92, noseY: 63, hoodY: 53, roofY: 34,
+    cowlX: 98, rfX: 120, rbX: 166, deckX: 204, deckY: 48, rear: "fast",
+    wR: 21, ax1: 66, ax2: 174, round: 8,
   },
+  // Full-size SUV (e.g. Audi Q7): long wheelbase, tall upright greenhouse and
+  // a squared, near-vertical tailgate.
   suv_large: {
-    fx: 18, rx: 230, bottom: 92, noseY: 58, hoodY: 49, roofY: 27,
-    cowlX: 98, rfX: 116, rbX: 192, deckX: 220, deckY: 31, rear: "box",
-    wR: 22, ax1: 62, ax2: 192, round: 4,
+    fx: 15, rx: 233, bottom: 92, noseY: 56, hoodY: 46, roofY: 24,
+    cowlX: 95, rfX: 113, rbX: 198, deckX: 225, deckY: 28, rear: "box",
+    wR: 22, ax1: 59, ax2: 196, round: 3,
   },
   suv_boxy: {
     fx: 26, rx: 224, bottom: 92, noseY: 54, hoodY: 46, roofY: 25,

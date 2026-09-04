@@ -31,31 +31,31 @@
 :root {
   --radius: 0.75rem;
 
-  /* Dark automotive workshop theme */
-  --background: oklch(0.16 0.005 285);
-  --foreground: oklch(0.97 0 0);
+  /* Premium black automotive theme */
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.98 0 0);
 
-  --card: oklch(0.21 0.006 285);
-  --card-foreground: oklch(0.97 0 0);
+  --card: oklch(0.19 0 0);
+  --card-foreground: oklch(0.98 0 0);
 
-  --popover: oklch(0.21 0.006 285);
-  --popover-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.19 0 0);
+  --popover-foreground: oklch(0.98 0 0);
 
   /* SHWURX red */
   --primary: oklch(0.58 0.22 26);
   --primary-foreground: oklch(0.99 0 0);
 
-  --secondary: oklch(0.27 0.006 285);
-  --secondary-foreground: oklch(0.97 0 0);
+  --secondary: oklch(0.24 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
 
-  --muted: oklch(0.27 0.006 285);
-  --muted-foreground: oklch(0.68 0.01 285);
+  --muted: oklch(0.24 0 0);
+  --muted-foreground: oklch(0.7 0 0);
 
-  --accent: oklch(0.3 0.01 285);
-  --accent-foreground: oklch(0.97 0 0);
+  --accent: oklch(0.27 0 0);
+  --accent-foreground: oklch(0.98 0 0);
 
-  --border: oklch(0.3 0.006 285);
-  --input: oklch(0.3 0.006 285);
+  --border: oklch(0.28 0 0);
+  --input: oklch(0.28 0 0);
   --ring: oklch(0.58 0.22 26);
 }
 

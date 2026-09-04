@@ -47,7 +47,6 @@ export function JobCard({ job }: { job: JobCardData }) {
       <div className="relative aspect-[16/10] overflow-hidden bg-secondary">
         <VehicleVisual
           coverPhoto={job.cover}
-          referenceImage={job.vehicle_reference_image_url}
           make={job.vehicle_make}
           model={job.vehicle_model}
           bodyType={job.body_type}

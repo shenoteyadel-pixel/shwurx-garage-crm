@@ -71,6 +71,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
             <Card className="overflow-hidden p-0">
               <VehicleVisual
                 referenceImage={vehicle.reference_image_url}
+                referenceImageSource={vehicle.image_source}
                 make={vehicle.make}
                 model={vehicle.model}
                 bodyType={vehicle.body_type}

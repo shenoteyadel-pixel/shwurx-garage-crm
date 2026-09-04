@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell"
 import { Card, Badge, Button } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { STAGES } from "@/lib/constants"
-import { BrandLogo } from "@/components/vehicle-visual"
+import { VehicleVisual } from "@/components/vehicle-visual"
 import { PortalLinkButton } from "@/components/portal-link-button"
 import { ArrowLeft, Pencil, Plus, Phone, Mail, Building2, Car, FileText, ReceiptText, Wrench } from "lucide-react"
 
@@ -36,7 +36,9 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const [{ data: vehicles }, { data: jobs }] = await Promise.all([
     supabase
       .from("vehicles")
-      .select("id, make, model, variant, year, color, plate_emirate, plate_code, plate_number, vin, reference_image_url")
+      .select(
+        "id, make, model, variant, year, color, body_type, plate_emirate, plate_code, plate_number, vin, reference_image_url, image_source",
+      )
       .eq("customer_id", id)
       .order("created_at", { ascending: false }),
     supabase
@@ -168,19 +170,16 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                 <Link key={v.id} href={`/vehicles/${v.id}`}>
                   <Card className="flex items-center gap-3 p-4 transition-colors hover:border-primary/50">
                     <div className="h-14 w-20 shrink-0 overflow-hidden rounded-md border border-border bg-muted">
-                      {v.reference_image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={v.reference_image_url || "/placeholder.svg"}
-                          alt={`${v.make ?? ""} ${v.model ?? ""}`}
-                          className="h-full w-full object-cover"
-                          crossOrigin="anonymous"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <BrandLogo make={v.make} size={28} />
-                        </div>
-                      )}
+                      <VehicleVisual
+                        make={v.make}
+                        model={v.model}
+                        bodyType={v.body_type}
+                        color={v.color}
+                        referenceImage={v.reference_image_url}
+                        referenceImageSource={v.image_source}
+                        className="h-full w-full"
+                        alt={`${v.make ?? ""} ${v.model ?? ""}`}
+                      />
                     </div>
                     <div className="min-w-0">
                       <div className="truncate font-medium text-foreground">

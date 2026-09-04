@@ -7,7 +7,7 @@ import { getPublicSiteInfo } from "@/lib/site-info"
 import { HomeCtaTracker } from "@/components/site/home-cta-tracker"
 
 export const metadata: Metadata = {
-  title: "SHWURX Garage — Premium Auto Service & Repair",
+  title: "SHWURX Auto Service Center — Premium Auto Service & Repair",
   description:
     "Precision auto care in the UAE. Book your service online, track your vehicle in real time, and drive away with confidence.",
 }

@@ -3,7 +3,7 @@ import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { PurchaseOrderForm } from "@/components/purchase-order-form"
 
-export const metadata = { title: "New Purchase Order · SHWURX Garage" }
+export const metadata = { title: "New Purchase Order · SHWURX Auto Service Center" }
 
 export default async function NewPOPage({
   searchParams,

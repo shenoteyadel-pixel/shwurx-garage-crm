@@ -6,7 +6,7 @@ import { Card, Badge, Button } from "@/components/ui"
 import { formatDate } from "@/lib/utils"
 import { Plus, Users, Phone, Car } from "lucide-react"
 
-export const metadata = { title: "Customers · SHWURX Garage" }
+export const metadata = { title: "Customers · SHWURX Auto Service Center" }
 
 export default async function CustomersPage({
   searchParams,

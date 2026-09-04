@@ -4,7 +4,7 @@ import { AppShell } from "@/components/app-shell"
 import { InvoiceForm } from "@/components/invoice-form"
 import { VAT_RATE } from "@/lib/constants"
 
-export const metadata = { title: "New Invoice · SHWURX Garage" }
+export const metadata = { title: "New Invoice · SHWURX Auto Service Center" }
 
 export default async function NewInvoicePage({
   searchParams,

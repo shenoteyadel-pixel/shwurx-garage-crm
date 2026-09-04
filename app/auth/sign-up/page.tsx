@@ -46,7 +46,7 @@ export default function SignUpPage() {
             <Wrench className="h-7 w-7 text-primary-foreground" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">
-            SHWURX <span className="text-primary">Garage</span>
+            SHWURX <span className="text-primary">Auto Service Center</span>
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">Register a staff account</p>
         </div>

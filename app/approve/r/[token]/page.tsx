@@ -21,7 +21,7 @@ export default async function ApproveRequestPage({ params }: { params: Promise<{
           </div>
           <div className="leading-tight">
             <div className="text-sm font-bold tracking-tight">
-              SHWURX <span className="text-primary">Garage</span>
+              SHWURX <span className="text-primary">Auto Service Center</span>
             </div>
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Repair Approval</div>
           </div>
@@ -31,7 +31,7 @@ export default async function ApproveRequestPage({ params }: { params: Promise<{
         <ApprovalRequestView token={token} data={data as any} />
       </main>
       <footer className="mx-auto max-w-2xl px-4 py-8 text-center text-xs text-muted-foreground">
-        Secured by SHWURX Garage CRM · This link is unique to your vehicle and legally records your decision.
+        Secured by SHWURX Auto Service Center CRM · This link is unique to your vehicle and legally records your decision.
       </footer>
     </div>
   )

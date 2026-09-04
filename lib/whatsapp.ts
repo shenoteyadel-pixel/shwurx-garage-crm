@@ -11,7 +11,7 @@ export function buildApprovalMessage(opts: {
   link: string
 }) {
   return (
-    `Hello ${opts.customerName}, this is SHWURX Garage.\n\n` +
+    `Hello ${opts.customerName}, this is SHWURX Auto Service Center.\n\n` +
     `Your quotation for ${opts.vehicle} (Job ${opts.jobNumber}) is ready.\n` +
     `Estimated total: ${opts.total}\n\n` +
     `Please review the photos and quotation and approve or reject here:\n${opts.link}\n\n` +

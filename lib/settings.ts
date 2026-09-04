@@ -20,7 +20,7 @@ export type Settings = {
 
 const DEFAULTS: Settings = {
   id: 1,
-  company_name: "SHWURX Garage",
+  company_name: "SHWURX Auto Service Center",
   legal_name: "SHENOTEY ESKANDER AUTOMOTIVE CENTER",
   trade_license: "1033544",
   trn: "10044045860003",

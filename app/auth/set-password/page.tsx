@@ -63,7 +63,7 @@ export default function SetPasswordPage() {
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Wrench className="h-5 w-5" />
           </span>
-          <span className="text-lg font-semibold text-foreground">Shwurx Garage</span>
+          <span className="text-lg font-semibold text-foreground">SHWURX Auto Service Center</span>
         </div>
 
         {checking ? (

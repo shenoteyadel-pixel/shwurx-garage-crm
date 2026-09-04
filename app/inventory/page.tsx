@@ -3,7 +3,7 @@ import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { InventoryClient } from "@/components/inventory-client"
 
-export const metadata = { title: "Store & Inventory · SHWURX Garage" }
+export const metadata = { title: "Store & Inventory · SHWURX Auto Service Center" }
 
 export default async function InventoryPage() {
   const user = await getShellUser()

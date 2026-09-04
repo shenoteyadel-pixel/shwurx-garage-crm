@@ -55,7 +55,7 @@ export function JobCustomerAccess({ jobId }: { jobId: string }) {
   function shareWhatsApp() {
     if (!info?.trackingUrl) return
     const digits = (info.mobile ?? "").replace(/[^\d]/g, "")
-    const msg = `Hi ${info.customerName}, track your ${info.vehicleLabel} live at SHWURX Garage: ${info.trackingUrl}`
+    const msg = `Hi ${info.customerName}, track your ${info.vehicleLabel} live at SHWURX Auto Service Center: ${info.trackingUrl}`
     const href = digits
       ? `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`
       : `https://wa.me/?text=${encodeURIComponent(msg)}`

@@ -31,7 +31,7 @@ export function PortalView({
             <Car className="h-5 w-5 text-primary" />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-bold leading-tight tracking-tight">SHWURX Garage</h1>
+            <h1 className="text-lg font-bold leading-tight tracking-tight">SHWURX Auto Service Center</h1>
             <p className="truncate text-xs text-muted-foreground">Service status for {customer.full_name}</p>
           </div>
           {headerRight}

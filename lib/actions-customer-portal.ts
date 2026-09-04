@@ -117,7 +117,7 @@ export async function ensureCustomerPortalForJob(input: {
 
     const send = await sendEmail({
       to: email,
-      subject: "Your vehicle has been checked in · Shwurx Garage",
+      subject: "Your vehicle has been checked in · SHWURX Auto Service Center",
       html: customerCheckInEmail({
         name: customer.full_name ?? "",
         vehicle: input.vehicleLabel,
@@ -225,7 +225,7 @@ export async function inviteCustomerToPortal(customerId: string): Promise<Creden
 
   const send = await sendEmail({
     to: email,
-    subject: "Track your vehicle with Shwurx Garage",
+    subject: "Track your vehicle with SHWURX Auto Service Center",
     html: customerWelcomeEmail({ name: customer.full_name ?? "", url: link }),
     idempotencyKey: `customer-invite/${userId}`,
   })
@@ -288,7 +288,7 @@ export async function autoProvisionCustomerPortal(customerId: string): Promise<v
     const link = await generateActionLink({ email, type: "invite", redirectPath: "/portal" })
     await sendEmail({
       to: email,
-      subject: "Track your vehicle with Shwurx Garage",
+      subject: "Track your vehicle with SHWURX Auto Service Center",
       html: customerWelcomeEmail({ name: customer.full_name ?? "", url: link }),
       idempotencyKey: `customer-autoinvite/${userId}`,
     })

@@ -27,9 +27,13 @@ export function SiteHeader({ info }: { info: PublicSiteInfo }) {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
             <Wrench className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-base font-bold tracking-tight">
-            {info.companyName.split(" ")[0] || "SHWURX"}{" "}
-            <span className="text-primary">{info.companyName.split(" ").slice(1).join(" ") || "Garage"}</span>
+          <span className="flex flex-col leading-none">
+            <span className="text-base font-bold tracking-tight">
+              {info.companyName.split(" ")[0] || "SHWURX"}
+            </span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
+              {info.companyName.split(" ").slice(1).join(" ") || "Auto Service Center"}
+            </span>
           </span>
         </Link>
 

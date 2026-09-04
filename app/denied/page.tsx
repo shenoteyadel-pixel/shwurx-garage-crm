@@ -3,7 +3,7 @@ import { ShieldAlert } from "lucide-react"
 import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 
-export const metadata = { title: "Access Denied · SHWURX Garage" }
+export const metadata = { title: "Access Denied · SHWURX Auto Service Center" }
 
 export default async function DeniedPage({
   searchParams,

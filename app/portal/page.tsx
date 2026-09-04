@@ -4,7 +4,7 @@ import { loadPortalDataByCustomer } from "@/lib/portal-data"
 import { PortalView } from "@/components/portal-view"
 import { signOut } from "@/lib/actions"
 
-export const metadata = { title: "Customer Portal · SHWURX Garage" }
+export const metadata = { title: "Customer Portal · SHWURX Auto Service Center" }
 
 function InfoLanding() {
   return (
@@ -13,7 +13,7 @@ function InfoLanding() {
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
           <Car className="h-7 w-7 text-primary" />
         </div>
-        <h1 className="text-xl font-bold tracking-tight">SHWURX Garage Customer Portal</h1>
+        <h1 className="text-xl font-bold tracking-tight">SHWURX Auto Service Center Customer Portal</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           Track your vehicle&apos;s service progress and invoices using the secure link shared with you by our team.
         </p>

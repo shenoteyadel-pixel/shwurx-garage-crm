@@ -92,7 +92,7 @@ export interface InviteMessageInput {
   kind?: "set" | "reset"
 }
 
-const DEFAULT_WORKSHOP = "SHWURX Auto Garage"
+const DEFAULT_WORKSHOP = "SHWURX Auto Service Center"
 
 // A clean, professional WhatsApp message an admin can send to a new staff member.
 // Kept plain-text (no markdown) so it renders well inside WhatsApp.

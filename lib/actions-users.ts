@@ -179,7 +179,7 @@ async function inviteStaffUserInner(formData: FormData): Promise<CredentialLinkR
   const send = link
     ? await sendEmail({
         to: email,
-        subject: "Set up your Shwurx Garage account",
+        subject: "Set up your SHWURX Auto Service Center account",
         html: staffInviteEmail({ fullName, roleLabel: meta.label, url: link }),
         idempotencyKey: `staff-invite/${userId}/${now}`,
       })
@@ -256,7 +256,7 @@ export async function resendStaffInvite(userId: string): Promise<CredentialLinkR
     const link = await generateActionLink({ email: profile.email, type: "invite", redirectPath: "/auth/set-password" })
     const send = await sendEmail({
       to: profile.email,
-      subject: "Set up your Shwurx Garage account",
+      subject: "Set up your SHWURX Auto Service Center account",
       html: staffInviteEmail({ fullName: profile.full_name ?? "", roleLabel: meta?.label ?? "staff", url: link }),
     })
     await svc
@@ -301,7 +301,7 @@ export async function sendPasswordReset(userId: string): Promise<CredentialLinkR
     const link = await generateActionLink({ email: profile.email, type: "recovery", redirectPath: "/auth/set-password" })
     const send = await sendEmail({
       to: profile.email,
-      subject: "Reset your Shwurx Garage password",
+      subject: "Reset your SHWURX Auto Service Center password",
       html: resetPasswordEmail({ fullName: profile.full_name ?? "", url: link }),
     })
     await logAction(ctx, "user.password_reset", "user", userId, { emailSent: send.sent })

@@ -7,7 +7,7 @@ import { CalendarClock } from "lucide-react"
 import { AppointmentsBoard } from "@/components/appointments-board"
 import type { AppointmentRow } from "@/lib/actions-appointments"
 
-export const metadata = { title: "Appointments · SHWURX Garage" }
+export const metadata = { title: "Appointments · SHWURX Auto Service Center" }
 export const dynamic = "force-dynamic"
 
 export default async function AppointmentsPage() {

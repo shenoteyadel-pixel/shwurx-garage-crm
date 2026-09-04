@@ -7,7 +7,7 @@ import { Inbox } from "lucide-react"
 import { LeadsBoard } from "@/components/leads-board"
 import type { LeadRow } from "@/lib/actions-leads"
 
-export const metadata = { title: "Leads · SHWURX Garage" }
+export const metadata = { title: "Leads · SHWURX Auto Service Center" }
 export const dynamic = "force-dynamic"
 
 export default async function LeadsPage() {

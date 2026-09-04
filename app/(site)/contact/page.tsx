@@ -4,8 +4,8 @@ import { ContactForm } from "@/components/site/contact-form"
 import { getPublicSiteInfo } from "@/lib/site-info"
 
 export const metadata: Metadata = {
-  title: "Contact — SHWURX Garage",
-  description: "Get in touch with SHWURX Garage. Call, email, or message us on WhatsApp.",
+  title: "Contact — SHWURX Auto Service Center",
+  description: "Get in touch with SHWURX Auto Service Center. Call, email, or message us on WhatsApp.",
 }
 
 export default async function ContactPage() {

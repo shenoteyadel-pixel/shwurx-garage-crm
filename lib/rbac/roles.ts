@@ -72,6 +72,7 @@ export type Permission =
   | "invoices.view" | "invoices.create" | "invoices.edit"
   | "payments.view" | "payments.record"
   | "prices.view"
+  | "costs.view" | "suppliers.view" | "profit.view"
   | "parts.view" | "parts.manage" | "purchase_orders.manage"
   | "reports.view" | "reports.financial"
   | "appointments.view" | "appointments.manage"
@@ -134,7 +135,15 @@ export const PERMISSION_CATALOG: PermGroup[] = [
       { key: "invoices.edit", label: "Edit invoices" },
       { key: "payments.view", label: "View payments" },
       { key: "payments.record", label: "Record payments" },
-      { key: "prices.view", label: "See prices & totals" },
+    ],
+  },
+  {
+    group: "Financial Visibility",
+    perms: [
+      { key: "prices.view", label: "See selling prices & totals" },
+      { key: "costs.view", label: "See purchase / supplier cost" },
+      { key: "suppliers.view", label: "See supplier identity" },
+      { key: "profit.view", label: "See profit & margin" },
     ],
   },
   {

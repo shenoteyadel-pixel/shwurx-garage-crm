@@ -1,12 +1,19 @@
 "use client"
 
 import * as React from "react"
-import { VehicleSchematic } from "@/components/inspection/vehicle-schematics"
 import { DAMAGE_MAP } from "@/lib/inspection-config"
 import type { MarkerView, DamageType } from "@/lib/actions-inspections"
 import type { InspectionMarker } from "@/components/inspection/inspection-panel"
 import { cn } from "@/lib/utils"
 import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react"
+
+const VIEW_IMAGE: Record<MarkerView, string> = {
+  top: "/inspection/car-top.png",
+  front: "/inspection/car-front.png",
+  rear: "/inspection/car-rear.png",
+  left: "/inspection/car-left.png",
+  right: "/inspection/car-right.png",
+}
 
 /**
  * The premium multi-view inspection stage: the whole vehicle shown from every
@@ -54,12 +61,17 @@ function ClickableView({
         ref={ref}
         onClick={handleClick}
         className={cn(
-          "relative w-full overflow-hidden rounded-lg border border-border/60 bg-background/40 transition",
+          "relative w-full overflow-hidden rounded-lg border border-border/60 bg-[#0a0a0a] transition",
           big ? "aspect-[3/4]" : "aspect-square",
           !completed && "cursor-crosshair hover:border-primary/40",
         )}
       >
-        <VehicleSchematic view={cfg.key} />
+        <img
+          src={VIEW_IMAGE[cfg.key] || "/placeholder.svg"}
+          alt={`${cfg.label} view of vehicle`}
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+          draggable={false}
+        />
         {viewMarkers.map((m) => {
           const d = DAMAGE_MAP[m.damage_type]
           const isSel = m.id === selectedId

@@ -240,6 +240,6 @@ export async function convertAppointmentToJob(
   }
 
   revalidatePath("/appointments")
-  revalidatePath("/")
+  revalidatePath("/crm")
   return { jobId: job.id, customerId }
 }

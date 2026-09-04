@@ -26,6 +26,20 @@ function isPublicPath(path: string): boolean {
     if (path === prefix || path.startsWith(prefix + "/")) return true
   }
 
+  // Public marketing website (SHWURX.com). These live at the root and must be
+  // reachable by anyone — logged out OR logged in — without ever redirecting to
+  // the staff dashboard. The CRM now lives under /crm (still protected).
+  const publicSitePrefixes = [
+    "/services",
+    "/about",
+    "/appointment",
+    "/contact",
+  ]
+  if (path === "/") return true
+  for (const prefix of publicSitePrefixes) {
+    if (path === prefix || path.startsWith(prefix + "/")) return true
+  }
+
   return (
     path === "/auth" ||
     path.startsWith("/auth/") || // staff login, set-password, callback, error

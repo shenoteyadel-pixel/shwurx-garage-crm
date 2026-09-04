@@ -30,7 +30,7 @@ import {
 // Each item declares the permissions that reveal it. `anyOf` = show when the
 // user has at least one. Items with no perms are shown to all staff.
 const NAV = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/crm", label: "Dashboard", icon: LayoutDashboard },
   { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all"] },
   { href: "/jobs", label: "Job Cards", icon: Car, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
   { href: "/appointments", label: "Appointments", icon: CalendarClock, anyOf: ["appointments.view"] },
@@ -62,7 +62,7 @@ export function AppShell({
   const nav = (
     <nav className="flex flex-col gap-1">
       {visibleNav.map((item) => {
-        const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
+        const active = item.href === "/crm" ? pathname === "/crm" : pathname.startsWith(item.href)
         return (
           <Link
             key={item.href}
@@ -141,7 +141,7 @@ export function AppShell({
 
 function Brand({ compact }: { compact?: boolean }) {
   return (
-    <Link href="/" className="flex items-center gap-2.5">
+    <Link href="/crm" className="flex items-center gap-2.5">
       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
         <Wrench className="h-5 w-5 text-primary-foreground" />
       </div>

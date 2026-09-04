@@ -277,7 +277,12 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
             <p className="mb-3 mt-1 text-xs leading-relaxed text-muted-foreground">
               This is the documented condition of your vehicle when we received it. Tap any point to see details.
             </p>
-            <TrackInspectionDiagram inspection={detail.inspection} bodyType={detail.bodyType} />
+            <TrackInspectionDiagram
+              inspection={detail.inspection}
+              bodyType={detail.bodyType}
+              make={detail.make}
+              model={detail.model}
+            />
           </section>
         )}
 

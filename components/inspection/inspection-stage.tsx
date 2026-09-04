@@ -25,6 +25,8 @@ function ClickableView({
   completed,
   big,
   bodyType,
+  make,
+  model,
   onAdd,
   onSelect,
   onDelete,
@@ -35,6 +37,8 @@ function ClickableView({
   completed: boolean
   big?: boolean
   bodyType?: BodyType | string | null
+  make?: string | null
+  model?: string | null
   onAdd: (view: MarkerView, x: number, y: number) => void
   onSelect: (id: string) => void
   onDelete: (id: string) => void
@@ -65,7 +69,7 @@ function ClickableView({
         )}
       >
         <div className="pointer-events-none absolute inset-0 p-2">
-          <VehicleSchematic view={cfg.key} bodyType={bodyType} />
+          <VehicleSchematic view={cfg.key} make={make} model={model} bodyType={bodyType} />
         </div>
         {viewMarkers.map((m) => {
           const d = DAMAGE_MAP[m.damage_type]
@@ -112,6 +116,8 @@ export function InspectionStage({
   activeType,
   completed,
   bodyType,
+  make,
+  model,
   onAdd,
   onSelect,
   onDelete,
@@ -121,12 +127,14 @@ export function InspectionStage({
   activeType: DamageType
   completed: boolean
   bodyType?: BodyType | string | null
+  make?: string | null
+  model?: string | null
   onAdd: (view: MarkerView, x: number, y: number) => void
   onSelect: (id: string) => void
   onDelete: (id: string) => void
 }) {
   const [zoom, setZoom] = React.useState(1)
-  const shared = { markers, selectedId, completed, bodyType, onAdd, onSelect, onDelete }
+  const shared = { markers, selectedId, completed, bodyType, make, model, onAdd, onSelect, onDelete }
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-border bg-background/40 p-4">

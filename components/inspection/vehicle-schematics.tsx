@@ -15,6 +15,7 @@
 
 import type { MarkerView } from "@/lib/actions-inspections"
 import { type BodyType, resolveBodyType } from "@/lib/body-type"
+import { type VehicleProfile, resolveVehicleProfile } from "@/lib/vehicle"
 
 export const INSPECTION_VIEWS: { key: MarkerView; label: string }[] = [
   { key: "top", label: "Top" },
@@ -23,6 +24,45 @@ export const INSPECTION_VIEWS: { key: MarkerView; label: string }[] = [
   { key: "left", label: "Left" },
   { key: "right", label: "Right" },
 ]
+
+/**
+ * Photoreal 3D render sets (professional dark-studio look, brand-neutral) keyed
+ * by the fine-grained VehicleProfile produced by the make/model resolver in
+ * lib/vehicle.ts. Every profile has its own generated set (front/rear/side/top),
+ * so a 911 shows a low sports body, a G-Class a boxy 4x4, a Q7 a large SUV, and
+ * an S-Class a luxury sedan — no cross-brand mixups. Left/right reuse the single
+ * side render (right is mirrored). resolveVehicleProfile always returns a valid
+ * profile, so a render always exists; the vector line-art below is a safety net.
+ */
+const RENDER_SET: Record<VehicleProfile, string> = {
+  sedan: "sedan",
+  sedan_luxury: "sedan_luxury",
+  coupe: "coupe",
+  sports: "sports",
+  hatchback: "hatchback",
+  wagon: "wagon",
+  suv: "suv",
+  suv_large: "suv_large",
+  suv_boxy: "suv_boxy",
+  pickup: "pickup",
+  van: "van",
+  convertible: "convertible",
+}
+
+/** File name (within the render set) for each inspection view. */
+const RENDER_VIEW_FILE: Record<MarkerView, string> = {
+  top: "top",
+  front: "front",
+  rear: "rear",
+  left: "side",
+  right: "side",
+}
+
+function renderSrc(profile: VehicleProfile, view: MarkerView): string | null {
+  const set = RENDER_SET[profile]
+  if (!set) return null
+  return `/inspection/renders/${set}/${RENDER_VIEW_FILE[view]}.png`
+}
 
 /* Flat fill + outline for the car body panels */
 const body = {
@@ -383,14 +423,49 @@ function RearBody({ stance }: { stance: Stance }) {
 
 export function VehicleSchematic({
   view,
+  make,
+  model,
+  profile: profileProp,
   bodyType: bodyTypeRaw,
+  forceSchematic,
 }: {
   view: MarkerView
+  /** Vehicle make (e.g. "Porsche") — used to resolve the model-accurate profile. */
+  make?: string | null
+  /** Vehicle model (e.g. "911") — used to resolve the model-accurate profile. */
+  model?: string | null
+  /** Pre-resolved profile; overrides make/model/bodyType resolution when given. */
+  profile?: VehicleProfile
+  /** Legacy body-type hint, used as a fallback when make/model are unknown. */
   bodyType?: BodyType | string | null
+  /**
+   * Force the flat vector line-art instead of the photoreal render. Used on the
+   * printed report, where the dark studio renders would print as dark boxes on
+   * white paper; the line diagram is the correct look for a paper form.
+   */
+  forceSchematic?: boolean
 }) {
   const bodyType = resolveBodyType(typeof bodyTypeRaw === "string" ? bodyTypeRaw : bodyTypeRaw ?? null)
   const stance = STANCE_BY_TYPE[bodyType]
   const open = bodyType === "convertible"
+
+  // Resolve the fine-grained profile from make/model (falling back to the body
+  // type), then pick the matching photoreal render set. The right side reuses
+  // the (front-left-facing) side render, mirrored.
+  const profile =
+    profileProp ?? resolveVehicleProfile(make ?? null, model ?? null, typeof bodyTypeRaw === "string" ? bodyTypeRaw : null)
+  const src = forceSchematic ? null : renderSrc(profile, view)
+  if (src) {
+    return (
+      <img
+        src={src || "/placeholder.svg"}
+        alt={`${profile} ${view} view`}
+        draggable={false}
+        className="h-full w-full object-contain"
+        style={view === "right" ? { transform: "scaleX(-1)" } : undefined}
+      />
+    )
+  }
 
   return (
     <svg

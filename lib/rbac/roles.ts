@@ -74,6 +74,9 @@ export type Permission =
   | "prices.view"
   | "parts.view" | "parts.manage" | "purchase_orders.manage"
   | "reports.view" | "reports.financial"
+  | "appointments.view" | "appointments.manage"
+  | "leads.view" | "leads.manage"
+  | "marketing.view"
   | "users.manage" | "permissions.manage" | "settings.manage" | "audit.view"
 
 export interface PermGroup {
@@ -147,6 +150,16 @@ export const PERMISSION_CATALOG: PermGroup[] = [
     perms: [
       { key: "reports.view", label: "View reports" },
       { key: "reports.financial", label: "View financial reports" },
+    ],
+  },
+  {
+    group: "Website & Leads",
+    perms: [
+      { key: "appointments.view", label: "View appointments" },
+      { key: "appointments.manage", label: "Manage appointments" },
+      { key: "leads.view", label: "View leads" },
+      { key: "leads.manage", label: "Manage leads" },
+      { key: "marketing.view", label: "View website analytics" },
     ],
   },
   {

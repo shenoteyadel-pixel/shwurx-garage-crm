@@ -76,7 +76,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
               id="footer_note"
               name="footer_note"
               defaultValue={settings.footer_note ?? ""}
-              placeholder="e.g. Thank you for choosing SHWURX Garage. Payment due within 7 days."
+              placeholder="e.g. Thank you for choosing SHWURX Auto Service Center. Payment due within 7 days."
               className="min-h-16"
             />
           </div>

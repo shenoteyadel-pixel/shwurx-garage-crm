@@ -3,7 +3,7 @@ import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { ReportsClient } from "@/components/reports-client"
 
-export const metadata = { title: "Reports · SHWURX Garage" }
+export const metadata = { title: "Reports · SHWURX Auto Service Center" }
 
 function monthRange() {
   const now = new Date()

@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server"
 import { VehicleCreateForm } from "@/components/vehicle-create-form"
 import { ArrowLeft } from "lucide-react"
 
-export const metadata = { title: "Add Vehicle · SHWURX Garage" }
+export const metadata = { title: "Add Vehicle · SHWURX Auto Service Center" }
 
 export default async function NewVehiclePage({
   searchParams,

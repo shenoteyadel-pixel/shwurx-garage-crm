@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell"
 import { UserManagement } from "@/components/admin/user-management"
 import { ShieldCheck, SlidersHorizontal } from "lucide-react"
 
-export const metadata = { title: "Users & Roles · SHWURX Garage" }
+export const metadata = { title: "Users & Roles · SHWURX Auto Service Center" }
 
 export default async function UsersPage() {
   const [shellUser, ctx] = await Promise.all([getShellUser(), getSessionContext()])

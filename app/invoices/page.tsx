@@ -3,7 +3,7 @@ import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { InvoicesClient } from "@/components/invoices-client"
 
-export const metadata = { title: "Invoices · SHWURX Garage" }
+export const metadata = { title: "Invoices · SHWURX Auto Service Center" }
 
 export default async function InvoicesPage() {
   const user = await getShellUser()

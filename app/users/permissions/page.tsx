@@ -7,7 +7,7 @@ import { AppShell } from "@/components/app-shell"
 import { PermissionMatrix } from "@/components/admin/permission-matrix"
 import { ArrowLeft } from "lucide-react"
 
-export const metadata = { title: "Permission Matrix · SHWURX Garage" }
+export const metadata = { title: "Permission Matrix · SHWURX Auto Service Center" }
 
 export default async function PermissionsMatrixPage() {
   const [shellUser, ctx] = await Promise.all([getShellUser(), getSessionContext()])

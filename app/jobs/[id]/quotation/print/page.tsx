@@ -117,7 +117,7 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
         <div className="mt-10 border-t border-neutral-200 pt-4 text-center text-xs text-neutral-400">
           This quotation is valid for 14 days from the date of issue. Prices are inclusive of VAT where applicable.
           <br />
-          Thank you for choosing SHWURX Garage.
+          Thank you for choosing SHWURX Auto Service Center.
         </div>
       </div>
     </main>

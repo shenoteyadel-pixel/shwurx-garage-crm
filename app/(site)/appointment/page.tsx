@@ -4,7 +4,7 @@ import { AppointmentForm } from "@/components/site/appointment-form"
 import { getPublicSiteInfo } from "@/lib/site-info"
 
 export const metadata: Metadata = {
-  title: "Book an Appointment — SHWURX Garage",
+  title: "Book an Appointment — SHWURX Auto Service Center",
   description: "Reserve your service slot online. We'll confirm your appointment by phone.",
 }
 

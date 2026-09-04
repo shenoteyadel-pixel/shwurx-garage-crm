@@ -31,7 +31,7 @@ export default async function ApprovePage({ params }: { params: Promise<{ token:
         <ApprovalView token={token} data={data as any} />
       </main>
       <footer className="mx-auto max-w-2xl px-4 py-8 text-center text-xs text-muted-foreground">
-        Secured by SHWURX Garage CRM · This link is unique to your vehicle.
+        Secured by SHWURX Auto Service Center CRM · This link is unique to your vehicle.
       </footer>
     </div>
   )

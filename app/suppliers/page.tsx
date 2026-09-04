@@ -3,7 +3,7 @@ import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { SuppliersClient } from "@/components/suppliers-client"
 
-export const metadata = { title: "Suppliers · SHWURX Garage" }
+export const metadata = { title: "Suppliers · SHWURX Auto Service Center" }
 
 export default async function SuppliersPage() {
   const user = await getShellUser()

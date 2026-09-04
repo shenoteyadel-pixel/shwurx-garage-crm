@@ -20,7 +20,7 @@ export function DocHeader({
         </div>
         {settings.company_name && settings.company_name !== settings.legal_name && (
           <p className="mt-0.5 text-xs font-medium text-[#e51f2b]">
-            {settings.company_name?.toUpperCase().includes("SHWURX") ? "SHWURX Garage" : settings.company_name}
+            {settings.company_name?.toUpperCase().includes("SHWURX") ? "SHWURX Auto Service Center" : settings.company_name}
           </p>
         )}
         <div className="mt-1.5 space-y-0.5 text-[11px] text-neutral-500">

@@ -5,8 +5,8 @@ import { ArrowRight, Award, Users, Timer } from "lucide-react"
 import { getPublicSiteInfo } from "@/lib/site-info"
 
 export const metadata: Metadata = {
-  title: "About — SHWURX Garage",
-  description: "Meet the team behind SHWURX Garage — specialist technicians committed to honest, precise auto care.",
+  title: "About — SHWURX Auto Service Center",
+  description: "Meet the team behind SHWURX Auto Service Center — specialist technicians committed to honest, precise auto care.",
 }
 
 const STATS = [

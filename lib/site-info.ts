@@ -17,7 +17,7 @@ export type PublicSiteInfo = {
 }
 
 const DEFAULTS: PublicSiteInfo = {
-  companyName: "SHWURX Garage",
+  companyName: "SHWURX Auto Service Center",
   phone: null,
   whatsapp: null,
   email: null,

@@ -793,7 +793,7 @@ function JobSuccessDialog({
   function shareWhatsApp() {
     if (!trackingUrl) return
     const digits = (customerMobile ?? "").replace(/[^\d]/g, "")
-    const msg = `Hi ${result.customerName}, your ${result.vehicleLabel} (Job ${result.jobNumber}) has been checked in at SHWURX Garage. Track it live here: ${trackingUrl}`
+    const msg = `Hi ${result.customerName}, your ${result.vehicleLabel} (Job ${result.jobNumber}) has been checked in at SHWURX Auto Service Center. Track it live here: ${trackingUrl}`
     const href = digits
       ? `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`
       : `https://wa.me/?text=${encodeURIComponent(msg)}`

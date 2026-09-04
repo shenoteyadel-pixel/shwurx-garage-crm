@@ -4,7 +4,7 @@ import { resolveTrackingToken, recordTrackingOpen } from "@/lib/portal-data"
 import { loadTrackingDetail } from "@/lib/tracking-data"
 import { TrackExperience } from "@/components/track-experience"
 
-export const metadata = { title: "Track Your Vehicle · SHWURX Garage" }
+export const metadata = { title: "Track Your Vehicle · SHWURX Auto Service Center" }
 
 // Public, secure, tokenized tracking page. The token is an opaque random string
 // (never a raw DB id) and only resolves customer-safe data. This page is in the
@@ -42,7 +42,7 @@ function TrackingNotice({ variant }: { variant: "invalid" | "expired" }) {
       <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary">
         <Wrench className="h-7 w-7 text-primary-foreground" />
       </div>
-      <div className="text-xs font-bold uppercase tracking-[0.2em] text-primary">SHWURX Garage</div>
+      <div className="text-xs font-bold uppercase tracking-[0.2em] text-primary">SHWURX Auto Service Center</div>
       <h1 className="mt-3 text-balance text-2xl font-bold">
         {expired ? "This tracking link has expired" : "Tracking link invalid"}
       </h1>

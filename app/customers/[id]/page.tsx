@@ -10,7 +10,7 @@ import { BrandLogo } from "@/components/vehicle-visual"
 import { PortalLinkButton } from "@/components/portal-link-button"
 import { ArrowLeft, Pencil, Plus, Phone, Mail, Building2, Car, FileText, ReceiptText, Wrench } from "lucide-react"
 
-export const metadata = { title: "Customer · SHWURX Garage" }
+export const metadata = { title: "Customer · SHWURX Auto Service Center" }
 
 function plateLabel(v: { plate_emirate?: string | null; plate_code?: string | null; plate_number?: string | null }) {
   return [v.plate_emirate, v.plate_code, v.plate_number].filter(Boolean).join(" ") || "No plate"

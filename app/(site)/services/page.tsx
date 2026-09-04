@@ -4,7 +4,7 @@ import { ArrowRight } from "lucide-react"
 import { SITE_SERVICES } from "@/lib/site-services"
 
 export const metadata: Metadata = {
-  title: "Services — SHWURX Garage",
+  title: "Services — SHWURX Auto Service Center",
   description:
     "Major and minor servicing, diagnostics, engine and mechanical repair, detailing, A/C, electrical, and pre-purchase inspections.",
 }

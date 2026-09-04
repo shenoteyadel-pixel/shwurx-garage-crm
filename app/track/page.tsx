@@ -4,7 +4,7 @@ import { Wrench, Radar, ArrowLeft } from "lucide-react"
 import { TrackEntry } from "@/components/site/track-entry"
 
 export const metadata: Metadata = {
-  title: "Track Your Vehicle — SHWURX Garage",
+  title: "Track Your Vehicle — SHWURX Auto Service Center",
   description: "Enter your tracking code to follow your vehicle's progress in real time.",
 }
 

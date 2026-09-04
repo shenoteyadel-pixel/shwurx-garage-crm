@@ -31,7 +31,7 @@ const str = (v: FormDataEntryValue | null) => (v ? String(v) : "") || null
 export async function saveSettings(formData: FormData) {
   const { supabase } = await guard("settings.manage")
   const patch = {
-    company_name: String(formData.get("company_name") || "SHWURX Garage"),
+    company_name: String(formData.get("company_name") || "SHWURX Auto Service Center"),
     legal_name: str(formData.get("legal_name")),
     trade_license: str(formData.get("trade_license")),
     trn: str(formData.get("trn")),

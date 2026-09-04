@@ -11,7 +11,7 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 import { STAGES } from "@/lib/constants"
 import { ArrowLeft, Car, Gauge, Hash, Fingerprint, Palette, FileText, ReceiptText } from "lucide-react"
 
-export const metadata = { title: "Vehicle · SHWURX Garage" }
+export const metadata = { title: "Vehicle · SHWURX Auto Service Center" }
 
 function plateStr(v: any) {
   return [v.plate_emirate, v.plate_code, v.plate_number].filter(Boolean).join(" ") || "No plate"

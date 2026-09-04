@@ -4,7 +4,7 @@ import { AppShell } from "@/components/app-shell"
 import { CustomerForm } from "@/components/customer-form"
 import { ArrowLeft } from "lucide-react"
 
-export const metadata = { title: "New Customer · SHWURX Garage" }
+export const metadata = { title: "New Customer · SHWURX Auto Service Center" }
 
 export default async function NewCustomerPage() {
   const user = await getShellUser()

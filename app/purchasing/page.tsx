@@ -6,7 +6,7 @@ import { Card, Button, Badge } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { Plus, ShoppingCart } from "lucide-react"
 
-export const metadata = { title: "Purchasing · SHWURX Garage" }
+export const metadata = { title: "Purchasing · SHWURX Auto Service Center" }
 
 const STATUS: Record<string, string> = {
   draft: "border-neutral-500/30 bg-neutral-500/15 text-neutral-300",

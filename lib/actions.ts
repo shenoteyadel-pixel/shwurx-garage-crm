@@ -477,6 +477,94 @@ export async function saveQuotation(
   revalidatePath(`/jobs/${jobId}`)
 }
 
+/* ---------------- Convert parts requests into the quotation ---------------- */
+// Pulls every active Parts Request line onto the customer quotation as part
+// items so they can be sent for approval. Existing quotation lines (labour and
+// any parts already added) are preserved, and parts already present by name are
+// skipped so this is safe to run more than once.
+export async function sendPartsToQuotation(jobId: string) {
+  const { supabase } = await guard("quotations.create")
+
+  const { data: job } = await supabase.from("jobs").select("approval_status").eq("id", jobId).maybeSingle()
+  if (job?.approval_status === "approved") {
+    throw new Error("This quotation has been approved and is locked.")
+  }
+
+  // Existing quotation (if any) — keep its settings and current line items.
+  const { data: quotation } = await supabase
+    .from("quotations")
+    .select(
+      "vat_rate, vat_inclusive, description, internal_notes, quotation_items(kind, name, part_number, detail, quantity, unit_price, labour_hours, labour_rate, discount, category, recommendation, sort_order)",
+    )
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const existingItems: QuoteItemInput[] = ((quotation?.quotation_items as any[]) ?? [])
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map((i) => ({
+      kind: i.kind === "labor" ? "labor" : "part",
+      name: i.name ?? "",
+      part_number: i.part_number ?? "",
+      detail: i.detail ?? "",
+      quantity: Number(i.quantity) || 0,
+      unit_price: Number(i.unit_price) || 0,
+      labour_hours: Number(i.labour_hours) || 0,
+      labour_rate: Number(i.labour_rate) || 0,
+      discount: Number(i.discount) || 0,
+      category: i.category ?? undefined,
+      recommendation: i.recommendation ?? "required",
+    }))
+
+  // Active parts requests for this job.
+  const { data: parts, error: partsErr } = await supabase
+    .from("parts_requests")
+    .select("part_name, quantity, cost, notes")
+    .eq("job_id", jobId)
+    .is("deleted_at", null)
+    .order("created_at")
+  if (partsErr) throw new Error(partsErr.message)
+
+  const existingPartNames = new Set(
+    existingItems.filter((i) => i.kind === "part").map((i) => i.name.trim().toLowerCase()),
+  )
+
+  const newParts: QuoteItemInput[] = (parts ?? [])
+    .filter((p) => (p.part_name || "").trim() && !existingPartNames.has((p.part_name || "").trim().toLowerCase()))
+    .map((p) => ({
+      kind: "part",
+      name: p.part_name,
+      part_number: "",
+      detail: p.notes ?? "",
+      quantity: Number(p.quantity) || 1,
+      unit_price: Number(p.cost) || 0,
+      labour_hours: 0,
+      labour_rate: 0,
+      discount: 0,
+      recommendation: "required",
+    }))
+
+  if (newParts.length === 0) {
+    // Nothing new to add — surface a clear signal to the caller.
+    throw new Error(
+      (parts?.length ?? 0) === 0
+        ? "There are no parts to send. Add parts first."
+        : "All parts are already on the quotation.",
+    )
+  }
+
+  await saveQuotation(jobId, {
+    description: quotation?.description ?? "",
+    internalNotes: quotation?.internal_notes ?? "",
+    vatRate: Number(quotation?.vat_rate ?? VAT_RATE),
+    vatInclusive: Boolean(quotation?.vat_inclusive),
+    items: [...existingItems, ...newParts],
+  })
+
+  revalidatePath(`/jobs/${jobId}`)
+}
+
 /* ---------------- Send approval to customer ---------------- */
 export async function sendApproval(jobId: string) {
   const { supabase } = await guard("quotations.edit")

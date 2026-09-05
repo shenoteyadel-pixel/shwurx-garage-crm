@@ -311,7 +311,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 printHref={`/jobs/${job.id}/quotation/print`}
                 locked={locked}
               />
-              <PartsManager jobId={job.id} parts={(parts ?? []) as any} />
+              <PartsManager jobId={job.id} parts={(parts ?? []) as any} locked={locked} />
             </>
           ) : (
             <>

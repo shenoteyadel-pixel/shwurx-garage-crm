@@ -6,7 +6,6 @@ import { Badge, Card, UAEPlate } from "@/components/ui"
 import { StageStepper } from "@/components/stage-stepper"
 import { QuotationBuilder } from "@/components/quotation-builder"
 import { PartsManager } from "@/components/parts-manager"
-import { ApprovalSender } from "@/components/approval-sender"
 import { ApprovalsPanel } from "@/components/approvals-panel"
 import { getJobApprovals } from "@/lib/actions-approvals"
 import { JobPhotos } from "@/components/job-photos"
@@ -68,6 +67,41 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .maybeSingle()
 
   const approvals = await getJobApprovals(id)
+
+  // Flag when the current quotation no longer matches the latest version the
+  // customer was sent, so staff are prompted to send a fresh approval version.
+  const latestQuoteApproval = approvals.find((a) => a.kind === "quotation")
+  let quoteChangedSinceSent = false
+  if (latestQuoteApproval && quotation) {
+    const rawItems = ((quotation.quotation_items as any[]) ?? [])
+    const vr = Number(quotation.vat_rate ?? 5)
+    const inc = Boolean(quotation.vat_inclusive)
+    const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+    let subtotal = 0
+    let vatAmount = 0
+    for (const i of rawItems) {
+      const kind = i.kind === "labor" || i.kind === "service" ? "labor" : "part"
+      const qty = Number(i.quantity) || 0
+      const unit = Number(i.unit_price) || 0
+      const hours = Number(i.labour_hours) || 0
+      const rate = Number(i.labour_rate) || 0
+      const discount = Number(i.discount) || 0
+      const grossBase = kind === "labor" ? (hours > 0 ? hours * rate : rate) : qty * unit
+      const base = Math.max(0, grossBase - discount)
+      if (inc) {
+        const net = base / (1 + vr / 100)
+        subtotal += round2(net)
+        vatAmount += round2(base - net)
+      } else {
+        subtotal += round2(base)
+        vatAmount += round2((base * vr) / 100)
+      }
+    }
+    const currentTotal = round2(subtotal + vatAmount)
+    quoteChangedSinceSent =
+      rawItems.length !== latestQuoteApproval.itemCount ||
+      Math.abs(currentTotal - latestQuoteApproval.total) > 0.01
+  }
 
   const { data: parts } = await supabase
     .from("parts_requests")
@@ -415,17 +449,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               hasQuotation={!!quotation}
               vatRate={Number(quotation?.vat_rate ?? 5)}
               vatInclusive={Boolean(quotation?.vat_inclusive)}
-            />
-          )}
-
-          {showPrices && (
-            <ApprovalSender
-              jobId={job.id}
-              token={job.approval_token}
-              hasQuotation={!!quotation}
-              approvalStatus={job.approval_status}
-              customerName={job.customer_name}
-              vehicle={vehicle}
+              quoteChanged={quoteChangedSinceSent}
             />
           )}
 

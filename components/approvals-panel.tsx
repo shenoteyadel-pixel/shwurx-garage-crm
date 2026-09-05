@@ -158,8 +158,9 @@ export function ApprovalsPanel({
 
       {hasQuotation && quoteChanged && (
         <p className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-300">
-          The quotation has changed since the last version you sent. Review the prices, then{" "}
-          <strong>Send for approval</strong> again so the customer sees the updated items and total.
+          The quotation has changed since the version the customer received, and their link is locked (they&apos;ve
+          already signed or started responding). Click <strong>Send for approval</strong> to send them an updated
+          version.
         </p>
       )}
 
@@ -178,8 +179,8 @@ export function ApprovalsPanel({
       </div>
 
       <p className="mt-2 text-[11px] text-muted-foreground">
-        &ldquo;Send for approval&rdquo; lets the customer approve or decline each item and sign. &ldquo;Whole quote&rdquo; is
-        all-or-nothing.
+        &ldquo;Send for approval&rdquo; lets the customer approve or decline each item and sign. The link stays the same and
+        auto-updates with any quote changes until they respond. &ldquo;Whole quote&rdquo; is all-or-nothing.
       </p>
 
       {/* Additional-work inline form */}

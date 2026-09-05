@@ -6,6 +6,7 @@ import { VAT_RATE } from "@/lib/constants"
 import { appBaseUrl } from "@/lib/account-links"
 import { sendEmail, approvalRequestEmail } from "@/lib/email"
 import { notifyByPermission } from "@/lib/actions-notifications"
+import { buildApprovalMessage, waMeLink } from "@/lib/whatsapp"
 import { revalidatePath } from "next/cache"
 
 /* =============================================================================
@@ -392,6 +393,44 @@ export async function resendApprovalEmail(
   )
   await svc.from("approval_requests").update({ sent_at: new Date().toISOString() }).eq("id", requestId)
   return { ok: true, emailed }
+}
+
+/**
+ * Build a WhatsApp deep link (wa.me) pre-filled with the approval message and
+ * the versioned /approve/r/<token> link for a specific approval request. The
+ * staff panel opens this so the advisor can send from their own WhatsApp.
+ */
+export async function getApprovalWhatsAppLink(
+  requestId: string,
+): Promise<{ ok: boolean; url?: string; error?: string }> {
+  await requirePermission("quotations.edit")
+  const svc = createServiceClient()
+
+  const { data: req } = await svc
+    .from("approval_requests")
+    .select("id, job_id, token, total")
+    .eq("id", requestId)
+    .maybeSingle()
+  if (!req) return { ok: false, error: "not_found" }
+
+  const { data: job } = await svc
+    .from("jobs")
+    .select("job_number, customer_name, customer_mobile, vehicle_make, vehicle_model")
+    .eq("id", req.job_id)
+    .maybeSingle()
+  if (!job) return { ok: false, error: "no_job" }
+  if (!job.customer_mobile) return { ok: false, error: "no_mobile" }
+
+  const vehicle = [job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "your vehicle"
+  const link = `${appBaseUrl()}/approve/r/${req.token}`
+  const message = buildApprovalMessage({
+    customerName: job.customer_name || "there",
+    jobNumber: String(job.job_number ?? ""),
+    vehicle,
+    total: `AED ${Number(req.total).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    link,
+  })
+  return { ok: true, url: waMeLink(job.customer_mobile as string, message) }
 }
 
 // Shared email sender — resolves the customer + vehicle and dispatches via Resend.

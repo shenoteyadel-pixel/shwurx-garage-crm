@@ -7,10 +7,11 @@ import {
   createApprovalRequest,
   createAdditionalWorkRequest,
   resendApprovalEmail,
+  getApprovalWhatsAppLink,
   type JobApproval,
 } from "@/lib/actions-approvals"
 import { formatCurrency } from "@/lib/utils"
-import { Copy, Check, Send, RefreshCw, FileCheck, Plus, Trash2, ScrollText } from "lucide-react"
+import { Copy, Check, Send, RefreshCw, FileCheck, Plus, Trash2, ScrollText, MessageCircle } from "lucide-react"
 
 const STATUS_META: Record<string, { label: string; chip: string }> = {
   pending: { label: "Awaiting customer", chip: "border-amber-500/30 bg-amber-500/10 text-amber-300" },
@@ -42,12 +43,14 @@ export function ApprovalsPanel({
   hasQuotation,
   vatRate,
   vatInclusive,
+  quoteChanged = false,
 }: {
   jobId: string
   approvals: JobApproval[]
   hasQuotation: boolean
   vatRate: number
   vatInclusive: boolean
+  quoteChanged?: boolean
 }) {
   const [busy, setBusy] = React.useState<string | null>(null)
   const [msg, setMsg] = React.useState<string | null>(null)
@@ -88,6 +91,21 @@ export function ApprovalsPanel({
     try {
       const res = await resendApprovalEmail(id)
       setMsg(res.ok && res.emailed ? "Email re-sent to the customer." : "Could not re-send email (no customer email on file?).")
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function whatsapp(id: string) {
+    setBusy(`wa-${id}`)
+    setMsg(null)
+    try {
+      const res = await getApprovalWhatsAppLink(id)
+      if (res.ok && res.url) {
+        window.open(res.url, "_blank", "noopener,noreferrer")
+      } else {
+        setMsg(res.error === "no_mobile" ? "No customer mobile number on file." : "Could not open WhatsApp.")
+      }
     } finally {
       setBusy(null)
     }
@@ -135,6 +153,13 @@ export function ApprovalsPanel({
       {!hasQuotation && (
         <p className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-300">
           Save a quotation first so the customer has something to approve.
+        </p>
+      )}
+
+      {hasQuotation && quoteChanged && (
+        <p className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-300">
+          The quotation has changed since the last version you sent. Review the prices, then{" "}
+          <strong>Send for approval</strong> again so the customer sees the updated items and total.
         </p>
       )}
 
@@ -291,6 +316,10 @@ export function ApprovalsPanel({
                   <Button type="button" variant="outline" size="sm" onClick={() => copy(a.token, a.id)}>
                     {copiedId === a.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                     {copiedId === a.id ? "Copied" : "Copy link"}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => whatsapp(a.id)} disabled={busy !== null}>
+                    <MessageCircle className="h-3.5 w-3.5" />
+                    {busy === `wa-${a.id}` ? "Opening…" : "WhatsApp"}
                   </Button>
                   {a.status === "pending" && (
                     <Button type="button" variant="outline" size="sm" onClick={() => resend(a.id)} disabled={busy !== null}>

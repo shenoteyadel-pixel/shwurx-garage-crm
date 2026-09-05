@@ -20,6 +20,7 @@ import {
   Truck,
   ExternalLink,
   User,
+  MessageCircle,
 } from "lucide-react"
 import {
   confirmAppointment,
@@ -36,6 +37,20 @@ import {
   type DriverOption,
 } from "@/lib/actions-appointments"
 import { FULFILLMENT_FLOW, type FulfillmentStatus } from "@/lib/appointments-fulfillment"
+
+// Normalize a UAE-style local number to an international WhatsApp target.
+// e.g. "05x xxx xxxx" -> "9715xxxxxxxx". Falls back to raw digits.
+function whatsappNumber(phone: string): string {
+  const digits = (phone || "").replace(/\D/g, "")
+  if (!digits) return ""
+  if (digits.startsWith("00")) return digits.slice(2)
+  if (digits.startsWith("971")) return digits
+  if (digits.startsWith("0")) return "971" + digits.slice(1)
+  return digits
+}
+
+const contactBtnClass =
+  "inline-flex items-center gap-1 rounded-lg border border-input bg-background px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
 
 const TYPE_META: Record<string, { label: string; tone: string; icon: typeof MapPin }> = {
   pickup: { label: "Pickup", tone: "bg-primary/15 text-primary", icon: MapPin },
@@ -179,6 +194,28 @@ function AppointmentCard({
             </a>
           ) : null}
         </div>
+      </div>
+
+      {/* Quick contact actions — always available so reception can reach the customer fast. */}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <a href={`tel:${a.phone}`} className={contactBtnClass}>
+          <Phone className="h-3.5 w-3.5" /> Call
+        </a>
+        {whatsappNumber(a.phone) ? (
+          <a
+            href={`https://wa.me/${whatsappNumber(a.phone)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={contactBtnClass}
+          >
+            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+          </a>
+        ) : null}
+        {a.email ? (
+          <a href={`mailto:${a.email}`} className={contactBtnClass}>
+            <Mail className="h-3.5 w-3.5" /> Email
+          </a>
+        ) : null}
       </div>
 
       {needsLogistics ? (

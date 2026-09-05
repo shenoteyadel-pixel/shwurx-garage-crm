@@ -10,6 +10,7 @@ import { sanitizeMileage } from "@/lib/utils"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
 import { notifyUser, notifyByPermission } from "@/lib/actions-notifications"
+import { syncPendingApproval } from "@/lib/actions-approvals"
 import { getSettings } from "@/lib/settings"
 
 /**
@@ -473,6 +474,14 @@ export async function saveQuotation(
     .update({ stage: "quotation", approval_status: "pending", updated_at: new Date().toISOString() })
     .eq("id", jobId)
     .in("stage", ["check_in", "inspection"])
+
+  // Keep the customer's pending approval link current with these changes
+  // (best-effort — staff can always re-send from the approvals panel).
+  try {
+    await syncPendingApproval(jobId)
+  } catch {
+    // ignore
+  }
 
   revalidatePath(`/jobs/${jobId}`)
 }

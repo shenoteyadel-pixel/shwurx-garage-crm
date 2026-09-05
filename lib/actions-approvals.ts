@@ -155,51 +155,101 @@ export async function createApprovalRequest(
 
   const mode: ApprovalMode = opts.mode ?? "per_item"
 
-  // Supersede prior pending quotation requests + find the next version.
-  await svc
-    .from("approval_requests")
-    .update({ status: "superseded", updated_at: new Date().toISOString() })
-    .eq("job_id", jobId)
-    .eq("kind", "quotation")
-    .eq("status", "pending")
-
-  const { data: last } = await svc
-    .from("approval_requests")
-    .select("version")
-    .eq("job_id", jobId)
-    .eq("kind", "quotation")
-    .order("version", { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  const version = Number(last?.version ?? 0) + 1
-
   const expiresAt = opts.expiresInDays
     ? new Date(Date.now() + opts.expiresInDays * 86400_000).toISOString()
     : null
 
-  const { data: inserted, error } = await svc
+  // One stable link per job: if a pending quotation request already exists and
+  // the customer hasn't signed or started responding to it, refresh that same
+  // request (same token / version) with the latest items instead of creating a
+  // new version. Only mint a new version when the pending one is locked.
+  const { data: existingPending } = await svc
     .from("approval_requests")
-    .insert({
-      job_id: jobId,
-      quotation_id: snap.quotationId,
-      version,
-      kind: "quotation",
-      mode,
-      status: "pending",
-      title: mode === "whole" ? "Quotation approval" : "Repair quotation",
-      snapshot: { items: snap.items },
-      vat_rate: snap.vatRate,
-      vat_inclusive: snap.vatInclusive,
-      subtotal: snap.subtotal,
-      vat_amount: snap.vatAmount,
-      total: snap.total,
-      sent_at: new Date().toISOString(),
-      expires_at: expiresAt,
-      created_by: ctx.userId,
-    })
-    .select("id, token")
-    .single()
-  if (error || !inserted) return { ok: false, error: error?.message ?? "insert_failed" }
+    .select("id, token, signer_name")
+    .eq("job_id", jobId)
+    .eq("kind", "quotation")
+    .eq("status", "pending")
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let decisionCount = 0
+  if (existingPending) {
+    const { count } = await svc
+      .from("approval_item_decisions")
+      .select("id", { count: "exact", head: true })
+      .eq("approval_request_id", existingPending.id)
+    decisionCount = count ?? 0
+  }
+  const canReuse = Boolean(existingPending) && !existingPending!.signer_name && decisionCount === 0
+
+  let token: string
+  if (canReuse && existingPending) {
+    const { data: updated, error } = await svc
+      .from("approval_requests")
+      .update({
+        quotation_id: snap.quotationId,
+        mode,
+        title: mode === "whole" ? "Quotation approval" : "Repair quotation",
+        snapshot: { items: snap.items },
+        vat_rate: snap.vatRate,
+        vat_inclusive: snap.vatInclusive,
+        subtotal: snap.subtotal,
+        vat_amount: snap.vatAmount,
+        total: snap.total,
+        sent_at: new Date().toISOString(),
+        expires_at: expiresAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existingPending.id)
+      .select("token")
+      .single()
+    if (error || !updated) return { ok: false, error: error?.message ?? "update_failed" }
+    token = updated.token as string
+  } else {
+    // Supersede a locked pending request (if any) and mint the next version.
+    await svc
+      .from("approval_requests")
+      .update({ status: "superseded", updated_at: new Date().toISOString() })
+      .eq("job_id", jobId)
+      .eq("kind", "quotation")
+      .eq("status", "pending")
+
+    const { data: last } = await svc
+      .from("approval_requests")
+      .select("version")
+      .eq("job_id", jobId)
+      .eq("kind", "quotation")
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const version = Number(last?.version ?? 0) + 1
+
+    const { data: inserted, error } = await svc
+      .from("approval_requests")
+      .insert({
+        job_id: jobId,
+        quotation_id: snap.quotationId,
+        version,
+        kind: "quotation",
+        mode,
+        status: "pending",
+        title: mode === "whole" ? "Quotation approval" : "Repair quotation",
+        snapshot: { items: snap.items },
+        vat_rate: snap.vatRate,
+        vat_inclusive: snap.vatInclusive,
+        subtotal: snap.subtotal,
+        vat_amount: snap.vatAmount,
+        total: snap.total,
+        sent_at: new Date().toISOString(),
+        expires_at: expiresAt,
+        created_by: ctx.userId,
+      })
+      .select("token")
+      .single()
+    if (error || !inserted) return { ok: false, error: error?.message ?? "insert_failed" }
+    token = inserted.token as string
+  }
 
   // Keep the legacy job flags in sync so existing dashboards/badges still work.
   await svc
@@ -207,14 +257,62 @@ export async function createApprovalRequest(
     .update({ stage: "customer_approval", approval_status: "pending", updated_at: new Date().toISOString() })
     .eq("id", jobId)
 
-  const url = `${appBaseUrl()}/approve/r/${inserted.token}`
+  const url = `${appBaseUrl()}/approve/r/${token}`
   let emailed = false
   if ((opts.sendVia ?? "email") === "email") {
-    emailed = await emailApprovalLink(svc, jobId, inserted.token as string, snap.total, snap.items.length, false)
+    emailed = await emailApprovalLink(svc, jobId, token, snap.total, snap.items.length, false)
   }
 
   revalidatePath(`/jobs/${jobId}`)
-  return { ok: true, token: inserted.token as string, url, emailed }
+  return { ok: true, token, url, emailed }
+}
+
+/**
+ * Keep the customer's single pending approval link showing the current
+ * quotation. Refreshes the pending request's snapshot in place (same token) so
+ * edits and added parts appear automatically. No-op once the request is signed
+ * or the customer has begun approving/declining items, so a decision in
+ * progress is never rewritten underneath them.
+ */
+export async function syncPendingApproval(jobId: string): Promise<{ ok: boolean; updated: boolean }> {
+  const svc = createServiceClient()
+
+  const { data: pending } = await svc
+    .from("approval_requests")
+    .select("id, signer_name")
+    .eq("job_id", jobId)
+    .eq("kind", "quotation")
+    .eq("status", "pending")
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!pending || pending.signer_name) return { ok: true, updated: false }
+
+  const { count } = await svc
+    .from("approval_item_decisions")
+    .select("id", { count: "exact", head: true })
+    .eq("approval_request_id", pending.id)
+  if ((count ?? 0) > 0) return { ok: true, updated: false }
+
+  const snap = await buildQuotationSnapshot(svc, jobId)
+  if (!snap) return { ok: true, updated: false }
+
+  await svc
+    .from("approval_requests")
+    .update({
+      quotation_id: snap.quotationId,
+      snapshot: { items: snap.items },
+      vat_rate: snap.vatRate,
+      vat_inclusive: snap.vatInclusive,
+      subtotal: snap.subtotal,
+      vat_amount: snap.vatAmount,
+      total: snap.total,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", pending.id)
+
+  revalidatePath(`/jobs/${jobId}`)
+  return { ok: true, updated: true }
 }
 
 /**

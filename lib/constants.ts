@@ -107,7 +107,20 @@ export const ZONES: Zone[] = [
 ]
 
 // Physical lift bays inside the Workshop zone.
-export const LIFT_BAYS = ["Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5", "Bay 6"]
+export const LIFT_BAYS = [
+  "Bay 1",
+  "Bay 2",
+  "Bay 3",
+  "Bay 4",
+  "Bay 5",
+  "Bay 6",
+  "Bay 7",
+  "Bay 8",
+  "Bay 9",
+  "Bay 10",
+  "Bay 11",
+  "Bay 12",
+]
 
 // UAE emirates for structured number plates.
 export const UAE_EMIRATES = [

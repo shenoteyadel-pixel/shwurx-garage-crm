@@ -30,12 +30,14 @@ import {
   Trash2,
   History,
   ScanLine,
+  Sparkles,
 } from "lucide-react"
 
 // Each item declares the permissions that reveal it. `anyOf` = show when the
 // user has at least one. Items with no perms are shown to all staff.
 const NAV = [
   { href: "/crm", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/control-center", label: "AI Control Center", icon: Sparkles, ownerOnly: true },
   { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all"] },
   { href: "/jobs", label: "Job Cards", icon: Car, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
   { href: "/appointments", label: "Appointments", icon: CalendarClock, anyOf: ["appointments.view"] },

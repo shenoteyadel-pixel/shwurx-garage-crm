@@ -3,9 +3,11 @@
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
+import { after } from "next/server"
 import { VAT_RATE, type Stage } from "@/lib/constants"
 import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
+import { attachJobVehicleImage } from "@/lib/vehicle-image-attach"
 import { sanitizeMileage } from "@/lib/utils"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
@@ -80,9 +82,6 @@ export async function createJob(formData: FormData) {
   const year = formData.get("vehicle_year") ? Number(formData.get("vehicle_year")) : null
   const color = String(formData.get("color") || "") || null
 
-  // Resolve a real reference image from CarsXE (server-side, cached in the row).
-  const image = await resolveVehicleImage({ make, model, year, color })
-
   const payload = {
     job_number: genJobNumber(),
     customer_name: String(formData.get("customer_name") || ""),
@@ -93,9 +92,11 @@ export async function createJob(formData: FormData) {
     color,
     body_type: bodyType,
     vehicle_year: year,
-    vehicle_reference_image_url: image?.url ?? null,
-    vehicle_image_source: image?.source ?? null,
-    vehicle_image_resolved_at: image ? new Date().toISOString() : null,
+    // Image is generated in the background after insert (see below) so the user
+    // isn't blocked on the ~30-60s studio render.
+    vehicle_reference_image_url: null,
+    vehicle_image_source: null,
+    vehicle_image_resolved_at: null,
     plate_emirate: String(formData.get("plate_emirate") || "") || null,
     plate_code: String(formData.get("plate_code") || "") || null,
     plate_number: String(formData.get("plate_number") || "") || null,
@@ -111,6 +112,9 @@ export async function createJob(formData: FormData) {
 
   const { data, error } = await supabase.from("jobs").insert(payload).select("id").single()
   if (error) throw new Error(error.message)
+
+  // Kick off the uniform studio image generation without blocking the response.
+  after(() => attachJobVehicleImage(data.id, { make, model, year, color }))
 
   // attach uploaded photo urls (comma separated)
   const photoUrls = String(formData.get("photo_urls") || "").split(",").filter(Boolean)
@@ -270,30 +274,31 @@ export async function refreshAllVehicleImages() {
     .neq("stage", "delivered")
   if (readErr) throw new Error(readErr.message)
 
-  let updated = 0
-  let found = 0
-  for (const job of jobs ?? []) {
-    const image = await resolveVehicleImage({
-      make: job.vehicle_make,
-      model: job.vehicle_model,
-      year: job.vehicle_year,
-      color: job.color,
-      trim: job.variant,
-    })
-    if (!image) continue // keep any existing image / silhouette on a miss
-    const { error } = await supabase
-      .from("jobs")
-      .update({
-        vehicle_reference_image_url: image.url,
-        vehicle_image_source: image.source,
-        vehicle_image_resolved_at: new Date().toISOString(),
+  // Generate in parallel — each studio render takes ~30-60s, so running them
+  // serially would blow past the function time limit on a full board.
+  const results = await Promise.all(
+    (jobs ?? []).map(async (job) => {
+      const image = await resolveVehicleImage({
+        make: job.vehicle_make,
+        model: job.vehicle_model,
+        year: job.vehicle_year,
+        color: job.color,
+        trim: job.variant,
       })
-      .eq("id", job.id)
-    if (!error) {
-      updated++
-      found++
-    }
-  }
+      if (!image) return false // keep any existing image / silhouette on a miss
+      const { error } = await supabase
+        .from("jobs")
+        .update({
+          vehicle_reference_image_url: image.url,
+          vehicle_image_source: image.source,
+          vehicle_image_resolved_at: new Date().toISOString(),
+        })
+        .eq("id", job.id)
+      return !error
+    }),
+  )
+  const updated = results.filter(Boolean).length
+  const found = updated
 
   revalidatePath("/crm")
   revalidatePath("/flow")

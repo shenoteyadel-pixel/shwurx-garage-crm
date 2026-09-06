@@ -11,6 +11,7 @@
     "restore": "node --env-file-if-exists=/vercel/share/.env.project scripts/restore-database.mjs"
   },
   "dependencies": {
+    "@ai-sdk/gateway": "^4.0.74",
     "@stripe/react-stripe-js": "^6.9.0",
     "@stripe/stripe-js": "^9.15.0",
     "@supabase/ssr": "latest",

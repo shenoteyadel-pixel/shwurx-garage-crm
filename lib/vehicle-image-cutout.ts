@@ -67,6 +67,28 @@ export async function cutoutVehicleImage(sourceUrl: string): Promise<string | nu
   }
 }
 
+/** Upload a PNG buffer to the vehicle-photos bucket and return its public URL. */
+export async function uploadVehiclePng(buf: Buffer, prefix: string, key: string): Promise<string | null> {
+  try {
+    const supabase = createServiceClient()
+    const path = `${prefix}/${key}.png`
+    const { error } = await supabase.storage.from(BUCKET).upload(path, buf, {
+      contentType: "image/png",
+      cacheControl: "31536000",
+      upsert: true,
+    })
+    if (error) {
+      console.log("[v0] vehicle png upload failed:", error.message)
+      return null
+    }
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
+    return data?.publicUrl ?? null
+  } catch (err) {
+    console.log("[v0] uploadVehiclePng failed:", (err as Error).message)
+    return null
+  }
+}
+
 async function urlExists(url: string): Promise<boolean> {
   try {
     const res = await fetch(url, { method: "HEAD" })
@@ -77,11 +99,113 @@ async function urlExists(url: string): Promise<boolean> {
 }
 
 /**
+ * Border flood-fill removal for a DARK neutral studio background (e.g. charcoal
+ * #2a2a2a). We generate cars on a dark backdrop because gpt-image-1 otherwise
+ * darkens white/silver cars to keep contrast against a light background; a dark
+ * backdrop makes it paint light colours correctly.
+ *
+ * Only removes dark-neutral pixels CONNECTED to the border, so dark tyres,
+ * windows and grilles in the middle of the car are preserved (they're enclosed
+ * by lit bodywork and never reached from the edge).
+ */
+export async function removeDarkBackground(input: Buffer): Promise<Buffer | null> {
+  const img = sharp(input, { failOn: "none" }).rotate().resize({
+    width: 1000,
+    height: 640,
+    fit: "inside",
+    withoutEnlargement: true,
+  })
+  const { data, info } = await img.ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const { width: w, height: h, channels } = info
+  if (channels !== 4 || w < 8 || h < 8) return null
+
+  const N = w * h
+  const isBg = new Uint8Array(N)
+  // Dark and near-neutral: the charcoal seamless + its soft gradient/shadow.
+  const darkNeutral = (r: number, g: number, b: number) => {
+    const max = Math.max(r, g, b)
+    const min = Math.min(r, g, b)
+    return max <= 90 && max - min <= 26
+  }
+  for (let i = 0; i < N; i++) {
+    const o = i * 4
+    if (darkNeutral(data[o], data[o + 1], data[o + 2])) isBg[i] = 1
+  }
+
+  let borderBg = 0
+  let borderTotal = 0
+  for (let x = 0; x < w; x++) {
+    borderTotal += 2
+    if (isBg[x]) borderBg++
+    if (isBg[(h - 1) * w + x]) borderBg++
+  }
+  for (let y = 0; y < h; y++) {
+    borderTotal += 2
+    if (isBg[y * w]) borderBg++
+    if (isBg[y * w + (w - 1)]) borderBg++
+  }
+  if (borderBg / borderTotal < 0.55) return null
+
+  const visited = new Uint8Array(N)
+  const stack = new Int32Array(N)
+  let sp = 0
+  const pushIf = (idx: number) => {
+    if (idx >= 0 && idx < N && !visited[idx] && isBg[idx]) {
+      visited[idx] = 1
+      stack[sp++] = idx
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    pushIf(x)
+    pushIf((h - 1) * w + x)
+  }
+  for (let y = 0; y < h; y++) {
+    pushIf(y * w)
+    pushIf(y * w + (w - 1))
+  }
+  const cleared = new Uint8Array(N)
+  while (sp > 0) {
+    const idx = stack[--sp]
+    cleared[idx] = 1
+    data[idx * 4 + 3] = 0
+    const x = idx % w
+    const y = (idx / w) | 0
+    if (x > 0) pushIf(idx - 1)
+    if (x < w - 1) pushIf(idx + 1)
+    if (y > 0) pushIf(idx - w)
+    if (y < h - 1) pushIf(idx + w)
+  }
+
+  // Feather a 1px ring of remaining dark pixels touching the cleared area to
+  // kill the hard halo, without eating into lit bodywork.
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = y * w + x
+      if (cleared[idx]) continue
+      const o = idx * 4
+      if (data[o + 3] === 0) continue
+      const touchesCleared =
+        (x > 0 && cleared[idx - 1]) ||
+        (x < w - 1 && cleared[idx + 1]) ||
+        (y > 0 && cleared[idx - w]) ||
+        (y < h - 1 && cleared[idx + w])
+      if (touchesCleared && darkNeutral(data[o], data[o + 1], data[o + 2])) {
+        data[o + 3] = 70
+      }
+    }
+  }
+
+  return sharp(data, { raw: { width: w, height: h, channels: 4 } })
+    .png({ compressionLevel: 9 })
+    .toBuffer()
+}
+
+/**
  * Border flood-fill white-background removal on a raw RGBA buffer.
  * Returns a PNG buffer, or null if the image doesn't look like it has a
  * removable light background (so we don't wreck real edge-to-edge photos).
  */
-async function removeWhiteBackground(input: Buffer): Promise<Buffer | null> {
+export async function removeWhiteBackground(input: Buffer): Promise<Buffer | null> {
   // Normalise onto a bounded canvas; trim keeps the car large in frame.
   const img = sharp(input, { failOn: "none" }).rotate().resize({
     width: 1000,

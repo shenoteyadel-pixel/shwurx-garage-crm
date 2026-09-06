@@ -391,16 +391,33 @@ export async function recordInvoicePayment(invoiceId: string, formData: FormData
 
   const { data: inv } = await supabase
     .from("invoices")
-    .select("amount_paid, total")
+    .select("amount_paid, total, job_id")
     .eq("id", invoiceId)
     .single()
   const paid = (Number(inv?.amount_paid) || 0) + amount
   const total = Number(inv?.total) || 0
   const status = paid >= total - 0.01 ? "paid" : paid > 0 ? "partial" : "unpaid"
-  await supabase
-    .from("invoices")
-    .update({ amount_paid: paid, status, updated_at: new Date().toISOString() })
-    .eq("id", invoiceId)
+  const nowIso = new Date().toISOString()
+  await supabase.from("invoices").update({ amount_paid: paid, status, updated_at: nowIso }).eq("id", invoiceId)
+
+  // When the invoice is fully paid, stamp the linked job as paid so the Car
+  // Flow / dashboard boards reflect it and it moves into History.
+  if (status === "paid" && inv?.job_id) {
+    await supabase
+      .from("jobs")
+      .update({
+        paid_at: nowIso,
+        paid_amount: paid,
+        payment_method: String(formData.get("method") || "cash"),
+        updated_at: nowIso,
+      })
+      .eq("id", inv.job_id)
+      .is("paid_at", null)
+    revalidatePath("/crm")
+    revalidatePath("/flow")
+    revalidatePath("/history")
+    revalidatePath(`/jobs/${inv.job_id}`)
+  }
 
   await logAction(ctx, "payment.record", "invoice", invoiceId, { amount })
   revalidatePath(`/invoices/${invoiceId}`)

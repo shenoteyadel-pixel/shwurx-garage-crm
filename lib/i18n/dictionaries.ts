@@ -13,6 +13,7 @@ const en = {
     sloganLine1: "ONE GARAGE.",
     sloganLine2: "LIMITLESS SOLUTIONS.",
     sloganSupport: "One garage. Limitless solutions.",
+    tagline: "Auto Service Center",
   },
   nav: {
     home: "Home",
@@ -316,6 +317,7 @@ const ar: typeof en = {
     sloganLine1: "مرآب واحد.",
     sloganLine2: "حلول لا حدود لها.",
     sloganSupport: "مرآب واحد. حلول لا حدود لها.",
+    tagline: "مركز خدمة السيارات",
   },
   nav: {
     home: "الرئيسية",
@@ -385,7 +387,7 @@ const ar: typeof en = {
     aboutPoints: [
       "متخصصون في الماركات الفاخرة",
       "تشخيص وبرمجة متقدمة",
-      "فنيون مهرة ومعتمدون",
+      "فني��ن مهرة ومعتمدون",
       "عملية وأسعار شفافة",
       "العميل أولاً",
     ],

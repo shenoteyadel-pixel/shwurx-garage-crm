@@ -17,6 +17,8 @@ type LangContextValue = {
   lang: Locale
   dir: "ltr" | "rtl"
   dict: Dict
+  /** Alias of `dict` — the active translation dictionary. */
+  t: Dict
   setLang: (next: Locale) => void
   /** Interpolate {token} placeholders in a translated string. */
   fmt: (template: string, vars: Record<string, string | number>) => string
@@ -78,16 +80,17 @@ export function LanguageProvider({
     [lang, router],
   )
 
-  const value = React.useMemo<LangContextValue>(
-    () => ({
+  const value = React.useMemo<LangContextValue>(() => {
+    const dict = getDictionary(lang)
+    return {
       lang,
       dir: dirFor(lang),
-      dict: getDictionary(lang),
+      dict,
+      t: dict,
       setLang,
       fmt: interpolate,
-    }),
-    [lang, setLang],
-  )
+    }
+  }, [lang, setLang])
 
   return <LangContext.Provider value={value}>{children}</LangContext.Provider>
 }
@@ -96,10 +99,12 @@ export function useI18n(): LangContextValue {
   const ctx = React.useContext(LangContext)
   if (!ctx) {
     // Safe fallback so a stray client component never crashes the tree.
+    const dict = getDictionary(DEFAULT_LOCALE)
     return {
       lang: DEFAULT_LOCALE,
       dir: "ltr",
-      dict: getDictionary(DEFAULT_LOCALE),
+      dict,
+      t: dict,
       setLang: () => {},
       fmt: interpolate,
     }

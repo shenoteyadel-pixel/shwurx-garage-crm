@@ -1,5 +1,13 @@
 import "server-only"
 import { canonicalizeVehicle } from "@/lib/vehicle"
+import { cutoutVehicleImage } from "@/lib/vehicle-image-cutout"
+
+// Replace a studio-on-white photo with a transparent cutout when possible, so
+// it sits cleanly on the workshop board. Falls back to the original URL.
+async function finalizeImage(url: string): Promise<ResolvedVehicleImage> {
+  const cut = await cutoutVehicleImage(url)
+  return cut ? { url: cut, source: "carsxe-cutout" } : { url, source: "carsxe" }
+}
 
 /**
  * CarsXE Vehicle Images resolver.
@@ -220,12 +228,12 @@ export async function resolveVehicleImage(params: {
       const cand = await queryCarsXE(key, p.make, p.model, extra, reqColor)
       if (!cand) continue
       // A real colour match wins outright — stop searching.
-      if (cand.colorMatch) return { url: cand.url, source: "carsxe" }
+      if (cand.colorMatch) return finalizeImage(cand.url)
       if (!best || cand.score > best.score) best = cand
     }
   }
 
-  if (best) return { url: best.url, source: "carsxe" }
+  if (best) return finalizeImage(best.url)
   console.log("[v0] CarsXE returned no usable image for", canon.make, canon.model)
   return null
 }

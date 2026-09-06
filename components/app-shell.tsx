@@ -144,6 +144,16 @@ export function AppShell({
             <Brand compact />
           </div>
           <div className="ml-auto flex items-center gap-3">
+            {isOwner && (
+              <Link
+                href="/control-center"
+                aria-label="AI Control Center"
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 text-sm font-medium text-primary hover:bg-primary/20"
+              >
+                <Sparkles className="h-4 w-4" />
+                <span className="hidden sm:inline">AI Control Center</span>
+              </Link>
+            )}
             <ThemeToggle />
             <NotificationBell />
             {canCreateJob && (

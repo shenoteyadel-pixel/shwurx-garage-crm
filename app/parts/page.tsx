@@ -11,7 +11,8 @@ export default async function PartsPage({ searchParams }: { searchParams: Promis
   const { status } = await searchParams
   const user = await getShellUser()
   const supabase = await createClient()
-  const canScan = user.permissions.includes("purchase_orders.manage")
+  const canScan =
+    user.permissions.includes("purchase_orders.manage") || user.permissions.includes("parts.view")
 
   let query = supabase
     .from("parts_requests")

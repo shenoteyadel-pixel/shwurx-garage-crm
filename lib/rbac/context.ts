@@ -151,6 +151,28 @@ export async function requirePermission(perm: Permission): Promise<SessionContex
   return ctx
 }
 
+/**
+ * Server-action guard that passes when the user holds ANY of the given
+ * permissions. Used where more than one role legitimately performs the action
+ * (e.g. both purchasing managers and parts staff can capture supplier invoices).
+ */
+export async function requireAnyPermission(anyOf: Permission[]): Promise<SessionContext> {
+  const ctx = await requireSession()
+  if (!anyOf.some((p) => ctxCan(ctx, p))) {
+    await writeAudit({
+      actorId: ctx.userId,
+      actorName: ctx.name,
+      actorRole: ctx.role,
+      action: "permission_denied",
+      resourceType: "permission",
+      resourceId: anyOf.join("|"),
+      status: "denied",
+    })
+    throw new ForbiddenError(anyOf[0])
+  }
+  return ctx
+}
+
 // ---------------- Audit logging ----------------
 
 export interface AuditEntry {

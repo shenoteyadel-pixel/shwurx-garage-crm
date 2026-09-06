@@ -10,11 +10,12 @@ export default async function SuppliersPage() {
   const supabase = await createClient()
 
   const { data: suppliers } = await supabase.from("suppliers").select("*").is("deleted_at", null).order("name")
-  const { data: pos } = await supabase
-    .from("purchase_orders")
-    .select("supplier_id, total, amount_paid, status")
+  const [{ data: pos }, { data: bills }] = await Promise.all([
+    supabase.from("purchase_orders").select("supplier_id, total, amount_paid, status"),
+    supabase.from("supplier_invoices").select("supplier_id, total, amount_paid, status").eq("status", "confirmed"),
+  ])
 
-  // Aggregate outstanding balance per supplier: opening + (PO totals − paid).
+  // Aggregate outstanding balance per supplier: opening + (PO totals − paid) + (confirmed bills − paid).
   const agg = new Map<string, { spend: number; outstanding: number; orders: number }>()
   for (const po of pos ?? []) {
     if (!po.supplier_id || po.status === "cancelled") continue
@@ -23,6 +24,14 @@ export default async function SuppliersPage() {
     a.outstanding += (Number(po.total) || 0) - (Number(po.amount_paid) || 0)
     a.orders += 1
     agg.set(po.supplier_id, a)
+  }
+  for (const bill of bills ?? []) {
+    if (!bill.supplier_id) continue
+    const a = agg.get(bill.supplier_id) ?? { spend: 0, outstanding: 0, orders: 0 }
+    a.spend += Number(bill.total) || 0
+    a.outstanding += (Number(bill.total) || 0) - (Number(bill.amount_paid) || 0)
+    a.orders += 1
+    agg.set(bill.supplier_id, a)
   }
 
   const rows = (suppliers ?? []).map((s) => {

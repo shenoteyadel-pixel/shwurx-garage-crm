@@ -29,6 +29,7 @@ import {
   Inbox,
   Trash2,
   History,
+  ScanLine,
 } from "lucide-react"
 
 // Each item declares the permissions that reveal it. `anyOf` = show when the
@@ -43,6 +44,7 @@ const NAV = [
   { href: "/invoices", label: "Invoices", icon: FileText, anyOf: ["invoices.view"] },
   { href: "/parts", label: "Parts", icon: Package, anyOf: ["parts.view"] },
   { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, anyOf: ["purchase_orders.manage", "parts.view"] },
+  { href: "/purchasing/invoices", label: "Invoice Capture", icon: ScanLine, anyOf: ["purchase_orders.manage"] },
   { href: "/inventory", label: "Store / Inventory", icon: Warehouse, anyOf: ["parts.view"] },
   { href: "/suppliers", label: "Suppliers", icon: Truck, anyOf: ["parts.view"] },
   { href: "/history", label: "History", icon: History, anyOf: ["jobs.view_all"] },
@@ -71,10 +73,17 @@ export function AppShell({
     return has(meta.anyOf)
   })
 
+  // The active item is the one whose href is the longest prefix of the current
+  // path, so nested routes (e.g. /purchasing/invoices) don't also light up their parent.
+  const activeHref = visibleNav
+    .map((i) => i.href)
+    .filter((href) => (href === "/crm" ? pathname === "/crm" : pathname === href || pathname.startsWith(`${href}/`)))
+    .sort((a, b) => b.length - a.length)[0]
+
   const nav = (
     <nav className="flex flex-col gap-1">
       {visibleNav.map((item) => {
-        const active = item.href === "/crm" ? pathname === "/crm" : pathname.startsWith(item.href)
+        const active = item.href === activeHref
         return (
           <Link
             key={item.href}

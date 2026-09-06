@@ -27,7 +27,7 @@ export default async function ReportsPage({
   const to = sp.to || def.to
   const toEnd = `${to}T23:59:59`
 
-  const [{ data: invoices }, { data: pos }, { data: items }] = await Promise.all([
+  const [{ data: invoices }, { data: pos }, { data: bills }, { data: items }] = await Promise.all([
     supabase
       .from("invoices")
       .select("invoice_number, customer_name, status, issue_date, subtotal, vat_amount, total, amount_paid, parts_total, labour_total")
@@ -40,11 +40,28 @@ export default async function ReportsPage({
       .gte("order_date", from)
       .lte("order_date", to)
       .neq("status", "cancelled"),
+    supabase
+      .from("supplier_invoices")
+      .select("doc_number, invoice_date, status, subtotal, vat_amount, total, amount_paid, suppliers(name)")
+      .eq("status", "confirmed")
+      .gte("invoice_date", from)
+      .lte("invoice_date", to),
     supabase.from("inventory_items").select("quantity, cost_price").is("deleted_at", null),
   ])
 
   const inv = invoices ?? []
-  const purchases = pos ?? []
+  // Captured supplier invoices count as purchases too (payables + input VAT).
+  const supplierBills = (bills ?? []).map((b) => ({
+    po_number: b.doc_number,
+    order_date: b.invoice_date,
+    status: b.status,
+    subtotal: b.subtotal,
+    vat_amount: b.vat_amount,
+    total: b.total,
+    amount_paid: b.amount_paid,
+    suppliers: (b as any).suppliers,
+  }))
+  const purchases = [...(pos ?? []), ...supplierBills]
 
   const salesSubtotal = inv.reduce((s, i) => s + (Number(i.subtotal) || 0), 0)
   const salesVat = inv.reduce((s, i) => s + (Number(i.vat_amount) || 0), 0)

@@ -16,6 +16,7 @@
     "@stripe/stripe-js": "^9.15.0",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
+    "@vercel/blob": "^2.8.0",
     "ai": "^7.0.92",
     "clsx": "^2.1.1",
     "lucide-react": "^0.454.0",

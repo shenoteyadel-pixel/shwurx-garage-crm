@@ -83,6 +83,30 @@ export function SettingsForm({ settings }: { settings: Settings }) {
         </div>
 
         <h2 className="mb-2 mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Parts pricing &amp; VAT
+        </h2>
+        <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+          Used to suggest sale prices when parts are added from a captured supplier invoice. You can always override the
+          price per line before confirming.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <Label htmlFor="pricing_method">Pricing method</Label>
+            <select
+              id="pricing_method"
+              name="pricing_method"
+              defaultValue={settings.pricing_method}
+              className="h-10 w-full rounded-lg border border-input bg-background/60 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="markup">Markup on cost</option>
+              <option value="margin">Target margin</option>
+            </select>
+          </div>
+          <Field label="Default markup / margin %" name="default_markup_pct" type="number" defaultValue={settings.default_markup_pct} />
+          <Field label="VAT rate %" name="vat_rate" type="number" defaultValue={settings.vat_rate} />
+        </div>
+
+        <h2 className="mb-2 mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Customer tracking
         </h2>
         <p className="mb-4 text-xs leading-relaxed text-muted-foreground">

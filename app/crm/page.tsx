@@ -8,7 +8,8 @@ import { StageBarChart, RevenueAreaChart } from "@/components/dashboard-charts"
 import { CarFlow } from "@/components/car-flow"
 import { STAGES, STAGE_MAP, type Stage } from "@/lib/constants"
 import { formatCurrency, relativeHours } from "@/lib/utils"
-import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardCheck, ThumbsUp } from "lucide-react"
+import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardCheck, ThumbsUp, ScanLine } from "lucide-react"
+import { Button } from "@/components/ui"
 import type { JobCardData } from "@/components/job-card"
 
 export default async function DashboardPage() {
@@ -19,6 +20,7 @@ export default async function DashboardPage() {
 
   const canViewAll = ctx.permissions.has("jobs.view_all")
   const canSeeMoney = ctx.permissions.has("prices.view")
+  const canScan = ctx.permissions.has("purchase_orders.manage")
 
   const { data: jobsRaw } = await supabase
     .from("jobs")
@@ -123,15 +125,24 @@ export default async function DashboardPage() {
 
   return (
     <AppShell user={shellUser}>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">
-          {canViewAll ? "Workshop Dashboard" : "My Assigned Jobs"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {canViewAll
-            ? "Live overview of every vehicle in the shop."
-            : `Welcome back, ${shellUser.name.split(" ")[0]}. Here are the vehicles assigned to you.`}
-        </p>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {canViewAll ? "Workshop Dashboard" : "My Assigned Jobs"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {canViewAll
+              ? "Live overview of every vehicle in the shop."
+              : `Welcome back, ${shellUser.name.split(" ")[0]}. Here are the vehicles assigned to you.`}
+          </p>
+        </div>
+        {canScan && (
+          <Link href="/purchasing/invoices">
+            <Button variant="danger">
+              <ScanLine className="h-4 w-4" /> Scan Purchase Invoice
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Stats */}

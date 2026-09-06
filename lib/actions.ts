@@ -162,7 +162,8 @@ export async function markJobPaid(
   jobId: string,
   opts: { amount?: number | null; method?: string | null } = {},
 ) {
-  const { supabase, user, ctx } = await guard("jobs.update_status")
+  const { supabase, ctx } = await guard("jobs.update_status")
+  const user = { id: ctx.userId }
   const amount = opts.amount != null && !Number.isNaN(Number(opts.amount)) ? Number(opts.amount) : null
   const method = opts.method?.trim() || null
   const nowIso = new Date().toISOString()

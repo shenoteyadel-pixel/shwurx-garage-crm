@@ -3,18 +3,22 @@
 import { createClient } from "@/lib/supabase/server"
 import { put, del } from "@vercel/blob"
 import { revalidatePath } from "next/cache"
-import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import { requireAnyPermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
 import { getSettings } from "@/lib/settings"
 import { extractInvoice } from "@/lib/invoice-ocr"
 import { suggestSalePrice } from "@/lib/pricing"
 
-async function guard(perm: Permission): Promise<{
+// Both purchasing managers and parts staff capture and receive supplier
+// invoices, matching the nav, layout and dashboard buttons.
+const INVOICE_PERMS: Permission[] = ["purchase_orders.manage", "parts.view"]
+
+async function guard(): Promise<{
   supabase: Awaited<ReturnType<typeof createClient>>
   ctx: SessionContext
   userId: string
 }> {
-  const ctx = await requirePermission(perm)
+  const ctx = await requireAnyPermission(INVOICE_PERMS)
   const supabase = await createClient()
   return { supabase, ctx, userId: ctx.userId }
 }
@@ -62,7 +66,7 @@ async function buildOemIndex(
 export type ExtractResult = { ok: true; id: string } | { ok: false; error: string }
 
 export async function extractAndCreateInvoice(formData: FormData): Promise<ExtractResult> {
-  const { supabase, ctx, userId } = await guard("purchase_orders.manage")
+  const { supabase, ctx, userId } = await guard()
 
   const file = formData.get("file")
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "No file provided" }
@@ -201,7 +205,7 @@ export async function saveInvoiceDraft(payload: {
   notes: string | null
   lines: DraftLine[]
 }) {
-  const { supabase } = await guard("purchase_orders.manage")
+  const { supabase } = await guard()
 
   const clean = payload.lines.filter((l) => (l.description || "").trim())
   const subtotal = clean.reduce((t, l) => t + n(l.quantity) * n(l.unit_cost), 0)
@@ -258,7 +262,7 @@ export async function saveInvoiceDraft(payload: {
    3. Confirm -> post to inventory, stock movements, ledger
    ============================================================ */
 export async function confirmSupplierInvoice(id: string) {
-  const { supabase, ctx, userId } = await guard("purchase_orders.manage")
+  const { supabase, ctx, userId } = await guard()
 
   const { data: invoice, error: invErr } = await supabase
     .from("supplier_invoices")
@@ -367,7 +371,7 @@ export async function confirmSupplierInvoice(id: string) {
    4. Record a payment against a confirmed invoice
    ============================================================ */
 export async function recordSupplierInvoicePayment(id: string, formData: FormData) {
-  const { supabase, userId } = await guard("purchase_orders.manage")
+  const { supabase, userId } = await guard()
   const amount = n(formData.get("amount"))
   if (amount <= 0) throw new Error("Enter a positive amount")
 
@@ -403,7 +407,7 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
    5. Delete a draft (removes stored original)
    ============================================================ */
 export async function deleteInvoiceDraft(id: string) {
-  const { supabase, ctx } = await guard("purchase_orders.manage")
+  const { supabase, ctx } = await guard()
   const { data: invoice } = await supabase.from("supplier_invoices").select("status, blob_pathname").eq("id", id).single()
   if (!invoice) return
   if (invoice.status !== "draft") throw new Error("Only draft invoices can be deleted")

@@ -197,8 +197,14 @@ function WorkshopBays({
   const byBay = new Map<string, Job>()
   const unassigned: Job[] = []
   for (const j of jobs) {
-    if (j.lift_bay && LIFT_BAYS.includes(j.lift_bay)) byBay.set(j.lift_bay, j)
-    else unassigned.push(j)
+    // A bay holds one car. If a bay is already taken (two cars share the same
+    // lift_bay), keep the extra visible in the "no bay" list instead of letting
+    // the Map overwrite and silently drop it.
+    if (j.lift_bay && LIFT_BAYS.includes(j.lift_bay) && !byBay.has(j.lift_bay)) {
+      byBay.set(j.lift_bay, j)
+    } else {
+      unassigned.push(j)
+    }
   }
 
   return (

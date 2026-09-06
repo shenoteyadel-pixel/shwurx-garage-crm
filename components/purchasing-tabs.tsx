@@ -12,7 +12,7 @@ type Tab = { href: string; label: string; anyOf: string[] }
 const TABS: Tab[] = [
   { href: "/parts", label: "Requests", anyOf: ["parts.view"] },
   { href: "/purchasing", label: "Orders", anyOf: ["purchase_orders.manage"] },
-  { href: "/purchasing/invoices", label: "Supplier Invoices", anyOf: ["purchase_orders.manage"] },
+  { href: "/purchasing/invoices", label: "Supplier Invoices", anyOf: ["purchase_orders.manage", "parts.view"] },
   { href: "/purchasing/payments", label: "Payments", anyOf: ["purchase_orders.manage"] },
   { href: "/suppliers", label: "Suppliers", anyOf: ["parts.view", "suppliers.view"] },
 ]

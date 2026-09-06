@@ -29,6 +29,7 @@ import {
   Inbox,
   Trash2,
   History,
+  ScanLine,
 } from "lucide-react"
 
 // Each item declares the permissions that reveal it. `anyOf` = show when the
@@ -43,6 +44,7 @@ const NAV = [
   { href: "/invoices", label: "Invoices", icon: FileText, anyOf: ["invoices.view"] },
   { href: "/parts", label: "Parts", icon: Package, anyOf: ["parts.view"] },
   { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, anyOf: ["purchase_orders.manage", "parts.view"] },
+  { href: "/purchasing/invoices", label: "Scan Invoice", icon: ScanLine, anyOf: ["purchase_orders.manage", "parts.view"] },
   { href: "/inventory", label: "Store / Inventory", icon: Warehouse, anyOf: ["parts.view"] },
   { href: "/suppliers", label: "Suppliers", icon: Truck, anyOf: ["parts.view"] },
   { href: "/history", label: "History", icon: History, anyOf: ["jobs.view_all"] },

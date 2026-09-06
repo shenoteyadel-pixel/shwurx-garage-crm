@@ -101,6 +101,16 @@ export async function saveInventoryItem(formData: FormData) {
   const payload = {
     sku: str(formData.get("sku")),
     name: String(formData.get("name") || ""),
+    // OEM number is entered/edited by staff — never auto-generated, never
+    // overwritten by the system. The CRM Part ID is assigned by a DB trigger
+    // on insert and is immutable, so it is intentionally not in this payload.
+    oem_part_number: str(formData.get("oem_part_number")),
+    // Supplier part number is only written when the form actually submitted it
+    // (the field is hidden from staff without supplier visibility), so we never
+    // clobber an existing value with a null from a restricted editor.
+    ...(formData.has("supplier_part_number")
+      ? { supplier_part_number: str(formData.get("supplier_part_number")) }
+      : {}),
     category: str(formData.get("category")),
     brand: str(formData.get("brand")),
     unit: String(formData.get("unit") || "pcs"),

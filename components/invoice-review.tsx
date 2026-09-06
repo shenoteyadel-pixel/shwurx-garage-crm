@@ -15,7 +15,17 @@ import {
 import { Loader2, Save, CheckCircle2, Trash2, AlertTriangle, Plus, FileText } from "lucide-react"
 
 type SupplierOpt = { id: string; name: string }
-type InventoryOpt = { id: string; name: string; sku: string | null; cost_price: number }
+type InventoryOpt = {
+  id: string
+  name: string
+  cost_price: number
+  crm_part_id: string | null
+  oem_part_number: string | null
+  supplier_part_number: string | null
+}
+
+/** Case- and separator-insensitive part-number key for matching. */
+const normPN = (v: string | null | undefined) => (v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")
 
 export type InvoiceHeader = {
   id: string
@@ -40,7 +50,8 @@ export type InvoiceHeader = {
 export type InvoiceItemRow = {
   id: string
   description: string
-  sku: string | null
+  oem_part_number: string | null
+  supplier_part_number: string | null
   quantity: number
   unit: string
   unit_cost: number
@@ -80,7 +91,8 @@ export function InvoiceReview({
     items.map((it) => ({
       key: it.id,
       description: it.description,
-      sku: it.sku,
+      oem_part_number: it.oem_part_number,
+      supplier_part_number: it.supplier_part_number,
       quantity: it.quantity,
       unit: it.unit,
       unit_cost: it.unit_cost,
@@ -116,7 +128,8 @@ export function InvoiceReview({
       {
         key: `new-${Date.now()}`,
         description: "",
-        sku: null,
+        oem_part_number: null,
+        supplier_part_number: null,
         quantity: 1,
         unit: "pcs",
         unit_cost: 0,
@@ -142,7 +155,8 @@ export function InvoiceReview({
   function toDraftLines(): DraftLine[] {
     return lines.map((l) => ({
       description: l.description,
-      sku: l.sku,
+      oem_part_number: l.oem_part_number,
+      supplier_part_number: l.supplier_part_number,
       quantity: Number(l.quantity),
       unit: l.unit,
       unit_cost: Number(l.unit_cost),
@@ -393,6 +407,33 @@ function LineRow({
   onRemove: () => void
 }) {
   const margin = marginPct(line.unit_cost, line.suggested_sale_price)
+  const partInputClass =
+    "h-8 w-full rounded-md border border-input bg-background/60 px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-100"
+
+  const linkedItem = line.inventory_item_id ? inventory.find((i) => i.id === line.inventory_item_id) : undefined
+
+  // OEM-first suggestions, only for lines not yet linked to a part. An exact OEM
+  // match is a strong suggestion; a supplier-number-only match is a "possible
+  // match" that a human must confirm. Descriptions are never matched on.
+  const oemKey = normPN(line.oem_part_number)
+  const supKey = normPN(line.supplier_part_number)
+  const oemMatches =
+    line.match_status === "new" && oemKey ? inventory.filter((i) => normPN(i.oem_part_number) === oemKey) : []
+  const supMatches =
+    line.match_status === "new" && !oemMatches.length && supKey
+      ? inventory.filter((i) => normPN(i.supplier_part_number) === supKey)
+      : []
+
+  function linkTo(item: InventoryOpt) {
+    onChange({
+      match_status: "matched",
+      inventory_item_id: item.id,
+      // Fill any blank identifiers from the matched part, but never clobber what
+      // the invoice actually shows.
+      ...(!line.oem_part_number && item.oem_part_number ? { oem_part_number: item.oem_part_number } : {}),
+    })
+  }
+
   return (
     <div className={`px-4 py-3 ${line.match_status === "ignore" ? "opacity-50" : ""}`}>
       <div className="grid grid-cols-12 gap-2">
@@ -403,13 +444,24 @@ function LineRow({
             placeholder="Description"
             onChange={(e) => onChange({ description: e.target.value })}
           />
-          <input
-            value={line.sku ?? ""}
-            disabled={readOnly}
-            placeholder="Part # / SKU"
-            onChange={(e) => onChange({ sku: e.target.value || null })}
-            className="mt-1 h-8 w-full rounded-md border border-input bg-background/60 px-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-100"
-          />
+          <div className="mt-1 grid grid-cols-2 gap-1">
+            <input
+              value={line.oem_part_number ?? ""}
+              disabled={readOnly}
+              placeholder="OEM part #"
+              aria-label="OEM part number"
+              onChange={(e) => onChange({ oem_part_number: e.target.value || null })}
+              className={`${partInputClass} font-mono text-foreground`}
+            />
+            <input
+              value={line.supplier_part_number ?? ""}
+              disabled={readOnly}
+              placeholder="Supplier part #"
+              aria-label="Supplier part number"
+              onChange={(e) => onChange({ supplier_part_number: e.target.value || null })}
+              className={`${partInputClass} text-muted-foreground`}
+            />
+          </div>
         </div>
         <NumCell label="Qty" value={line.quantity} disabled={readOnly} onChange={(v) => onChange({ quantity: v })} />
         <NumCell label="Unit cost" value={line.unit_cost} disabled={readOnly} onChange={(v) => onChange({ unit_cost: v })} />
@@ -428,10 +480,45 @@ function LineRow({
         </div>
       </div>
 
+      {/* OEM / possible-match guidance */}
+      {!readOnly && oemMatches.length === 1 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300">
+          <span>
+            OEM match: <span className="font-medium">{oemMatches[0].name}</span>
+            {oemMatches[0].crm_part_id ? ` · ${oemMatches[0].crm_part_id}` : ""} — adds this purchase to the existing part.
+          </span>
+          <Button size="sm" variant="outline" className="h-6 px-2" onClick={() => linkTo(oemMatches[0])}>
+            Link
+          </Button>
+        </div>
+      )}
+      {!readOnly && oemMatches.length > 1 && (
+        <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300">
+          POSSIBLE MATCH — REVIEW REQUIRED: {oemMatches.length} parts share this OEM number. Pick the correct one below.
+        </div>
+      )}
+      {!readOnly && supMatches.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300">
+          <span>
+            POSSIBLE MATCH — REVIEW REQUIRED: supplier part # matches{" "}
+            <span className="font-medium">{supMatches[0].name}</span>
+            {supMatches[0].crm_part_id ? ` · ${supMatches[0].crm_part_id}` : ""}. Confirm the OEM number before linking.
+          </span>
+          <Button size="sm" variant="outline" className="h-6 px-2" onClick={() => linkTo(supMatches[0])}>
+            Link anyway
+          </Button>
+        </div>
+      )}
+
       {/* Match + pricing controls */}
       <div className="mt-2 grid grid-cols-12 items-end gap-2">
         <div className="col-span-12 sm:col-span-5">
-          <span className="mb-1 block text-[10px] uppercase tracking-wide text-muted-foreground">Inventory</span>
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-muted-foreground">
+            Inventory
+            {linkedItem?.crm_part_id ? (
+              <span className="ml-1 font-mono text-primary">· {linkedItem.crm_part_id}</span>
+            ) : null}
+          </span>
           <Select
             value={line.match_status === "ignore" ? "__ignore" : line.inventory_item_id ?? "__new"}
             disabled={readOnly}
@@ -441,7 +528,7 @@ function LineRow({
               else if (v === "__new") onChange({ match_status: "new", inventory_item_id: null })
               else {
                 const item = inventory.find((i) => i.id === v)
-                onChange({ match_status: "matched", inventory_item_id: v, ...(item ? { sku: item.sku ?? line.sku } : {}) })
+                if (item) linkTo(item)
               }
             }}
             className="text-xs"
@@ -452,7 +539,8 @@ function LineRow({
               {inventory.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name}
-                  {i.sku ? ` · ${i.sku}` : ""}
+                  {i.oem_part_number ? ` · OEM ${i.oem_part_number}` : ""}
+                  {i.crm_part_id ? ` · ${i.crm_part_id}` : ""}
                 </option>
               ))}
             </optgroup>

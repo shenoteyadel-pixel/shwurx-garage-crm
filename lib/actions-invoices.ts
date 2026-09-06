@@ -25,6 +25,37 @@ const n = (v: unknown, d = 0) => {
 }
 const s = (v: FormDataEntryValue | null) => (v ? String(v) : "") || null
 
+/** Normalize a part number for matching: case- and separator-insensitive. */
+export const normPartNumber = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "")
+
+/**
+ * Build an OEM-number -> inventory-item-id index for auto-matching. An OEM
+ * number that maps to more than one part is treated as ambiguous and dropped,
+ * so it falls back to manual review rather than linking to the wrong part.
+ */
+async function buildOemIndex(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Map<string, string>> {
+  const { data } = await supabase
+    .from("inventory_items")
+    .select("id, oem_part_number")
+    .is("deleted_at", null)
+    .not("oem_part_number", "is", null)
+  const map = new Map<string, string>()
+  const ambiguous = new Set<string>()
+  for (const it of data ?? []) {
+    const key = normPartNumber(String(it.oem_part_number ?? ""))
+    if (!key) continue
+    if (map.has(key)) {
+      ambiguous.add(key)
+      continue
+    }
+    map.set(key, it.id as string)
+  }
+  for (const k of ambiguous) map.delete(k)
+  return map
+}
+
 /* ============================================================
    1. Upload + OCR -> create a DRAFT supplier invoice
    ============================================================ */
@@ -101,20 +132,31 @@ export async function extractAndCreateInvoice(formData: FormData): Promise<Extra
 
   const lines = extracted?.line_items ?? []
   if (lines.length) {
+    // OEM-first auto-match: a line links to an existing part ONLY when its OEM
+    // number matches exactly one inventory item. Supplier numbers and
+    // descriptions are never used to auto-link — the review UI flags those as
+    // "possible matches" for a human to confirm.
+    const oemIndex = await buildOemIndex(supabase)
     await supabase.from("supplier_invoice_items").insert(
       lines.map((l, i) => {
         const unitCost = n(l.unit_cost)
+        const oem = l.oem_part_number?.trim() || null
+        const supplierPn = l.supplier_part_number?.trim() || null
+        const matchId = oem ? oemIndex.get(normPartNumber(oem)) : undefined
         return {
           invoice_id: inv.id,
           line_no: i + 1,
           description: l.description || "Item",
-          sku: l.sku,
+          sku: oem ?? supplierPn,
+          oem_part_number: oem,
+          supplier_part_number: supplierPn,
           quantity: n(l.quantity, 1),
           unit: l.unit || "pcs",
           unit_cost: unitCost,
           line_total: n(l.line_total, unitCost * n(l.quantity, 1)),
           vat_rate: settings.vat_rate,
-          match_status: "new",
+          inventory_item_id: matchId ?? null,
+          match_status: matchId ? "matched" : "new",
           markup_pct: settings.default_markup_pct,
           suggested_sale_price: suggestSalePrice(unitCost, settings.pricing_method, settings.default_markup_pct),
           confidence: l.confidence ?? null,
@@ -139,7 +181,8 @@ function normalizeDate(v: string | null | undefined): string | null {
    ============================================================ */
 export type DraftLine = {
   description: string
-  sku: string | null
+  oem_part_number: string | null
+  supplier_part_number: string | null
   quantity: number
   unit: string
   unit_cost: number
@@ -184,21 +227,27 @@ export async function saveInvoiceDraft(payload: {
   await supabase.from("supplier_invoice_items").delete().eq("invoice_id", payload.id)
   if (clean.length) {
     const { error: itemErr } = await supabase.from("supplier_invoice_items").insert(
-      clean.map((l, i) => ({
-        invoice_id: payload.id,
-        line_no: i + 1,
-        description: l.description,
-        sku: l.sku,
-        quantity: n(l.quantity, 1),
-        unit: l.unit || "pcs",
-        unit_cost: n(l.unit_cost),
-        line_total: n(l.quantity, 1) * n(l.unit_cost),
-        vat_rate: n(l.vat_rate, 5),
-        inventory_item_id: l.inventory_item_id,
-        match_status: l.match_status,
-        suggested_sale_price: n(l.suggested_sale_price),
-        markup_pct: n(l.markup_pct),
-      })),
+      clean.map((l, i) => {
+        const oem = l.oem_part_number?.trim() || null
+        const supplierPn = l.supplier_part_number?.trim() || null
+        return {
+          invoice_id: payload.id,
+          line_no: i + 1,
+          description: l.description,
+          sku: oem ?? supplierPn,
+          oem_part_number: oem,
+          supplier_part_number: supplierPn,
+          quantity: n(l.quantity, 1),
+          unit: l.unit || "pcs",
+          unit_cost: n(l.unit_cost),
+          line_total: n(l.quantity, 1) * n(l.unit_cost),
+          vat_rate: n(l.vat_rate, 5),
+          inventory_item_id: l.inventory_item_id,
+          match_status: l.match_status,
+          suggested_sale_price: n(l.suggested_sale_price),
+          markup_pct: n(l.markup_pct),
+        }
+      }),
     )
     if (itemErr) throw new Error(itemErr.message)
   }
@@ -239,7 +288,13 @@ export async function confirmSupplierInvoice(id: string) {
 
     if (itemId) {
       // Existing part: top up stock, refresh cost and (if provided) sale price.
-      const { data: cur } = await supabase.from("inventory_items").select("quantity").eq("id", itemId).single()
+      // Backfill OEM / supplier numbers ONLY when the part lacks them — never
+      // overwrite an existing OEM number, and never touch the CRM Part ID.
+      const { data: cur } = await supabase
+        .from("inventory_items")
+        .select("quantity, oem_part_number, supplier_part_number")
+        .eq("id", itemId)
+        .single()
       const nextQty = (n(cur?.quantity) || 0) + qty
       await supabase
         .from("inventory_items")
@@ -247,16 +302,23 @@ export async function confirmSupplierInvoice(id: string) {
           quantity: nextQty,
           cost_price: cost,
           ...(sale > 0 ? { sale_price: sale } : {}),
+          ...(!cur?.oem_part_number && it.oem_part_number ? { oem_part_number: it.oem_part_number } : {}),
+          ...(!cur?.supplier_part_number && it.supplier_part_number
+            ? { supplier_part_number: it.supplier_part_number }
+            : {}),
           updated_at: new Date().toISOString(),
         })
         .eq("id", itemId)
     } else {
-      // New part: create the inventory record with opening quantity.
+      // New part: create the inventory record with opening quantity. The CRM
+      // Part ID is assigned automatically by a DB trigger (SHW-P-######).
       const { data: created, error: createErr } = await supabase
         .from("inventory_items")
         .insert({
-          sku: it.sku,
+          sku: it.oem_part_number ?? it.supplier_part_number ?? it.sku,
           name: it.description || "Part",
+          oem_part_number: it.oem_part_number ?? null,
+          supplier_part_number: it.supplier_part_number ?? null,
           unit: it.unit || "pcs",
           cost_price: cost,
           sale_price: sale,

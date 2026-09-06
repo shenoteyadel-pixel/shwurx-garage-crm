@@ -10,12 +10,28 @@ import { z } from "zod"
  */
 const lineItemSchema = z.object({
   description: z.string().describe("The part/item description exactly as printed"),
-  sku: z.string().nullable().describe("Part number / SKU / OEM ref if present, else null"),
+  oem_part_number: z
+    .string()
+    .nullable()
+    .describe(
+      "The MANUFACTURER / OEM part number only — the vehicle maker's or brand's own number (e.g. Mercedes A2059053414, BMW 34116888459, Bosch 0986452041). This is the reliable cross-supplier identity. Return null if the printed code is clearly the supplier's own catalogue code, or if you are not confident it is a genuine OEM number.",
+    ),
+  supplier_part_number: z
+    .string()
+    .nullable()
+    .describe(
+      "The SUPPLIER'S OWN catalogue / line / reference code for this item, when it is distinct from the OEM number. Different suppliers use different codes for the same physical part. Return null if absent.",
+    ),
+  part_number_kind_confidence: z
+    .number()
+    .min(0)
+    .max(1)
+    .describe("0..1 confidence that the OEM vs supplier classification above is correct"),
   quantity: z.number().describe("Quantity ordered; use 1 if not clearly stated"),
   unit: z.string().nullable().describe("Unit such as pcs, set, ltr; null if absent"),
   unit_cost: z.number().describe("Unit price EXCLUDING VAT"),
   line_total: z.number().describe("Line total EXCLUDING VAT (quantity x unit_cost)"),
-  confidence: z.number().min(0).max(1).describe("0..1 confidence in this line's accuracy"),
+  confidence: z.number().min(0).max(1).describe("0..1 confidence in this line's overall accuracy"),
 })
 
 const invoiceSchema = z.object({
@@ -42,8 +58,9 @@ const PROMPT = [
   "Read this supplier invoice / bill (it may be a photo, a scan, or a PDF, and may be in English or Arabic) and extract every field.",
   "Money values must be plain numbers with no currency symbols or thousands separators.",
   "Line items are the purchasable parts/products only — never include subtotal, discount, VAT, or grand-total summary rows as line items.",
+  "For each line, decide whether a detected code is a MANUFACTURER/OEM part number or the SUPPLIER'S OWN part/reference number — do NOT assume every code is an OEM number. Put each in the correct field and leave the other null when unsure. The invoice number itself is never a part number.",
   "If a value is missing or unreadable, return null rather than guessing. UAE standard VAT is 5%.",
-  "Set a realistic confidence (0..1) per line and overall so a human knows what to double-check.",
+  "Set a realistic confidence (0..1) per line, for the OEM-vs-supplier classification, and overall so a human knows what to double-check.",
 ].join(" ")
 
 export async function extractInvoice(data: Uint8Array, mediaType: string): Promise<ExtractedInvoice> {

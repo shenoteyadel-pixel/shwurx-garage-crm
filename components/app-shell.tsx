@@ -6,6 +6,7 @@ import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { signOut } from "@/lib/actions"
 import { NotificationBell } from "@/components/notification-bell"
+import { ThemeToggle } from "@/components/theme-toggle"
 import {
   LayoutDashboard,
   Package,
@@ -132,6 +133,7 @@ export function AppShell({
             <Brand compact />
           </div>
           <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
             <NotificationBell />
             {canCreateJob && (
               <Link

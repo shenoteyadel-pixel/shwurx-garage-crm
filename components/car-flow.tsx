@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ZONES, LIFT_BAYS, STAGE_MAP, type Stage, type Zone } from "@/lib/constants"
@@ -424,23 +425,59 @@ function DragHandleCard({
   )
 }
 
+const MENU_WIDTH = 224
+
 function MoveMenu({ job }: { job: Job }) {
   const move = React.useContext(MoveContext)
   const [open, setOpen] = React.useState(false)
-  const ref = React.useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = React.useState<{ left: number; top: number; maxHeight: number } | null>(null)
+  const btnRef = React.useRef<HTMLButtonElement>(null)
+  const popRef = React.useRef<HTMLDivElement>(null)
+
+  // Anchor the portaled popover to the trigger button. Using fixed positioning
+  // in a portal keeps the full menu visible above the board instead of being
+  // clipped by the column's overflow-y-auto or the card's overflow-hidden.
+  const place = React.useCallback(() => {
+    const btn = btnRef.current
+    if (!btn) return
+    const r = btn.getBoundingClientRect()
+    const margin = 8
+    const gap = 6
+    const spaceBelow = window.innerHeight - r.bottom - margin
+    const spaceAbove = r.top - margin
+    const openUp = spaceBelow < 240 && spaceAbove > spaceBelow
+    const maxHeight = Math.min(320, Math.max(160, openUp ? spaceAbove - gap : spaceBelow - gap))
+    const left = Math.min(Math.max(margin, r.right - MENU_WIDTH), window.innerWidth - MENU_WIDTH - margin)
+    const top = openUp ? Math.max(margin, r.top - gap - maxHeight) : r.bottom + gap
+    setCoords({ left, top, maxHeight })
+  }, [])
 
   React.useEffect(() => {
     if (!open) return
+    place()
     function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    function onScroll() {
+      setOpen(false)
     }
     document.addEventListener("mousedown", onDoc)
-    return () => document.removeEventListener("mousedown", onDoc)
-  }, [open])
+    window.addEventListener("resize", place)
+    // Close on any scroll (capture covers the board's inner scroll containers).
+    window.addEventListener("scroll", onScroll, true)
+    return () => {
+      document.removeEventListener("mousedown", onDoc)
+      window.removeEventListener("resize", place)
+      window.removeEventListener("scroll", onScroll, true)
+    }
+  }, [open, place])
 
   return (
-    <div ref={ref} className="absolute right-1 top-1 z-20">
+    <div className="absolute right-1 top-1 z-20">
       <button
+        ref={btnRef}
         type="button"
         aria-label="Move vehicle"
         onClick={(e) => {
@@ -452,50 +489,57 @@ function MoveMenu({ job }: { job: Job }) {
       >
         <MoveRight className="h-3.5 w-3.5" />
       </button>
-      {open && (
-        <div className="absolute right-0 top-7 max-h-72 w-52 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-xl scrollbar-thin">
-          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Move to zone
-          </div>
-          {ZONES.map((z) => (
-            <button
-              key={z.key}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setOpen(false)
-                move(job, z.stages[0])
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
-            >
-              <span className={cn("h-2 w-2 rounded-full", z.bar)} />
-              {z.label}
-            </button>
-          ))}
-          <div className="mt-1 border-t border-border px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Assign lift bay
-          </div>
-          <div className="grid grid-cols-3 gap-1 px-1 pb-1">
-            {LIFT_BAYS.map((bay) => (
+      {open &&
+        coords &&
+        createPortal(
+          <div
+            ref={popRef}
+            style={{ position: "fixed", left: coords.left, top: coords.top, width: MENU_WIDTH, maxHeight: coords.maxHeight }}
+            className="z-[100] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-2xl scrollbar-thin"
+          >
+            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Move to zone
+            </div>
+            {ZONES.map((z) => (
               <button
-                key={bay}
+                key={z.key}
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
                   setOpen(false)
-                  move(job, "repair", bay)
+                  move(job, z.stages[0])
                 }}
-                className={cn(
-                  "rounded-md border px-1 py-1 text-[10px] hover:bg-muted",
-                  job.lift_bay === bay ? "border-primary text-primary" : "border-border text-muted-foreground",
-                )}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
               >
-                {bay.replace("Bay ", "B")}
+                <span className={cn("h-2 w-2 rounded-full", z.bar)} />
+                {z.label}
               </button>
             ))}
-          </div>
-        </div>
-      )}
+            <div className="mt-1 border-t border-border px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Assign lift bay
+            </div>
+            <div className="grid grid-cols-3 gap-1 px-1 pb-1">
+              {LIFT_BAYS.map((bay) => (
+                <button
+                  key={bay}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setOpen(false)
+                    move(job, "repair", bay)
+                  }}
+                  className={cn(
+                    "rounded-md border px-1 py-1 text-[10px] hover:bg-muted",
+                    job.lift_bay === bay ? "border-primary text-primary" : "border-border text-muted-foreground",
+                  )}
+                >
+                  {bay.replace("Bay ", "B")}
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

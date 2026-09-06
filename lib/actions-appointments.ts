@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import { notifyByPermission, notifyUser } from "@/lib/actions-notifications"
 import { inferBodyType } from "@/lib/vehicle"
-import { resolveVehicleImage } from "@/lib/vehicle-image"
+import { after } from "next/server"
+import { attachJobVehicleImage } from "@/lib/vehicle-image-attach"
 import type { Stage } from "@/lib/constants"
 import type { AppointmentType, FulfillmentStatus } from "@/lib/appointments-fulfillment"
 
@@ -341,16 +342,11 @@ export async function convertAppointmentToJob(
   }
   if (!customerId) throw new Error("Could not resolve a customer for this booking")
 
-  // 2) Resolve a reference image (best-effort) and create the job card.
+  // 2) Create the job card. The uniform studio image is generated in the
+  // BACKGROUND after insert (see below) so converting a booking is instant.
   const make = appt.vehicle_make || null
   const model = appt.vehicle_model || null
   const year = appt.vehicle_year ? Number(String(appt.vehicle_year).replace(/[^\d]/g, "")) || null : null
-  let image: Awaited<ReturnType<typeof resolveVehicleImage>> = null
-  try {
-    image = await resolveVehicleImage({ make, model, year, color: null })
-  } catch {
-    /* image resolution is best-effort */
-  }
 
   const complaintParts = [
     appt.service_interest ? `Service requested: ${appt.service_interest}` : null,
@@ -369,9 +365,9 @@ export async function convertAppointmentToJob(
       vehicle_year: year,
       body_type: inferBodyType(make, model),
       plate_number: appt.plate_number || null,
-      vehicle_reference_image_url: image?.url ?? null,
-      vehicle_image_source: image?.source ?? null,
-      vehicle_image_resolved_at: image ? new Date().toISOString() : null,
+      vehicle_reference_image_url: null,
+      vehicle_image_source: null,
+      vehicle_image_resolved_at: null,
       complaint: complaintParts.join("\n") || null,
       stage: "check_in" as Stage,
       created_by: ctx.userId,
@@ -379,6 +375,9 @@ export async function convertAppointmentToJob(
     .select("id")
     .single()
   if (jobErr) throw new Error(jobErr.message)
+
+  // Generate the uniform studio image in the background (does not block).
+  after(() => attachJobVehicleImage(job.id, { make, model, year, color: null }))
 
   // 3) Link + complete the appointment.
   const { error: linkErr } = await supabase

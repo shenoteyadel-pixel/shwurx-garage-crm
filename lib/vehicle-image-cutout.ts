@@ -67,6 +67,28 @@ export async function cutoutVehicleImage(sourceUrl: string): Promise<string | nu
   }
 }
 
+/** Upload a PNG buffer to the vehicle-photos bucket and return its public URL. */
+export async function uploadVehiclePng(buf: Buffer, prefix: string, key: string): Promise<string | null> {
+  try {
+    const supabase = createServiceClient()
+    const path = `${prefix}/${key}.png`
+    const { error } = await supabase.storage.from(BUCKET).upload(path, buf, {
+      contentType: "image/png",
+      cacheControl: "31536000",
+      upsert: true,
+    })
+    if (error) {
+      console.log("[v0] vehicle png upload failed:", error.message)
+      return null
+    }
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
+    return data?.publicUrl ?? null
+  } catch (err) {
+    console.log("[v0] uploadVehiclePng failed:", (err as Error).message)
+    return null
+  }
+}
+
 async function urlExists(url: string): Promise<boolean> {
   try {
     const res = await fetch(url, { method: "HEAD" })
@@ -81,7 +103,7 @@ async function urlExists(url: string): Promise<boolean> {
  * Returns a PNG buffer, or null if the image doesn't look like it has a
  * removable light background (so we don't wreck real edge-to-edge photos).
  */
-async function removeWhiteBackground(input: Buffer): Promise<Buffer | null> {
+export async function removeWhiteBackground(input: Buffer): Promise<Buffer | null> {
   // Normalise onto a bounded canvas; trim keeps the car large in frame.
   const img = sharp(input, { failOn: "none" }).rotate().resize({
     width: 1000,

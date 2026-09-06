@@ -30,7 +30,7 @@ async function backfillVehicleImage(vehicleId: string) {
       .maybeSingle()
     if (!v) return
     if (v.image_source === "custom") return
-    if (v.reference_image_url && v.image_source === "carsxe") return
+    if (v.reference_image_url && v.image_source === "ai-studio") return
     const image = await resolveVehicleImage({
       make: v.make,
       model: v.model,
@@ -403,16 +403,12 @@ export async function updateVehicle(id: string, fd: FormData) {
   const isCustom = before?.image_source === "custom"
 
   if (identityChanged && !isCustom) {
-    const image = await resolveVehicleImage({
-      make: patch.make as string,
-      model: patch.model as string,
-      year: patch.year as number,
-      color: patch.color as string,
-      trim: patch.variant as string,
-    })
-    patch.reference_image_url = image?.url ?? null
-    patch.image_source = image?.source ?? null
-    patch.image_resolved_at = new Date().toISOString()
+    // The vehicle identity changed, so the cached image is now wrong. Clear it
+    // and regenerate the correct studio image in the background (see after()
+    // below) rather than blocking the save on a ~30-60s render.
+    patch.reference_image_url = null
+    patch.image_source = null
+    patch.image_resolved_at = null
   }
 
   const { data: updated, error } = await supabase
@@ -425,6 +421,8 @@ export async function updateVehicle(id: string, fd: FormData) {
     .single()
   if (error) throw new Error(error.message)
   await syncVehicleToJobs(supabase, id, updated)
+  // Regenerate the correct studio image in the background after an identity change.
+  if (identityChanged && !isCustom) after(() => backfillVehicleImage(id))
   revalidatePath(`/vehicles/${id}`)
   revalidatePath("/jobs")
   revalidatePath("/flow")
@@ -523,40 +521,47 @@ export async function refreshAllMasterVehicleImages(opts?: { onlyMissing?: boole
     .select("id, make, model, year, color, variant, reference_image_url, image_source")
   if (readErr) throw new Error(readErr.message)
 
-  let scanned = 0
-  let updated = 0
   let skipped = 0
-  for (const v of vehicles ?? []) {
+  const toResolve = (vehicles ?? []).filter((v) => {
     if (v.image_source === "custom") {
       skipped++
-      continue
+      return false
     }
     // Skip vehicles that already have a resolved image when only filling gaps.
-    if (onlyMissing && v.reference_image_url && v.image_source === "carsxe") {
+    if (onlyMissing && v.reference_image_url && v.image_source === "ai-studio") {
       skipped++
-      continue
+      return false
     }
-    scanned++
-    const image = await resolveVehicleImage({
-      make: v.make,
-      model: v.model,
-      year: v.year,
-      color: v.color,
-      trim: v.variant,
-    })
-    if (!image) continue
-    const stamp = new Date().toISOString()
-    const { error } = await supabase
-      .from("vehicles")
-      .update({ reference_image_url: image.url, image_source: image.source, image_resolved_at: stamp })
-      .eq("id", v.id)
-    if (error) continue
-    await supabase
-      .from("jobs")
-      .update({ vehicle_reference_image_url: image.url, vehicle_image_source: image.source })
-      .eq("vehicle_id", v.id)
-    updated++
-  }
+    return true
+  })
+  const scanned = toResolve.length
+
+  // Generate in parallel — each studio render takes ~30-60s, so a serial loop
+  // over the whole fleet would exceed the function time limit.
+  const results = await Promise.all(
+    toResolve.map(async (v) => {
+      const image = await resolveVehicleImage({
+        make: v.make,
+        model: v.model,
+        year: v.year,
+        color: v.color,
+        trim: v.variant,
+      })
+      if (!image) return false
+      const stamp = new Date().toISOString()
+      const { error } = await supabase
+        .from("vehicles")
+        .update({ reference_image_url: image.url, image_source: image.source, image_resolved_at: stamp })
+        .eq("id", v.id)
+      if (error) return false
+      await supabase
+        .from("jobs")
+        .update({ vehicle_reference_image_url: image.url, vehicle_image_source: image.source })
+        .eq("vehicle_id", v.id)
+      return true
+    }),
+  )
+  const updated = results.filter(Boolean).length
   revalidatePath("/crm")
   revalidatePath("/flow")
   revalidatePath("/vehicles")

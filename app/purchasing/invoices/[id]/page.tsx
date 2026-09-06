@@ -14,19 +14,43 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
   const user = await getShellUser()
   const supabase = await createClient()
 
-  const [{ data: invoice }, { data: items }, { data: suppliers }, { data: inventory }, settings] = await Promise.all([
-    supabase.from("supplier_invoices").select("*").eq("id", id).maybeSingle(),
-    supabase.from("supplier_invoice_items").select("*").eq("invoice_id", id).order("line_no"),
-    supabase.from("suppliers").select("id, name").is("deleted_at", null).order("name"),
-    supabase
-      .from("inventory_items")
-      .select("id, name, sku, cost_price, crm_part_id, oem_part_number, supplier_part_number")
-      .is("deleted_at", null)
-      .order("name"),
-    getSettings(),
-  ])
+  const [{ data: invoice }, { data: items }, { data: suppliers }, { data: inventory }, { data: jobRows }, settings] =
+    await Promise.all([
+      supabase.from("supplier_invoices").select("*").eq("id", id).maybeSingle(),
+      supabase.from("supplier_invoice_items").select("*").eq("invoice_id", id).order("line_no"),
+      supabase.from("suppliers").select("id, name").is("deleted_at", null).order("name"),
+      supabase
+        .from("inventory_items")
+        .select("id, name, sku, cost_price, crm_part_id, oem_part_number, supplier_part_number")
+        .is("deleted_at", null)
+        .order("name"),
+      supabase
+        .from("jobs")
+        .select("id, job_number, vehicle_make, vehicle_model, plate_number, customer_name")
+        .order("created_at", { ascending: false })
+        .limit(200),
+      getSettings(),
+    ])
 
   if (!invoice) notFound()
+
+  const jobs = (jobRows ?? []).map((j) => ({
+    id: j.id as string,
+    label: [
+      j.job_number,
+      [j.vehicle_make, j.vehicle_model].filter(Boolean).join(" "),
+      j.plate_number,
+      j.customer_name,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  }))
+
+  const raw = (invoice.ocr_raw ?? {}) as Record<string, unknown>
+  const rawStr = (k: string) => {
+    const v = raw[k]
+    return typeof v === "string" && v.trim() ? v.trim() : null
+  }
 
   const { data: payments } = await supabase
     .from("payments")
@@ -41,10 +65,17 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
     payment_status: invoice.payment_status,
     supplier_id: invoice.supplier_id,
     supplier_name_raw: invoice.supplier_name_raw,
+    supplier_contact: {
+      trn: rawStr("supplier_trn"),
+      phone: rawStr("supplier_phone"),
+      email: rawStr("supplier_email"),
+      address: rawStr("supplier_address"),
+    },
     invoice_number: invoice.invoice_number,
     invoice_date: invoice.invoice_date,
     currency: invoice.currency ?? "AED",
     subtotal: Number(invoice.subtotal) || 0,
+    discount_amount: Number(invoice.discount_amount) || 0,
     vat_amount: Number(invoice.vat_amount) || 0,
     total: Number(invoice.total) || 0,
     amount_paid: Number(invoice.amount_paid) || 0,
@@ -65,6 +96,9 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
     vat_rate: Number(it.vat_rate) || 5,
     inventory_item_id: it.inventory_item_id,
     match_status: it.match_status,
+    job_id: it.job_id ?? null,
+    parts_request_id: it.parts_request_id ?? null,
+    suggested_job_label: it.job_id ? jobs.find((j) => j.id === it.job_id)?.label ?? null : null,
     suggested_sale_price: Number(it.suggested_sale_price) || 0,
     markup_pct: Number(it.markup_pct) || 0,
     confidence: it.confidence !== null ? Number(it.confidence) : null,
@@ -84,6 +118,7 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
           items={itemRows}
           suppliers={suppliers ?? []}
           inventory={inventory ?? []}
+          jobs={jobs}
           pricing={{ method: settings.pricing_method, markup: settings.default_markup_pct, vat: settings.vat_rate }}
           payments={payments ?? []}
         />

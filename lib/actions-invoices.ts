@@ -60,6 +60,54 @@ async function buildOemIndex(
   return map
 }
 
+type OpenPartsRequest = {
+  id: string
+  job_id: string
+  part_name: string
+  job_number: string | null
+  vehicle: string | null
+}
+
+/**
+ * Load open parts requests (awaiting supply) with their job/vehicle, so a
+ * scanned line can be auto-suggested against the job that already asked for it.
+ */
+async function loadOpenPartsRequests(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<OpenPartsRequest[]> {
+  const { data } = await supabase
+    .from("parts_requests")
+    .select("id, job_id, part_name, status, jobs(job_number, vehicle_make, vehicle_model, plate_number)")
+    .is("deleted_at", null)
+    .not("status", "in", "(received,cancelled)")
+  return (data ?? []).map((r) => {
+    const job = (Array.isArray(r.jobs) ? r.jobs[0] : r.jobs) as
+      | { job_number?: string; vehicle_make?: string; vehicle_model?: string; plate_number?: string }
+      | null
+    return {
+      id: r.id as string,
+      job_id: r.job_id as string,
+      part_name: String(r.part_name ?? ""),
+      job_number: job?.job_number ?? null,
+      vehicle: [job?.vehicle_make, job?.vehicle_model].filter(Boolean).join(" ") || job?.plate_number || null,
+    }
+  })
+}
+
+/** Loose word-overlap match between a scanned line and a requested part name. */
+function suggestPartsRequest(
+  description: string,
+  oem: string | null,
+  requests: OpenPartsRequest[],
+): OpenPartsRequest | null {
+  const hay = normPartNumber(description + " " + (oem ?? ""))
+  for (const r of requests) {
+    const key = normPartNumber(r.part_name)
+    if (key.length >= 4 && (hay.includes(key) || key.includes(normPartNumber(description)))) return r
+  }
+  return null
+}
+
 /* ============================================================
    1. Upload + OCR -> create a DRAFT supplier invoice
    ============================================================ */
@@ -121,6 +169,7 @@ export async function extractAndCreateInvoice(formData: FormData): Promise<Extra
       invoice_date: normalizeDate(extracted?.invoice_date),
       currency: extracted?.currency || "AED",
       subtotal: n(extracted?.subtotal),
+      discount_amount: n(extracted?.discount_amount),
       vat_amount: n(extracted?.vat_amount),
       total: n(extracted?.total),
       status: "draft",
@@ -141,12 +190,14 @@ export async function extractAndCreateInvoice(formData: FormData): Promise<Extra
     // descriptions are never used to auto-link — the review UI flags those as
     // "possible matches" for a human to confirm.
     const oemIndex = await buildOemIndex(supabase)
+    const openRequests = await loadOpenPartsRequests(supabase)
     await supabase.from("supplier_invoice_items").insert(
       lines.map((l, i) => {
         const unitCost = n(l.unit_cost)
         const oem = l.oem_part_number?.trim() || null
         const supplierPn = l.supplier_part_number?.trim() || null
         const matchId = oem ? oemIndex.get(normPartNumber(oem)) : undefined
+        const pr = suggestPartsRequest(l.description || "", oem, openRequests)
         return {
           invoice_id: inv.id,
           line_no: i + 1,
@@ -161,6 +212,8 @@ export async function extractAndCreateInvoice(formData: FormData): Promise<Extra
           vat_rate: settings.vat_rate,
           inventory_item_id: matchId ?? null,
           match_status: matchId ? "matched" : "new",
+          job_id: pr?.job_id ?? null,
+          parts_request_id: pr?.id ?? null,
           markup_pct: settings.default_markup_pct,
           suggested_sale_price: suggestSalePrice(unitCost, settings.pricing_method, settings.default_markup_pct),
           confidence: l.confidence ?? null,
@@ -193,6 +246,8 @@ export type DraftLine = {
   vat_rate: number
   inventory_item_id: string | null
   match_status: "new" | "matched" | "ignore"
+  job_id: string | null
+  parts_request_id: string | null
   suggested_sale_price: number
   markup_pct: number
 }
@@ -202,6 +257,7 @@ export async function saveInvoiceDraft(payload: {
   supplierId: string | null
   invoiceNumber: string | null
   invoiceDate: string | null
+  discountAmount: number
   notes: string | null
   lines: DraftLine[]
 }) {
@@ -210,7 +266,8 @@ export async function saveInvoiceDraft(payload: {
   const clean = payload.lines.filter((l) => (l.description || "").trim())
   const subtotal = clean.reduce((t, l) => t + n(l.quantity) * n(l.unit_cost), 0)
   const vat = clean.reduce((t, l) => t + (n(l.quantity) * n(l.unit_cost) * n(l.vat_rate)) / 100, 0)
-  const total = subtotal + vat
+  const discount = n(payload.discountAmount)
+  const total = subtotal - discount + vat
 
   const { error: headErr } = await supabase
     .from("supplier_invoices")
@@ -218,6 +275,7 @@ export async function saveInvoiceDraft(payload: {
       supplier_id: payload.supplierId,
       invoice_number: payload.invoiceNumber,
       invoice_date: payload.invoiceDate || null,
+      discount_amount: discount,
       notes: payload.notes,
       subtotal,
       vat_amount: vat,
@@ -248,6 +306,8 @@ export async function saveInvoiceDraft(payload: {
           vat_rate: n(l.vat_rate, 5),
           inventory_item_id: l.inventory_item_id,
           match_status: l.match_status,
+          job_id: l.job_id,
+          parts_request_id: l.parts_request_id,
           suggested_sale_price: n(l.suggested_sale_price),
           markup_pct: n(l.markup_pct),
         }
@@ -266,12 +326,52 @@ export async function confirmSupplierInvoice(id: string) {
 
   const { data: invoice, error: invErr } = await supabase
     .from("supplier_invoices")
-    .select("id, status, supplier_id, invoice_number, total")
+    .select("id, status, supplier_id, supplier_name_raw, invoice_number, total, ocr_raw")
     .eq("id", id)
     .single()
   if (invErr) throw new Error(invErr.message)
   if (invoice.status !== "draft") throw new Error("Only draft invoices can be confirmed")
-  if (!invoice.supplier_id) throw new Error("Assign a supplier before confirming")
+
+  // Auto-fill the Suppliers module: create a supplier from the scanned details
+  // when none was matched, or backfill any missing contact fields on the matched
+  // supplier (never overwriting values a human already entered).
+  const raw = (invoice.ocr_raw ?? {}) as Record<string, unknown>
+  const rawStr = (k: string) => {
+    const v = raw[k]
+    return typeof v === "string" && v.trim() ? v.trim() : null
+  }
+  let supplierId = invoice.supplier_id as string | null
+  if (!supplierId) {
+    const name = (invoice.supplier_name_raw as string | null)?.trim() || rawStr("supplier_name") || "Unknown supplier"
+    const { data: created, error: supErr } = await supabase
+      .from("suppliers")
+      .insert({
+        name,
+        trn: rawStr("supplier_trn"),
+        mobile: rawStr("supplier_phone"),
+        email: rawStr("supplier_email"),
+        address: rawStr("supplier_address"),
+        created_by: userId,
+      })
+      .select("id")
+      .single()
+    if (supErr) throw new Error(supErr.message)
+    supplierId = created.id
+    await supabase.from("supplier_invoices").update({ supplier_id: supplierId }).eq("id", id)
+  } else {
+    const { data: sup } = await supabase
+      .from("suppliers")
+      .select("trn, mobile, email, address")
+      .eq("id", supplierId)
+      .single()
+    const backfill: Record<string, string> = {}
+    if (!sup?.trn && rawStr("supplier_trn")) backfill.trn = rawStr("supplier_trn")!
+    if (!sup?.mobile && rawStr("supplier_phone")) backfill.mobile = rawStr("supplier_phone")!
+    if (!sup?.email && rawStr("supplier_email")) backfill.email = rawStr("supplier_email")!
+    if (!sup?.address && rawStr("supplier_address")) backfill.address = rawStr("supplier_address")!
+    if (Object.keys(backfill).length) await supabase.from("suppliers").update(backfill).eq("id", supplierId)
+  }
+  invoice.supplier_id = supplierId
 
   const { data: items } = await supabase
     .from("supplier_invoice_items")
@@ -342,8 +442,19 @@ export async function confirmSupplierInvoice(id: string) {
       quantity: qty,
       unit_cost: cost,
       reference,
+      job_id: it.job_id ?? null,
+      supplier_id: invoice.supplier_id,
       created_by: userId,
     })
+
+    // Close the loop on the job card: mark the originating parts request as
+    // received and record what it actually cost.
+    if (it.parts_request_id) {
+      await supabase
+        .from("parts_requests")
+        .update({ status: "received", cost, updated_at: new Date().toISOString() })
+        .eq("id", it.parts_request_id)
+    }
   }
 
   const { data: docNum } = await supabase.rpc("next_doc_number", { p_type: "sinv", p_prefix: "SINV" })
@@ -353,6 +464,8 @@ export async function confirmSupplierInvoice(id: string) {
     .update({
       status: "confirmed",
       doc_number: docNum || `SINV-${Date.now()}`,
+      payment_status: "unpaid",
+      amount_paid: 0,
       confirmed_by: userId,
       confirmed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -365,6 +478,7 @@ export async function confirmSupplierInvoice(id: string) {
   revalidatePath("/purchasing/invoices")
   revalidatePath("/inventory")
   revalidatePath("/suppliers")
+  revalidatePath("/parts")
 }
 
 /* ============================================================
@@ -403,8 +517,27 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
   revalidatePath("/suppliers")
 }
 
+/**
+ * Flag a confirmed invoice as on-account / credit (bought on the supplier's
+ * credit terms, not yet paid). Toggles back to unpaid if undone.
+ */
+export async function setSupplierInvoiceOnAccount(id: string, onAccount: boolean) {
+  const { supabase } = await guard()
+  const { data: invoice } = await supabase.from("supplier_invoices").select("status, amount_paid, total").eq("id", id).single()
+  if (!invoice || invoice.status !== "confirmed") throw new Error("Invoice is not confirmed")
+  const paid = n(invoice.amount_paid)
+  const total = n(invoice.total)
+  const status = onAccount ? "credit" : paid <= 0 ? "unpaid" : paid + 0.01 >= total ? "paid" : "partial"
+  await supabase
+    .from("supplier_invoices")
+    .update({ payment_status: status, updated_at: new Date().toISOString() })
+    .eq("id", id)
+  revalidatePath(`/purchasing/invoices/${id}`)
+  revalidatePath("/suppliers")
+}
+
 /* ============================================================
-   5. Delete a draft (removes stored original)
+   6. Delete a draft (removes stored original)
    ============================================================ */
 export async function deleteInvoiceDraft(id: string) {
   const { supabase, ctx } = await guard()

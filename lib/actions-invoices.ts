@@ -26,7 +26,7 @@ const n = (v: unknown, d = 0) => {
 const s = (v: FormDataEntryValue | null) => (v ? String(v) : "") || null
 
 /** Normalize a part number for matching: case- and separator-insensitive. */
-export const normPartNumber = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "")
+const normPartNumber = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "")
 
 /**
  * Build an OEM-number -> inventory-item-id index for auto-matching. An OEM

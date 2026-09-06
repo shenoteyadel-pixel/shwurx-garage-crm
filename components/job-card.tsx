@@ -31,6 +31,9 @@ export interface JobCardData {
   advisor?: string | null
   technician?: string | null
   payment_status?: "none" | "unpaid" | "partial" | "paid"
+  paid_at?: string | null
+  paid_amount?: number | null
+  payment_method?: string | null
 }
 
 export function JobCard({ job }: { job: JobCardData }) {

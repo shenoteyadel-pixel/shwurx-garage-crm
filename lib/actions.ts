@@ -153,6 +153,37 @@ export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: str
   revalidatePath(`/jobs/${jobId}`)
 }
 
+/**
+ * Record customer payment for a delivered job. This is the "Paid" step of the
+ * delivery flow: it stamps paid_at (+ optional amount/method), and ensures the
+ * job is in the delivered stage. Once paid, the boards move it to history.
+ */
+export async function markJobPaid(
+  jobId: string,
+  opts: { amount?: number | null; method?: string | null } = {},
+) {
+  const { supabase, ctx } = await guard("jobs.update_status")
+  const amount = opts.amount != null && !Number.isNaN(Number(opts.amount)) ? Number(opts.amount) : null
+  const method = opts.method?.trim() || null
+  const { error } = await supabase
+    .from("jobs")
+    .update({
+      stage: "delivered",
+      paid_at: new Date().toISOString(),
+      paid_amount: amount,
+      payment_method: method,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "job.mark_paid", "job", jobId, { amount, method })
+  revalidatePath("/crm")
+  revalidatePath("/flow")
+  revalidatePath("/history")
+  revalidatePath(`/jobs/${jobId}`)
+  return { ok: true }
+}
+
 // Re-resolve the CarsXE reference image for a job (manual admin/advisor refresh).
 export async function refreshVehicleImage(jobId: string) {
   const { supabase } = await guard("jobs.edit")

@@ -19,20 +19,17 @@ export default async function FlowPage() {
     .eq("id", user!.id)
     .maybeSingle()
 
-  // Delivered is a terminal stage, but keep just-delivered cars visible in the
-  // Delivery column for a short window so the board reflects recent handovers
-  // before they drop off. Older delivered jobs stay out of the active board.
-  const deliveredWindowCutoff = new Date(Date.now() - 3 * 86400_000).toISOString()
-
   const { data: jobsRaw } = await supabase
     .from("jobs")
     .select(
-      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, vehicle_reference_image_url, cover_photo_url, stage, approval_status, mileage, advisor_id, technician_id, estimated_completion, created_at, updated_at",
+      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, vehicle_reference_image_url, cover_photo_url, stage, approval_status, mileage, advisor_id, technician_id, estimated_completion, created_at, updated_at, paid_at, paid_amount, payment_method",
     )
-    .or(`stage.neq.delivered,updated_at.gte.${deliveredWindowCutoff}`)
     .order("updated_at", { ascending: false })
 
-  const jobs = jobsRaw ?? []
+  // A delivered car stays on the board (in the Delivery column) until the
+  // customer pays. Once it's marked paid it moves off to the History page.
+  // Everything not delivered always stays on the active board.
+  const jobs = (jobsRaw ?? []).filter((j) => j.stage !== "delivered" || !j.paid_at)
 
   // The Car Flow cover is ONLY the explicitly chosen cover photo. Damage,
   // parts, and document photos can never become it; jobs without a chosen
@@ -73,6 +70,8 @@ export default async function FlowPage() {
   }
 
   function paymentStatus(jobId: string): JobCardData["payment_status"] {
+    const job = jobs.find((j) => j.id === jobId)
+    if (job?.paid_at) return "paid"
     const p = payByJob.get(jobId)
     if (!p) return "none"
     if (p.total > 0 && p.paid >= p.total) return "paid"

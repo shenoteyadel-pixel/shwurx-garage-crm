@@ -7,7 +7,7 @@ import { ZONES, LIFT_BAYS, STAGE_MAP, type Stage, type Zone } from "@/lib/consta
 import { cn, relativeHours } from "@/lib/utils"
 import { VehicleVisual, BrandLogo } from "@/components/vehicle-visual"
 import { UAEPlate } from "@/components/ui"
-import { moveJobLocation } from "@/lib/actions"
+import { moveJobLocation, markJobPaid } from "@/lib/actions"
 import type { JobCardData } from "@/components/job-card"
 import {
   Wrench,
@@ -27,6 +27,9 @@ type MoveHandler = (job: Job, stage: Stage, liftBay?: string | null) => void
 const MoveContext = React.createContext<MoveHandler>(() => {})
 
 type Job = JobCardData
+
+// Lets any card open the "collect payment" dialog for its job.
+const CollectPaymentContext = React.createContext<(job: Job) => void>(() => {})
 
 export function CarFlow({ jobs }: { jobs: Job[] }) {
   const router = useRouter()
@@ -56,8 +59,11 @@ export function CarFlow({ jobs }: { jobs: Job[] }) {
 
   const activeCount = items.filter((j) => j.stage !== "delivered").length
 
+  const [payJob, setPayJob] = React.useState<Job | null>(null)
+
   return (
     <MoveContext.Provider value={(job, stage, liftBay) => place(job, stage, liftBay)}>
+    <CollectPaymentContext.Provider value={(job) => setPayJob(job)}>
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
@@ -89,7 +95,116 @@ export function CarFlow({ jobs }: { jobs: Job[] }) {
         ))}
       </div>
     </div>
+    {payJob && (
+      <CollectPaymentDialog
+        job={payJob}
+        onClose={() => setPayJob(null)}
+        onPaid={() => {
+          setPayJob(null)
+          router.refresh()
+        }}
+      />
+    )}
+    </CollectPaymentContext.Provider>
     </MoveContext.Provider>
+  )
+}
+
+/** Modal to record the customer's payment and move the car to history. */
+function CollectPaymentDialog({
+  job,
+  onClose,
+  onPaid,
+}: {
+  job: Job
+  onClose: () => void
+  onPaid: () => void
+}) {
+  const [amount, setAmount] = React.useState("")
+  const [method, setMethod] = React.useState("Cash")
+  const [saving, setSaving] = React.useState(false)
+  const vehicle = [job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "vehicle"
+
+  async function submit() {
+    setSaving(true)
+    try {
+      await markJobPaid(job.id, { amount: amount ? Number(amount) : null, method })
+      onPaid()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Collect payment"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-xl border border-border bg-card p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
+          <Wallet className="h-4 w-4 text-emerald-400" />
+          Collect payment
+        </div>
+        <p className="mb-4 text-xs text-muted-foreground">
+          {job.job_number} · {vehicle}. Recording payment moves the car to History.
+        </p>
+
+        <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="pay-amount">
+          Amount (AED)
+        </label>
+        <input
+          id="pay-amount"
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="0.01"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="Optional"
+          className="mb-3 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+        />
+
+        <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="pay-method">
+          Method
+        </label>
+        <select
+          id="pay-method"
+          value={method}
+          onChange={(e) => setMethod(e.target.value)}
+          className="mb-5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+        >
+          <option>Cash</option>
+          <option>Card</option>
+          <option>Bank transfer</option>
+          <option>Cheque</option>
+          <option>Other</option>
+        </select>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-md border border-border bg-background py-2 text-sm font-medium transition hover:bg-muted/40"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={saving}
+            className="flex-1 rounded-md bg-emerald-600 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Mark paid"}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -197,8 +312,14 @@ function WorkshopBays({
   const byBay = new Map<string, Job>()
   const unassigned: Job[] = []
   for (const j of jobs) {
-    if (j.lift_bay && LIFT_BAYS.includes(j.lift_bay)) byBay.set(j.lift_bay, j)
-    else unassigned.push(j)
+    // A bay holds one car. If a bay is already taken (two cars share the same
+    // lift_bay), keep the extra visible in the "no bay" list instead of letting
+    // the Map overwrite and silently drop it.
+    if (j.lift_bay && LIFT_BAYS.includes(j.lift_bay) && !byBay.has(j.lift_bay)) {
+      byBay.set(j.lift_bay, j)
+    } else {
+      unassigned.push(j)
+    }
   }
 
   return (
@@ -462,6 +583,7 @@ function FlowCard({
   const approval = APPROVAL_BADGE[job.approval_status] ?? APPROVAL_BADGE.pending
   const payment = job.payment_status ? PAYMENT_BADGE[job.payment_status] : null
   const completion = completionLabel(job.estimated_completion)
+  const collectPayment = React.useContext(CollectPaymentContext)
 
   return (
     <DragHandleCard job={job} pending={pending} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -553,6 +675,20 @@ function FlowCard({
               </span>
             )}
           </div>
+
+          {(job.stage === "ready_for_delivery" || job.stage === "delivered") && !job.paid_at && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                collectPayment(job)
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md bg-emerald-600 py-1.5 text-[11px] font-semibold text-white transition hover:bg-emerald-500"
+            >
+              <Wallet className="h-3.5 w-3.5" />
+              Collect payment
+            </button>
+          )}
 
           <Link
             href={`/jobs/${job.id}`}

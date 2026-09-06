@@ -23,7 +23,7 @@ export default async function DashboardPage() {
   const { data: jobsRaw } = await supabase
     .from("jobs")
     .select(
-      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, vehicle_reference_image_url, cover_photo_url, stage, approval_status, created_at, updated_at, approved_at",
+      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, vehicle_reference_image_url, cover_photo_url, stage, approval_status, created_at, updated_at, approved_at, paid_at, paid_amount, payment_method",
     )
     .order("updated_at", { ascending: false })
 
@@ -41,6 +41,7 @@ export default async function DashboardPage() {
   const jobCards: JobCardData[] = jobs.map((j) => ({
     ...(j as any),
     cover: coverByJob.get(j.id) ?? null,
+    payment_status: j.paid_at ? "paid" : undefined,
   }))
 
   // ---- Metrics ----
@@ -172,13 +173,7 @@ export default async function DashboardPage() {
             </Link>
           )}
         </div>
-        <CarFlow
-          jobs={jobCards.filter(
-            (j) =>
-              j.stage !== "delivered" ||
-              (j.updated_at ? new Date(j.updated_at).getTime() >= Date.now() - 3 * 86400_000 : false),
-          )}
-        />
+        <CarFlow jobs={jobCards.filter((j) => j.stage !== "delivered" || !j.paid_at)} />
       </div>
     </AppShell>
   )

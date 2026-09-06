@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Phone, Mail, MapPin, MessageCircle } from "lucide-react"
 import { ContactForm } from "@/components/site/contact-form"
 import { getPublicSiteInfo } from "@/lib/site-info"
+import { getServerI18n } from "@/lib/i18n/server"
 
 export const metadata: Metadata = {
   title: "Contact — SHWURX Auto Service Center",
@@ -9,17 +10,15 @@ export const metadata: Metadata = {
 }
 
 export default async function ContactPage() {
-  const info = await getPublicSiteInfo()
+  const [info, { dict }] = await Promise.all([getPublicSiteInfo(), getServerI18n()])
+  const t = dict.contactPage
   const waNumber = (info.whatsapp || "").replace(/[^\d]/g, "")
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-16 lg:px-8">
       <div className="max-w-2xl">
-        <h1 className="text-balance text-4xl font-bold tracking-tight md:text-5xl">Get in touch</h1>
-        <p className="mt-4 text-pretty text-base leading-relaxed text-muted-foreground">
-          Have a question or want to speak to an advisor? Send us a message and we&apos;ll reply quickly — or
-          reach us directly using the details below.
-        </p>
+        <h1 className="text-balance text-4xl font-bold tracking-tight md:text-5xl">{t.title}</h1>
+        <p className="mt-4 text-pretty text-base leading-relaxed text-muted-foreground">{t.intro}</p>
       </div>
 
       <div className="mt-12 grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:gap-16">
@@ -33,8 +32,8 @@ export default async function ContactPage() {
                 <Phone className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Call us</p>
-                <p className="text-sm font-semibold">{info.phone}</p>
+                <p className="text-xs text-muted-foreground">{t.callUs}</p>
+                <p className="text-sm font-semibold" dir="ltr">{info.phone}</p>
               </div>
             </a>
           )}
@@ -50,8 +49,8 @@ export default async function ContactPage() {
                 <MessageCircle className="h-5 w-5 text-emerald-400" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">WhatsApp</p>
-                <p className="text-sm font-semibold">Message us</p>
+                <p className="text-xs text-muted-foreground">{t.whatsapp}</p>
+                <p className="text-sm font-semibold">{t.whatsappAction}</p>
               </div>
             </a>
           )}
@@ -65,8 +64,8 @@ export default async function ContactPage() {
                 <Mail className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Email</p>
-                <p className="text-sm font-semibold">{info.email}</p>
+                <p className="text-xs text-muted-foreground">{t.email}</p>
+                <p className="text-sm font-semibold" dir="ltr">{info.email}</p>
               </div>
             </a>
           )}
@@ -77,7 +76,7 @@ export default async function ContactPage() {
                 <MapPin className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Visit us</p>
+                <p className="text-xs text-muted-foreground">{t.visitUs}</p>
                 <p className="text-sm font-semibold leading-relaxed">{info.address}</p>
               </div>
             </div>

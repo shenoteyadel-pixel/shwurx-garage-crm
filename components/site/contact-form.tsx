@@ -4,10 +4,13 @@ import { useState } from "react"
 import { CheckCircle2, Loader2 } from "lucide-react"
 import { Button, Field, Input } from "@/components/ui"
 import { submitLead, track } from "@/lib/site-track"
+import { useI18n } from "@/lib/i18n/provider"
 
 type Status = "idle" | "submitting" | "done" | "error"
 
 export function ContactForm() {
+  const { dict } = useI18n()
+  const t = dict.contactForm
   const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState<string | null>(null)
 
@@ -20,7 +23,7 @@ export function ContactForm() {
     const phone = String(fd.get("phone") || "").trim()
     const email = String(fd.get("email") || "").trim()
     if (!phone && !email) {
-      setError("Please provide a phone number or email so we can reply.")
+      setError(t.errNoContact)
       setStatus("error")
       return
     }
@@ -35,7 +38,7 @@ export function ContactForm() {
       track("lead_submit", {})
       setStatus("done")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.")
+      setError(err instanceof Error ? err.message : t.errGeneric)
       setStatus("error")
     }
   }
@@ -46,10 +49,8 @@ export function ContactForm() {
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10">
           <CheckCircle2 className="h-7 w-7 text-emerald-400" />
         </div>
-        <h2 className="mt-4 text-xl font-bold">Message sent</h2>
-        <p className="mt-2 text-pretty text-sm leading-relaxed text-muted-foreground">
-          Thanks for reaching out — we&apos;ll get back to you as soon as possible.
-        </p>
+        <h2 className="mt-4 text-xl font-bold">{t.doneTitle}</h2>
+        <p className="mt-2 text-pretty text-sm leading-relaxed text-muted-foreground">{t.doneBody}</p>
       </div>
     )
   }
@@ -57,23 +58,23 @@ export function ContactForm() {
   return (
     <form onSubmit={onSubmit} className="rounded-2xl border border-border bg-card p-6 md:p-8">
       <div className="grid gap-4">
-        <Field label="Name" htmlFor="name">
-          <Input id="name" name="name" placeholder="Your name" />
+        <Field label={t.name} htmlFor="name">
+          <Input id="name" name="name" placeholder={t.namePlaceholder} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Phone" htmlFor="phone">
-            <Input id="phone" name="phone" type="tel" placeholder="05x xxx xxxx" />
+          <Field label={t.phone} htmlFor="phone">
+            <Input id="phone" name="phone" type="tel" placeholder={t.phonePlaceholder} dir="ltr" />
           </Field>
-          <Field label="Email" htmlFor="email">
-            <Input id="email" name="email" type="email" placeholder="you@email.com" />
+          <Field label={t.email} htmlFor="email">
+            <Input id="email" name="email" type="email" placeholder={t.emailPlaceholder} dir="ltr" />
           </Field>
         </div>
-        <Field label="Message" htmlFor="message">
+        <Field label={t.message} htmlFor="message">
           <textarea
             id="message"
             name="message"
             rows={4}
-            placeholder="How can we help?"
+            placeholder={t.messagePlaceholder}
             className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </Field>
@@ -84,10 +85,10 @@ export function ContactForm() {
       <Button type="submit" size="lg" className="mt-6 w-full" disabled={status === "submitting"}>
         {status === "submitting" ? (
           <>
-            <Loader2 className="h-4 w-4 animate-spin" /> Sending…
+            <Loader2 className="h-4 w-4 animate-spin" /> {t.sending}
           </>
         ) : (
-          "Send Message"
+          t.send
         )}
       </Button>
     </form>

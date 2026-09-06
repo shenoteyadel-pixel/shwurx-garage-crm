@@ -1,3 +1,5 @@
+"use client"
+
 import {
   Wrench,
   Check,
@@ -21,6 +23,7 @@ import { VehicleVisual } from "@/components/vehicle-visual"
 import { TrackInspectionDiagram } from "@/components/track-inspection-diagram"
 import type { TrackingDetail, TrackMilestone, TrackPhoto } from "@/lib/tracking-data"
 import type { TrackingStatus } from "@/lib/portal-data"
+import { useI18n } from "@/lib/i18n/provider"
 
 const GARAGE_PHONE = "+971 4 000 0000"
 
@@ -43,11 +46,13 @@ function formatDateTime(iso: string | null): string | null {
 }
 
 export function TrackExperience({ detail, status }: { detail: TrackingDetail; status: TrackingStatus }) {
+  const { t, dir, fmt } = useI18n()
+  const tr = t.track
   const isReady = detail.stage === "ready_for_delivery" || detail.stage === "delivered"
   const isDelivered = detail.stage === "delivered"
 
   return (
-    <main className="min-h-dvh bg-background pb-16">
+    <main dir={dir} className="min-h-dvh bg-background pb-16">
       {/* ---------- Hero ---------- */}
       <section className="relative">
         <div className="relative h-60 w-full sm:h-72">
@@ -79,7 +84,7 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
         <div className="relative -mt-14 px-4">
           <div className="mx-auto max-w-lg">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {detail.jobNumber ? `Job ${detail.jobNumber}` : "Live vehicle tracking"}
+              {detail.jobNumber ? `${tr.jobPrefix} ${detail.jobNumber}` : tr.liveTracking}
             </p>
             <h1 className="mt-1 text-2xl font-bold leading-tight tracking-tight text-balance">
               {detail.vehicleLabel}
@@ -101,7 +106,7 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
         {/* ---------- Current status headline ---------- */}
         <section className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current status</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{tr.currentStatus}</span>
             <span className="text-xs font-semibold text-muted-foreground">{detail.progressPct}%</span>
           </div>
           <div className="mt-2 flex items-center gap-2">
@@ -109,8 +114,7 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
             <h2 className={`text-xl font-bold ${detail.stageAccentText}`}>{detail.stageLabel}</h2>
           </div>
           <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            {detail.milestones.find((m) => m.state === "current")?.description ??
-              "We're taking care of your vehicle."}
+            {detail.milestones.find((m) => m.state === "current")?.description ?? tr.takingCare}
           </p>
 
           {/* Progress bar */}
@@ -123,7 +127,7 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
 
           {detail.updatedAt && (
             <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Clock3 className="h-3.5 w-3.5" /> Last updated {formatDateTime(detail.updatedAt)}
+              <Clock3 className="h-3.5 w-3.5" /> {tr.lastUpdated} {formatDateTime(detail.updatedAt)}
             </p>
           )}
         </section>
@@ -134,20 +138,18 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
             <div className="flex items-center gap-2 text-emerald-300">
               <CircleCheck className="h-5 w-5" />
               <h3 className="text-base font-bold">
-                {isDelivered ? "Vehicle delivered" : "Ready for collection"}
+                {isDelivered ? tr.vehicleDelivered : tr.readyForCollection}
               </h3>
             </div>
             <p className="mt-1.5 text-sm leading-relaxed text-emerald-200/80">
-              {isDelivered
-                ? "Your vehicle has been handed back. We hope to see you again!"
-                : "All work is complete and your vehicle is waiting for you. Please bring your collection details when you visit."}
+              {isDelivered ? tr.deliveredBody : tr.readyBody}
             </p>
             {!isDelivered && (
               <a
                 href={`tel:${GARAGE_PHONE.replace(/\s/g, "")}`}
                 className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400"
               >
-                <Phone className="h-4 w-4" /> Call to arrange collection
+                <Phone className="h-4 w-4" /> {tr.callToArrange}
               </a>
             )}
           </section>
@@ -156,20 +158,18 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
         {/* ---------- Quotation & approval ---------- */}
         {detail.quote && (
           <section className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader icon={<FileText className="h-4 w-4" />} title="Your quotation" />
+            <SectionHeader icon={<FileText className="h-4 w-4" />} title={tr.yourQuotation} />
             {detail.quote.awaitingApproval ? (
               <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
                 <div className="flex items-center gap-2 text-amber-300">
                   <ShieldCheck className="h-4 w-4" />
-                  <span className="text-sm font-semibold">Awaiting your approval</span>
+                  <span className="text-sm font-semibold">{tr.awaitingApproval}</span>
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-amber-200/80">
-                  Please review and approve your quotation so we can begin the work.
-                </p>
+                <p className="mt-1 text-xs leading-relaxed text-amber-200/80">{tr.approveBody}</p>
                 <p className="mt-3 text-2xl font-bold">
                   AED {money(detail.quote.total)}
                   <span className="ml-1 text-xs font-normal text-muted-foreground">
-                    {detail.quote.vatInclusive ? "incl. VAT" : "+ VAT"}
+                    {detail.quote.vatInclusive ? tr.inclVat : tr.plusVat}
                   </span>
                 </p>
                 {detail.quote.approvalPath && (
@@ -177,7 +177,7 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
                     href={detail.quote.approvalPath}
                     className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
                   >
-                    Review &amp; approve <ArrowRight className="h-4 w-4" />
+                    {tr.reviewApprove} <ArrowRight className="h-4 w-4 rtl:-scale-x-100" />
                   </a>
                 )}
               </div>
@@ -186,7 +186,7 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
                 <div className="flex items-center gap-2 text-emerald-300">
                   <CircleCheck className="h-4 w-4" />
                   <span className="text-sm font-semibold">
-                    {detail.quote.approved ? "Approved" : "Quotation on file"}
+                    {detail.quote.approved ? tr.approved : tr.quotationOnFile}
                   </span>
                 </div>
                 <span className="text-lg font-bold">AED {money(detail.quote.total)}</span>
@@ -205,7 +205,7 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
                             : "bg-sky-500/15 text-sky-300"
                         }`}
                       >
-                        {it.kind === "labor" || it.kind === "labour" ? "Labour" : "Part"}
+                        {it.kind === "labor" || it.kind === "labour" ? tr.labour : tr.part}
                       </span>
                       <span className="text-foreground">
                         {it.description}
@@ -224,7 +224,7 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
 
         {/* ---------- Progress timeline ---------- */}
         <section className="rounded-2xl border border-border bg-card p-5">
-          <SectionHeader icon={<Wrench className="h-4 w-4" />} title="Service progress" />
+          <SectionHeader icon={<Wrench className="h-4 w-4" />} title={tr.serviceProgress} />
           <ol className="mt-4">
             {detail.milestones.map((m, i) => (
               <MilestoneRow key={m.key} milestone={m} isLast={i === detail.milestones.length - 1} />
@@ -235,7 +235,7 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
         {/* ---------- Parts ---------- */}
         {detail.parts.length > 0 && (
           <section className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader icon={<Package className="h-4 w-4" />} title="Parts" />
+            <SectionHeader icon={<Package className="h-4 w-4" />} title={tr.parts} />
             <ul className="mt-3 space-y-2">
               {detail.parts.map((p, i) => (
                 <li key={i} className="flex items-center justify-between gap-3 text-sm">
@@ -263,21 +263,19 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
         {/* ---------- Photos ---------- */}
         {(detail.beforePhotos.length > 0 || detail.afterPhotos.length > 0) && (
           <section className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader icon={<Camera className="h-4 w-4" />} title="Photos" />
+            <SectionHeader icon={<Camera className="h-4 w-4" />} title={tr.photos} />
             {detail.beforePhotos.length > 0 && (
-              <PhotoGroup label="Before" photos={detail.beforePhotos} />
+              <PhotoGroup label={tr.before} photos={detail.beforePhotos} />
             )}
-            {detail.afterPhotos.length > 0 && <PhotoGroup label="After" photos={detail.afterPhotos} />}
+            {detail.afterPhotos.length > 0 && <PhotoGroup label={tr.after} photos={detail.afterPhotos} />}
           </section>
         )}
 
         {/* ---------- Vehicle condition (inspection diagram) ---------- */}
         {detail.inspection && (
           <section className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader icon={<ClipboardCheck className="h-4 w-4" />} title="Vehicle condition at check-in" />
-            <p className="mb-3 mt-1 text-xs leading-relaxed text-muted-foreground">
-              This is the documented condition of your vehicle when we received it. Tap any point to see details.
-            </p>
+            <SectionHeader icon={<ClipboardCheck className="h-4 w-4" />} title={tr.conditionTitle} />
+            <p className="mb-3 mt-1 text-xs leading-relaxed text-muted-foreground">{tr.conditionBody}</p>
             <TrackInspectionDiagram
               inspection={detail.inspection}
               bodyType={detail.bodyType}
@@ -289,25 +287,25 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
 
         {/* ---------- Details ---------- */}
         <section className="rounded-2xl border border-border bg-card p-5">
-          <SectionHeader icon={<FileText className="h-4 w-4" />} title="Service details" />
+          <SectionHeader icon={<FileText className="h-4 w-4" />} title={tr.serviceDetails} />
           <dl className="mt-3 space-y-3 text-sm">
             {detail.complaint && (
               <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reported concern</dt>
+                <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{tr.reportedConcern}</dt>
                 <dd className="mt-0.5 leading-relaxed text-foreground">{detail.complaint}</dd>
               </div>
             )}
             {detail.technicianFirstName && (
               <div className="flex items-center gap-2">
                 <User className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Your technician:</span>
+                <span className="text-muted-foreground">{tr.yourTechnician}</span>
                 <span className="font-medium text-foreground">{detail.technicianFirstName}</span>
               </div>
             )}
             {formatDate(detail.estimatedCompletion) && (
               <div className="flex items-center gap-2">
                 <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Estimated ready:</span>
+                <span className="text-muted-foreground">{tr.estimatedReady}</span>
                 <span className="font-medium text-foreground">{formatDate(detail.estimatedCompletion)}</span>
               </div>
             )}
@@ -317,16 +315,16 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
         {/* ---------- Invoice ---------- */}
         {detail.invoice && (
           <section className="rounded-2xl border border-border bg-card p-5">
-            <SectionHeader icon={<FileText className="h-4 w-4" />} title="Invoice" />
+            <SectionHeader icon={<FileText className="h-4 w-4" />} title={tr.invoice} />
             <div className="mt-3 space-y-2 text-sm">
               {detail.invoice.invoiceNumber && (
-                <Row label="Invoice" value={detail.invoice.invoiceNumber} mono />
+                <Row label={tr.invoice} value={detail.invoice.invoiceNumber} mono />
               )}
-              <Row label="Total" value={`AED ${money(detail.invoice.total)}`} />
-              <Row label="Paid" value={`AED ${money(detail.invoice.amountPaid)}`} />
+              <Row label={tr.total} value={`AED ${money(detail.invoice.total)}`} />
+              <Row label={tr.paid} value={`AED ${money(detail.invoice.amountPaid)}`} />
               {detail.invoice.outstanding > 0 && (
                 <div className="flex items-center justify-between border-t border-border pt-2">
-                  <span className="font-semibold text-foreground">Outstanding</span>
+                  <span className="font-semibold text-foreground">{tr.outstanding}</span>
                   <span className="text-lg font-bold text-amber-300">AED {money(detail.invoice.outstanding)}</span>
                 </div>
               )}
@@ -338,13 +336,13 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
                   className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground transition hover:opacity-90"
                 >
                   <CreditCard className="h-4 w-4" />
-                  {detail.invoice.payLinkLabel || "Pay Now"} · AED {money(detail.invoice.outstanding)}
+                  {detail.invoice.payLinkLabel || tr.payNow} · AED {money(detail.invoice.outstanding)}
                 </a>
               )}
               {detail.invoice.outstanding === 0 && detail.invoice.total > 0 && (
                 <div className="flex items-center gap-2 border-t border-border pt-2 text-emerald-300">
                   <CircleCheck className="h-4 w-4" />
-                  <span className="text-sm font-semibold">Fully paid — thank you</span>
+                  <span className="text-sm font-semibold">{tr.fullyPaid}</span>
                 </div>
               )}
             </div>
@@ -353,28 +351,26 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
 
         {/* ---------- Contact / help ---------- */}
         <section className="rounded-2xl border border-border bg-card p-5">
-          <SectionHeader icon={<MessageCircle className="h-4 w-4" />} title="Need help?" />
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Questions about your service? Our team is happy to help.
-          </p>
+          <SectionHeader icon={<MessageCircle className="h-4 w-4" />} title={tr.needHelp} />
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{tr.needHelpBody}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <a
               href={`tel:${GARAGE_PHONE.replace(/\s/g, "")}`}
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-secondary px-4 py-2 text-sm font-semibold text-secondary-foreground hover:bg-secondary/80"
             >
-              <Phone className="h-4 w-4" /> Call us
+              <Phone className="h-4 w-4" /> {tr.callUs}
             </a>
             <a
               href="/portal"
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-secondary px-4 py-2 text-sm font-semibold text-secondary-foreground hover:bg-secondary/80"
             >
-              <KeyRound className="h-4 w-4" /> Customer portal
+              <KeyRound className="h-4 w-4" /> {tr.customerPortal}
             </a>
           </div>
         </section>
 
         <p className="pt-2 text-center text-xs text-muted-foreground">
-          This is a private, read-only view of your service for {detail.customerName}.
+          {fmt(tr.privateView, { name: detail.customerName })}
         </p>
       </div>
     </main>
@@ -384,16 +380,17 @@ export function TrackExperience({ detail, status }: { detail: TrackingDetail; st
 /* ------------------------------ sub-components ------------------------------ */
 
 function StatusChip({ status }: { status: TrackingStatus }) {
+  const { t } = useI18n()
   if (status === "completed") {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
-        <CircleCheck className="h-3.5 w-3.5" /> Completed
+        <CircleCheck className="h-3.5 w-3.5" /> {t.track.completed}
       </span>
     )
   }
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
-      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> Live
+      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> {t.track.live}
     </span>
   )
 }

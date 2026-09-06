@@ -2,9 +2,10 @@
 
 import { useState } from "react"
 import { CheckCircle2, Loader2, Car, Truck, MapPin } from "lucide-react"
-import { Button, Field, Input, Label } from "@/components/ui"
+import { Button, Field, Input } from "@/components/ui"
 import { submitAppointment, track } from "@/lib/site-track"
 import { SITE_SERVICES } from "@/lib/site-services"
+import { useI18n } from "@/lib/i18n/provider"
 
 type Status = "idle" | "submitting" | "done" | "error"
 type ApptType = "dropoff" | "pickup" | "pickup_delivery"
@@ -19,13 +20,15 @@ const EMIRATES = [
   "Umm Al Quwain",
 ]
 
-const TYPE_OPTIONS: { value: ApptType; label: string; hint: string; icon: typeof Car }[] = [
-  { value: "dropoff", label: "Drop-off at garage", hint: "I'll bring my car in", icon: Car },
-  { value: "pickup", label: "Pickup only", hint: "Collect my car from me", icon: MapPin },
-  { value: "pickup_delivery", label: "Pickup & delivery", hint: "Collect and return my car", icon: Truck },
-]
+const TYPE_ICON: Record<ApptType, typeof Car> = {
+  dropoff: Car,
+  pickup: MapPin,
+  pickup_delivery: Truck,
+}
 
 export function AppointmentForm() {
+  const { t, dir } = useI18n()
+  const f = t.appointmentForm
   const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState<string | null>(null)
   const [apptType, setApptType] = useState<ApptType>("dropoff")
@@ -33,6 +36,12 @@ export function AppointmentForm() {
 
   const needsPickup = apptType === "pickup" || apptType === "pickup_delivery"
   const needsDelivery = apptType === "pickup_delivery"
+
+  const typeOptions: { value: ApptType; label: string; hint: string }[] = [
+    { value: "dropoff", label: f.types.dropoff.label, hint: f.types.dropoff.hint },
+    { value: "pickup", label: f.types.pickup.label, hint: f.types.pickup.hint },
+    { value: "pickup_delivery", label: f.types.pickup_delivery.label, hint: f.types.pickup_delivery.hint },
+  ]
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -87,7 +96,7 @@ export function AppointmentForm() {
       track("appointment_request", { service: fd.get("serviceInterest") || null, type: apptType })
       setStatus("done")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.")
+      setError(err instanceof Error ? err.message : f.errGeneric)
       setStatus("error")
     }
   }
@@ -98,11 +107,9 @@ export function AppointmentForm() {
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10">
           <CheckCircle2 className="h-7 w-7 text-emerald-400" />
         </div>
-        <h2 className="mt-4 text-xl font-bold">Request received</h2>
+        <h2 className="mt-4 text-xl font-bold">{f.doneTitle}</h2>
         <p className="mt-2 text-pretty text-sm leading-relaxed text-muted-foreground">
-          {needsPickup
-            ? "Thank you. Our team will call you shortly to confirm your appointment and arrange a driver for collection. Keep your phone handy."
-            : "Thank you. Our team will call you shortly to confirm your appointment time. Keep your phone handy."}
+          {needsPickup ? f.doneBodyPickup : f.doneBodyDropoff}
         </p>
       </div>
     )
@@ -112,48 +119,48 @@ export function AppointmentForm() {
     "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
   return (
-    <form onSubmit={onSubmit} className="rounded-2xl border border-border bg-card p-6 md:p-8">
+    <form onSubmit={onSubmit} dir={dir} className="rounded-2xl border border-border bg-card p-6 md:p-8">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Full name" htmlFor="name" className="sm:col-span-2">
-          <Input id="name" name="name" required placeholder="Your name" />
+        <Field label={f.fullName} htmlFor="name" className="sm:col-span-2">
+          <Input id="name" name="name" required placeholder={f.fullNamePlaceholder} />
         </Field>
-        <Field label="Phone" htmlFor="phone">
+        <Field label={f.phone} htmlFor="phone">
           <Input id="phone" name="phone" type="tel" required placeholder="05x xxx xxxx" />
         </Field>
-        <Field label="Email (optional)" htmlFor="email">
+        <Field label={f.email} htmlFor="email">
           <Input id="email" name="email" type="email" placeholder="you@email.com" />
         </Field>
-        <Field label="Car make" htmlFor="vehicleMake">
-          <Input id="vehicleMake" name="vehicleMake" placeholder="e.g. Toyota" />
+        <Field label={f.carMake} htmlFor="vehicleMake">
+          <Input id="vehicleMake" name="vehicleMake" placeholder={f.carMakePlaceholder} />
         </Field>
-        <Field label="Car model" htmlFor="vehicleModel">
-          <Input id="vehicleModel" name="vehicleModel" placeholder="e.g. Land Cruiser" />
+        <Field label={f.carModel} htmlFor="vehicleModel">
+          <Input id="vehicleModel" name="vehicleModel" placeholder={f.carModelPlaceholder} />
         </Field>
-        <Field label="Year" htmlFor="vehicleYear">
+        <Field label={f.year} htmlFor="vehicleYear">
           <Input id="vehicleYear" name="vehicleYear" inputMode="numeric" placeholder="2021" />
         </Field>
-        <Field label="Plate number" htmlFor="plateNumber">
+        <Field label={f.plate} htmlFor="plateNumber">
           <Input id="plateNumber" name="plateNumber" placeholder="A 12345" />
         </Field>
-        <Field label="Service needed" htmlFor="serviceInterest" className="sm:col-span-2">
+        <Field label={f.serviceNeeded} htmlFor="serviceInterest" className="sm:col-span-2">
           <select id="serviceInterest" name="serviceInterest" defaultValue="" className={fieldInputClass}>
-            <option value="">Select a service…</option>
+            <option value="">{f.selectService}</option>
             {SITE_SERVICES.map((s) => (
               <option key={s.slug} value={s.title}>
-                {s.title}
+                {t.services[s.slug as keyof typeof t.services]?.title ?? s.title}
               </option>
             ))}
-            <option value="Other">Other / not sure</option>
+            <option value="Other">{f.otherService}</option>
           </select>
         </Field>
       </div>
 
       {/* Appointment type */}
       <fieldset className="mt-6">
-        <legend className="mb-3 text-sm font-semibold">How would you like to service your car?</legend>
+        <legend className="mb-3 text-sm font-semibold">{f.typeLegend}</legend>
         <div className="grid gap-3 sm:grid-cols-3">
-          {TYPE_OPTIONS.map((opt) => {
-            const Icon = opt.icon
+          {typeOptions.map((opt) => {
+            const Icon = TYPE_ICON[opt.value]
             const active = apptType === opt.value
             return (
               <label
@@ -185,49 +192,49 @@ export function AppointmentForm() {
       {needsPickup && (
         <div className="mt-5 rounded-xl border border-border bg-background/50 p-4">
           <h3 className="flex items-center gap-2 text-sm font-semibold">
-            <MapPin className="h-4 w-4 text-primary" /> Pickup details
+            <MapPin className="h-4 w-4 text-primary" /> {f.pickupDetails}
           </h3>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <Field label="Pickup address" htmlFor="pickupAddress" className="sm:col-span-2">
+            <Field label={f.pickupAddress} htmlFor="pickupAddress" className="sm:col-span-2">
               <textarea
                 id="pickupAddress"
                 name="pickupAddress"
                 required={needsPickup}
                 rows={2}
-                placeholder="Street, building, apartment/villa no."
+                placeholder={f.pickupAddressPlaceholder}
                 className={fieldInputClass}
               />
             </Field>
-            <Field label="Building / villa (optional)" htmlFor="pickupBuilding">
-              <Input id="pickupBuilding" name="pickupBuilding" placeholder="e.g. Marina Tower, Villa 12" />
+            <Field label={f.building} htmlFor="pickupBuilding">
+              <Input id="pickupBuilding" name="pickupBuilding" placeholder={f.buildingPlaceholder} />
             </Field>
-            <Field label="Area / community (optional)" htmlFor="pickupArea">
-              <Input id="pickupArea" name="pickupArea" placeholder="e.g. Dubai Marina" />
+            <Field label={f.area} htmlFor="pickupArea">
+              <Input id="pickupArea" name="pickupArea" placeholder={f.areaPlaceholder} />
             </Field>
-            <Field label="Emirate" htmlFor="pickupEmirate">
+            <Field label={f.emirate} htmlFor="pickupEmirate">
               <select id="pickupEmirate" name="pickupEmirate" defaultValue="Dubai" className={fieldInputClass}>
                 {EMIRATES.map((em) => (
                   <option key={em} value={em}>
-                    {em}
+                    {f.emirates[em as keyof typeof f.emirates] ?? em}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Google Maps link (optional)" htmlFor="pickupMapsUrl">
+            <Field label={f.mapsLink} htmlFor="pickupMapsUrl">
               <Input id="pickupMapsUrl" name="pickupMapsUrl" type="url" placeholder="https://maps.google.com/…" />
             </Field>
-            <Field label="Preferred pickup date" htmlFor="pickupDate">
+            <Field label={f.pickupDate} htmlFor="pickupDate">
               <Input id="pickupDate" name="pickupDate" type="date" />
             </Field>
-            <Field label="Preferred pickup time" htmlFor="pickupTime">
+            <Field label={f.pickupTime} htmlFor="pickupTime">
               <Input id="pickupTime" name="pickupTime" type="time" />
             </Field>
-            <Field label="Pickup instructions (optional)" htmlFor="pickupInstructions" className="sm:col-span-2">
+            <Field label={f.pickupInstructions} htmlFor="pickupInstructions" className="sm:col-span-2">
               <textarea
                 id="pickupInstructions"
                 name="pickupInstructions"
                 rows={2}
-                placeholder="Gate code, parking spot, who to call…"
+                placeholder={f.pickupInstructionsPlaceholder}
                 className={fieldInputClass}
               />
             </Field>
@@ -239,7 +246,7 @@ export function AppointmentForm() {
       {needsDelivery && (
         <div className="mt-4 rounded-xl border border-border bg-background/50 p-4">
           <h3 className="flex items-center gap-2 text-sm font-semibold">
-            <Truck className="h-4 w-4 text-primary" /> Delivery (return) details
+            <Truck className="h-4 w-4 text-primary" /> {f.deliveryDetails}
           </h3>
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input
@@ -249,38 +256,38 @@ export function AppointmentForm() {
               onChange={(e) => setSameAsPickup(e.target.checked)}
               className="h-4 w-4 rounded border-input accent-[var(--primary)]"
             />
-            Return my car to the same pickup address
+            {f.deliverySameAddress}
           </label>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             {!sameAsPickup && (
               <>
-                <Field label="Delivery address" htmlFor="deliveryAddress" className="sm:col-span-2">
+                <Field label={f.deliveryAddress} htmlFor="deliveryAddress" className="sm:col-span-2">
                   <textarea
                     id="deliveryAddress"
                     name="deliveryAddress"
                     required={needsDelivery && !sameAsPickup}
                     rows={2}
-                    placeholder="Where should we return the car?"
+                    placeholder={f.deliveryAddressPlaceholder}
                     className={fieldInputClass}
                   />
                 </Field>
-                <Field label="Google Maps link (optional)" htmlFor="deliveryMapsUrl" className="sm:col-span-2">
+                <Field label={f.mapsLink} htmlFor="deliveryMapsUrl" className="sm:col-span-2">
                   <Input id="deliveryMapsUrl" name="deliveryMapsUrl" type="url" placeholder="https://maps.google.com/…" />
                 </Field>
               </>
             )}
-            <Field label="Preferred delivery date" htmlFor="deliveryDate">
+            <Field label={f.deliveryDate} htmlFor="deliveryDate">
               <Input id="deliveryDate" name="deliveryDate" type="date" />
             </Field>
-            <Field label="Preferred delivery time" htmlFor="deliveryTime">
+            <Field label={f.deliveryTime} htmlFor="deliveryTime">
               <Input id="deliveryTime" name="deliveryTime" type="time" />
             </Field>
-            <Field label="Delivery instructions (optional)" htmlFor="deliveryInstructions" className="sm:col-span-2">
+            <Field label={f.deliveryInstructions} htmlFor="deliveryInstructions" className="sm:col-span-2">
               <textarea
                 id="deliveryInstructions"
                 name="deliveryInstructions"
                 rows={2}
-                placeholder="Any notes for returning the car…"
+                placeholder={f.deliveryInstructionsPlaceholder}
                 className={fieldInputClass}
               />
             </Field>
@@ -289,18 +296,18 @@ export function AppointmentForm() {
       )}
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
-        <Field label="Preferred date" htmlFor="preferredDate">
+        <Field label={f.preferredDate} htmlFor="preferredDate">
           <Input id="preferredDate" name="preferredDate" type="date" />
         </Field>
-        <Field label="Preferred time" htmlFor="preferredTime">
+        <Field label={f.preferredTime} htmlFor="preferredTime">
           <Input id="preferredTime" name="preferredTime" type="time" />
         </Field>
-        <Field label="Anything else? (optional)" htmlFor="notes" className="sm:col-span-2">
+        <Field label={f.notes} htmlFor="notes" className="sm:col-span-2">
           <textarea
             id="notes"
             name="notes"
             rows={3}
-            placeholder="Describe the issue or any details…"
+            placeholder={f.notesPlaceholder}
             className={fieldInputClass}
           />
         </Field>
@@ -311,15 +318,13 @@ export function AppointmentForm() {
       <Button type="submit" size="lg" className="mt-6 w-full" disabled={status === "submitting"}>
         {status === "submitting" ? (
           <>
-            <Loader2 className="h-4 w-4 animate-spin" /> Sending…
+            <Loader2 className="h-4 w-4 animate-spin" /> {f.submitting}
           </>
         ) : (
-          "Request Appointment"
+          f.submit
         )}
       </Button>
-      <p className="mt-3 text-center text-xs text-muted-foreground">
-        No payment required. We&apos;ll confirm your slot by phone.
-      </p>
+      <p className="mt-3 text-center text-xs text-muted-foreground">{f.disclaimer}</p>
     </form>
   )
 }

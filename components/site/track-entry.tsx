@@ -4,21 +4,24 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowRight } from "lucide-react"
 import { Button, Input } from "@/components/ui"
+import { useI18n } from "@/lib/i18n/provider"
 
 /**
  * Accepts either a raw tracking code or a full pasted tracking link and routes
  * the visitor to /track/<token>. The token page validates the code itself.
  */
 export function TrackEntry() {
+  const { t, dir } = useI18n()
+  const e = t.trackEntry
   const router = useRouter()
   const [value, setValue] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  function onSubmit(ev: React.FormEvent) {
+    ev.preventDefault()
     const raw = value.trim()
     if (!raw) {
-      setError("Enter your tracking code to continue.")
+      setError(e.errEmpty)
       return
     }
     // Allow pasting a full link — extract the last path segment as the token.
@@ -30,20 +33,20 @@ export function TrackEntry() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="w-full">
+    <form onSubmit={onSubmit} dir={dir} className="w-full">
       <div className="flex flex-col gap-3 sm:flex-row">
         <Input
           value={value}
-          onChange={(e) => {
-            setValue(e.target.value)
+          onChange={(ev) => {
+            setValue(ev.target.value)
             setError(null)
           }}
-          placeholder="Enter your tracking code or link"
-          aria-label="Tracking code"
+          placeholder={e.placeholder}
+          aria-label={e.title}
           className="h-12 flex-1"
         />
         <Button type="submit" size="lg" className="shrink-0">
-          Track <ArrowRight className="h-4 w-4" />
+          {e.track} <ArrowRight className="h-4 w-4 rtl:-scale-x-100" />
         </Button>
       </div>
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}

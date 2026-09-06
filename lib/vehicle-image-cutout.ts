@@ -95,25 +95,23 @@ async function removeWhiteBackground(input: Buffer): Promise<Buffer | null> {
   if (channels !== 4 || w < 8 || h < 8) return null
 
   const N = w * h
-  const isBg = new Uint8Array(N) // 1 = background candidate (near-white/light)
-  const nearWhite = (r: number, g: number, b: number) => {
+  const isBg = new Uint8Array(N) // 1 = background candidate (light neutral)
+  // Studio backgrounds are light and near-neutral (white OR light-grey gradient).
+  // Testing brightness + low saturation catches both, while real bodywork/tyres
+  // (coloured or dark) and shadows are kept.
+  const neutralBright = (r: number, g: number, b: number) => {
     const max = Math.max(r, g, b)
     const min = Math.min(r, g, b)
-    return min >= 228 && max - min <= 24 // bright and near-neutral
-  }
-  const softWhite = (r: number, g: number, b: number) => {
-    const max = Math.max(r, g, b)
-    const min = Math.min(r, g, b)
-    return min >= 208 && max - min <= 32
+    return min >= 140 && max - min <= 30
   }
 
   for (let i = 0; i < N; i++) {
     const o = i * 4
-    if (nearWhite(data[o], data[o + 1], data[o + 2])) isBg[i] = 1
+    if (neutralBright(data[o], data[o + 1], data[o + 2])) isBg[i] = 1
   }
 
-  // If the border isn't mostly background, this isn't a studio-on-white photo;
-  // bail so we don't damage a full-bleed real photo.
+  // If the border isn't mostly background, this isn't a studio photo; bail so we
+  // don't damage a full-bleed real-world photo.
   let borderBg = 0
   let borderTotal = 0
   for (let x = 0; x < w; x++) {
@@ -126,7 +124,7 @@ async function removeWhiteBackground(input: Buffer): Promise<Buffer | null> {
     if (isBg[y * w]) borderBg++
     if (isBg[y * w + (w - 1)]) borderBg++
   }
-  if (borderBg / borderTotal < 0.6) return null
+  if (borderBg / borderTotal < 0.55) return null
 
   // Flood fill from every border pixel through connected background.
   const visited = new Uint8Array(N)
@@ -172,8 +170,8 @@ async function removeWhiteBackground(input: Buffer): Promise<Buffer | null> {
         (x < w - 1 && cleared[idx + 1]) ||
         (y > 0 && cleared[idx - w]) ||
         (y < h - 1 && cleared[idx + w])
-      if (touchesCleared && softWhite(data[o], data[o + 1], data[o + 2])) {
-        data[o + 3] = 90
+      if (touchesCleared && neutralBright(data[o], data[o + 1], data[o + 2])) {
+        data[o + 3] = 70
       }
     }
   }

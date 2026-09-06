@@ -131,14 +131,6 @@ export function VehicleVisual({
             alt={alt || label}
             referrerPolicy="no-referrer"
             onError={() => (photo ? setCoverFailed(true) : setRefFailed(true))}
-            // Feathered edges dissolve the white rectangle around dealer JPEGs so
-            // the car blends into the lift scene (harmless on transparent PNGs).
-            style={{
-              WebkitMaskImage:
-                "radial-gradient(120% 112% at 50% 44%, #000 52%, rgba(0,0,0,0.55) 72%, transparent 100%)",
-              maskImage:
-                "radial-gradient(120% 112% at 50% 44%, #000 52%, rgba(0,0,0,0.55) 72%, transparent 100%)",
-            }}
             className="absolute left-1/2 top-[42%] max-h-[68%] w-[74%] -translate-x-1/2 -translate-y-1/2 object-contain drop-shadow-[0_14px_16px_rgba(0,0,0,0.7)]"
           />
         ) : (

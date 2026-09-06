@@ -23,7 +23,6 @@ function isPublicPath(path: string): boolean {
     "/api/track", // tracking open-event beacon
     "/api/public", // website ingestion: /track, /appointments, /leads (anon RPC only)
     "/api/stripe", // Stripe checkout session + webhook for invoice payments
-    "/api/admin/backfill-cutouts", // TEMP: one-off cutout reprocessing (secret-gated)
   ]
   for (const prefix of tokenizedPrefixes) {
     if (path === prefix || path.startsWith(prefix + "/")) return true

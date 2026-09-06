@@ -18,9 +18,11 @@ function isPublicPath(path: string): boolean {
     "/approve", // customer quotation approval (per-item + legacy)
     "/approval", // spec alias for approval links
     "/customer-access", // spec alias for customer access links
+    "/pay", // tokenized customer invoice pay page (card checkout)
     "/api/approve", // approval submit/decision API (approve + approvals)
     "/api/track", // tracking open-event beacon
     "/api/public", // website ingestion: /track, /appointments, /leads (anon RPC only)
+    "/api/stripe", // Stripe checkout session + webhook for invoice payments
   ]
   for (const prefix of tokenizedPrefixes) {
     if (path === prefix || path.startsWith(prefix + "/")) return true

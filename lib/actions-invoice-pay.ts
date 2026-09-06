@@ -67,7 +67,7 @@ export async function emailInvoiceLink(invoiceId: string): Promise<{ ok: boolean
 }
 
 /** Public URL a customer opens to view + pay an invoice. */
-export function invoicePublicUrl(token: string) {
+function invoicePublicUrl(token: string) {
   return `${appBaseUrl()}/pay/${token}`
 }
 

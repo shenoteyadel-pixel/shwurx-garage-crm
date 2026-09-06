@@ -69,6 +69,7 @@ export const FIELD_PERMISSIONS: Record<string, Permission> = {
   supplier_id: "suppliers.view",
   supplier_name: "suppliers.view",
   supplier_invoice_no: "suppliers.view",
+  supplier_part_number: "suppliers.view",
   // Profit / margin
   profit: "profit.view",
   margin: "profit.view",

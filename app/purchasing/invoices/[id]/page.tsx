@@ -18,7 +18,11 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
     supabase.from("supplier_invoices").select("*").eq("id", id).maybeSingle(),
     supabase.from("supplier_invoice_items").select("*").eq("invoice_id", id).order("line_no"),
     supabase.from("suppliers").select("id, name").is("deleted_at", null).order("name"),
-    supabase.from("inventory_items").select("id, name, sku, cost_price").is("deleted_at", null).order("name"),
+    supabase
+      .from("inventory_items")
+      .select("id, name, sku, cost_price, crm_part_id, oem_part_number, supplier_part_number")
+      .is("deleted_at", null)
+      .order("name"),
     getSettings(),
   ])
 
@@ -53,7 +57,8 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
   const itemRows: InvoiceItemRow[] = (items ?? []).map((it) => ({
     id: it.id,
     description: it.description ?? "",
-    sku: it.sku,
+    oem_part_number: it.oem_part_number ?? null,
+    supplier_part_number: it.supplier_part_number ?? null,
     quantity: Number(it.quantity) || 0,
     unit: it.unit ?? "pcs",
     unit_cost: Number(it.unit_cost) || 0,

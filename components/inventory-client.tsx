@@ -5,11 +5,14 @@ import { Card, Button, Input, Label, Select, Textarea, Badge } from "@/component
 import { Modal } from "@/components/modal"
 import { saveInventoryItem, deleteInventoryItem, recordStockMovement } from "@/lib/actions-crm"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import { Plus, Search, Pencil, Trash2, PackagePlus, PackageMinus, SlidersHorizontal, AlertTriangle, Boxes } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, PackagePlus, PackageMinus, SlidersHorizontal, AlertTriangle, Boxes, History } from "lucide-react"
 
 type Item = {
   id: string
   sku: string | null
+  crm_part_id: string | null
+  oem_part_number: string | null
+  supplier_part_number: string | null
   name: string
   category: string | null
   brand: string | null
@@ -53,14 +56,31 @@ export function InventoryClient({
   const [editing, setEditing] = useState<Item | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [moveItem, setMoveItem] = useState<{ item: Item; kind: "in" | "out" | "adjust" } | null>(null)
+  const [historyItem, setHistoryItem] = useState<Item | null>(null)
+
+  const supplierName = useMemo(() => new Map(suppliers.map((s) => [s.id, s.name])), [suppliers])
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
     if (!s) return items
+    // Search spans every identifier the spec requires: CRM Part ID, OEM number,
+    // supplier part number, name, brand, category, location and supplier name.
     return items.filter((x) =>
-      [x.name, x.sku, x.brand, x.category, x.location].filter(Boolean).some((v) => v!.toLowerCase().includes(s)),
+      [
+        x.name,
+        x.sku,
+        x.crm_part_id,
+        x.oem_part_number,
+        x.supplier_part_number,
+        x.brand,
+        x.category,
+        x.location,
+        x.supplier_id ? supplierName.get(x.supplier_id) : null,
+      ]
+        .filter(Boolean)
+        .some((v) => v!.toLowerCase().includes(s)),
     )
-  }, [q, items])
+  }, [q, items, supplierName])
 
   const stockValue = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.cost_price) || 0), 0)
   const lowStock = items.filter((i) => Number(i.reorder_level) > 0 && Number(i.quantity) <= Number(i.reorder_level))
@@ -80,7 +100,12 @@ export function InventoryClient({
         <div className="flex items-center gap-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search items…" className="w-56 pl-9" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name, CRM ID, OEM…"
+              className="w-56 pl-9"
+            />
           </div>
           <Button
             onClick={() => {
@@ -138,8 +163,10 @@ export function InventoryClient({
                       <tr key={i.id} className="border-b border-border/60 last:border-0">
                         <td className="px-4 py-3">
                           <div className="font-medium">{i.name}</div>
-                          <div className="flex gap-2 text-xs text-muted-foreground">
-                            {i.sku && <span className="font-mono">{i.sku}</span>}
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                            {i.crm_part_id && <span className="font-mono text-foreground/70">{i.crm_part_id}</span>}
+                            {i.oem_part_number && <span className="font-mono">OEM {i.oem_part_number}</span>}
+                            {canViewSuppliers && i.supplier_part_number && <span>Supp {i.supplier_part_number}</span>}
                             {i.brand && <span>{i.brand}</span>}
                           </div>
                         </td>
@@ -164,6 +191,11 @@ export function InventoryClient({
                             <IconBtn title="Adjust" onClick={() => setMoveItem({ item: i, kind: "adjust" })}>
                               <SlidersHorizontal className="h-4 w-4 text-sky-400" />
                             </IconBtn>
+                            {canViewCosts && (
+                              <IconBtn title="Purchase history" onClick={() => setHistoryItem(i)}>
+                                <History className="h-4 w-4 text-muted-foreground" />
+                              </IconBtn>
+                            )}
                             <IconBtn
                               title="Edit"
                               onClick={() => {
@@ -245,7 +277,71 @@ export function InventoryClient({
           <MovementForm move={moveItem} canViewCosts={canViewCosts} onDone={() => setMoveItem(null)} />
         )}
       </Modal>
+
+      <Modal
+        open={!!historyItem}
+        onClose={() => setHistoryItem(null)}
+        title={historyItem ? `Purchase history · ${historyItem.name}` : ""}
+      >
+        {historyItem && (
+          <PurchaseHistory
+            item={historyItem}
+            movements={movements.filter((m) => m.item_id === historyItem.id)}
+          />
+        )}
+      </Modal>
     </>
+  )
+}
+
+function PurchaseHistory({ item, movements }: { item: Item; movements: Movement[] }) {
+  const purchases = movements.filter((m) => m.kind === "in")
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-lg border border-border bg-secondary/40 p-3 text-xs">
+        {item.crm_part_id && (
+          <span>
+            <span className="text-muted-foreground">CRM Part ID</span>{" "}
+            <span className="font-mono">{item.crm_part_id}</span>
+          </span>
+        )}
+        <span>
+          <span className="text-muted-foreground">OEM</span>{" "}
+          <span className="font-mono">{item.oem_part_number || "Not Available / Pending"}</span>
+        </span>
+      </div>
+      {purchases.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          No recorded purchases yet. Confirmed supplier invoices for this part will appear here.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="py-2 pr-3 font-semibold">Date</th>
+                <th className="py-2 pr-3 font-semibold">Reference</th>
+                <th className="py-2 pr-3 text-right font-semibold">Qty</th>
+                <th className="py-2 text-right font-semibold">Unit cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchases.map((m) => (
+                <tr key={m.id} className="border-b border-border/60 last:border-0">
+                  <td className="py-2 pr-3 text-muted-foreground">{formatDate(m.created_at)}</td>
+                  <td className="py-2 pr-3">{m.reference || m.note || "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">+{Math.abs(Number(m.quantity))}</td>
+                  <td className="py-2 text-right tabular-nums">{formatCurrency(Number(m.unit_cost) || 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Every purchase is kept against this one CRM Part ID — historical costs are preserved and never overwritten.
+      </p>
+    </div>
   )
 }
 
@@ -275,9 +371,20 @@ function ItemForm({
       className="space-y-4"
     >
       {item && <input type="hidden" name="id" value={item.id} />}
+      {item?.crm_part_id && (
+        <div className="rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">CRM Part ID</span>{" "}
+          <span className="font-mono font-semibold">{item.crm_part_id}</span>
+          <span className="ml-2 text-xs text-muted-foreground">· permanent, auto-generated</span>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <F label="Item name" name="name" defaultValue={item?.name} required />
-        <F label="SKU / Part no." name="sku" defaultValue={item?.sku} />
+        <F label="OEM part number" name="oem_part_number" defaultValue={item?.oem_part_number} placeholder="e.g. A2059053414" />
+        {canViewSuppliers && (
+          <F label="Supplier part number" name="supplier_part_number" defaultValue={item?.supplier_part_number} />
+        )}
+        <F label="Internal SKU (optional)" name="sku" defaultValue={item?.sku} />
         <F label="Category" name="category" defaultValue={item?.category} />
         <F label="Brand" name="brand" defaultValue={item?.brand} />
         <F label="Unit" name="unit" defaultValue={item?.unit ?? "pcs"} />

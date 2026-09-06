@@ -21,20 +21,52 @@ export type VehicleForImage = {
 }
 
 function cacheKey(year: string, make: string, model: string, color: string) {
-  return createHash("sha1").update(`v2|${year}|${make}|${model}|${color}`.toLowerCase()).digest("hex").slice(0, 20)
+  // Bump the version prefix whenever the prompt changes so every vehicle
+  // regenerates instead of serving a stale cached render.
+  return createHash("sha1").update(`v5|${year}|${make}|${model}|${color}`.toLowerCase()).digest("hex").slice(0, 20)
+}
+
+// gpt-image-1 has a strong prior to paint luxury cars (S-Class, Evoque) black,
+// which overrides a plain colour mention. Describing an explicit, vivid paint
+// name and repeating it forces the requested colour through.
+function paintPhrase(color: string): string {
+  const c = color.trim().toLowerCase()
+  const map: Record<string, string> = {
+    white: "bright pearl WHITE",
+    black: "deep gloss BLACK",
+    grey: "metallic SILVER-GREY",
+    gray: "metallic SILVER-GREY",
+    silver: "bright metallic SILVER",
+    red: "vivid RED",
+    blue: "rich BLUE",
+    green: "deep GREEN",
+    orange: "bright ORANGE",
+    yellow: "bright YELLOW",
+    brown: "metallic BROWN",
+    gold: "champagne GOLD",
+    beige: "light BEIGE",
+  }
+  return map[c] || (color ? color.toUpperCase() : "factory-colour")
 }
 
 function buildPrompt(year: string, make: string, model: string, color: string) {
-  const colorText = color ? `${color} ` : ""
+  const brand = [make, model].filter(Boolean).join(" ").trim()
   const yearText = year ? `${year} ` : ""
+  const paint = paintPhrase(color)
   // A tightly constrained prompt keeps angle, framing, lighting and background
   // identical across cars — the key to a uniform board — while the specific
   // year/make/model/colour makes it the correct vehicle from the job card.
+  // Lead with the colour, and use a LIGHT GREY backdrop (not pure white) so a
+  // white/silver car still reads with contrast instead of being darkened; the
+  // cutout step removes the grey cleanly anyway.
   return [
-    `A photorealistic studio product photo of a single ${colorText}${yearText}${make} ${model} car.`,
-    "Exact factory-correct body shape, badges and proportions for that specific make, model and year.",
-    "Three-quarter front view from a slightly low angle, front of the car facing left, the entire vehicle fully in frame with margin around it.",
-    "Isolated on a pure solid white seamless background (#ffffff), even soft studio lighting, no shadow cast on the background, no floor reflection, no scenery, no people, no text, no watermark.",
+    `A photorealistic studio product photograph of a single ${yearText}${brand} car with a ${paint} exterior paint colour.`,
+    `The entire car body is ${paint}. This is essential: the paint colour must be ${paint}, covering every body panel, roof, doors, bonnet and bumpers — do not render it black or any other colour.`,
+    `Exact factory-correct body shape and proportions for a ${brand}, with the correct genuine ${make} manufacturer badge and grille — never another car brand's logo.`,
+    "Three-quarter front view from a slightly low angle, the front of the car facing to the left, the whole vehicle centred and fully in frame with even margin on all sides, always the same camera distance and framing.",
+    "Set on a seamless neutral light grey studio background (#e9e9e9), even soft studio lighting, no cast shadow, no floor reflection, no scenery.",
+    // Critical: stop the model baking the year / a number plate / captions onto the car.
+    "Absolutely no text, no numbers, no license plate, no captions, no watermark, no extra logos anywhere in the image. The number plate area must be blank.",
     "Sharp focus, high detail, centered composition.",
   ].join(" ")
 }

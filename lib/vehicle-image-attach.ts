@@ -20,6 +20,10 @@ export async function attachJobVehicleImage(
     const image = await resolveVehicleImage(vehicle)
     if (!image) return
     const svc = createServiceClient()
+    // Don't clobber a manually chosen custom photo. NOTE: a plain
+    // `.neq("vehicle_image_source", "custom")` would also exclude rows where the
+    // column is NULL (Postgres: `NULL != 'custom'` is NULL, not true), which is
+    // every freshly created job — so match "null OR not custom" explicitly.
     await svc
       .from("jobs")
       .update({
@@ -28,7 +32,7 @@ export async function attachJobVehicleImage(
         vehicle_image_resolved_at: new Date().toISOString(),
       })
       .eq("id", jobId)
-      .neq("vehicle_image_source", "custom")
+      .or("vehicle_image_source.is.null,vehicle_image_source.neq.custom")
     revalidatePath("/crm")
     revalidatePath("/flow")
     revalidatePath(`/jobs/${jobId}`)

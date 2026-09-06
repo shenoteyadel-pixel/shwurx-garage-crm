@@ -162,24 +162,55 @@ export async function markJobPaid(
   jobId: string,
   opts: { amount?: number | null; method?: string | null } = {},
 ) {
-  const { supabase, ctx } = await guard("jobs.update_status")
+  const { supabase, user, ctx } = await guard("jobs.update_status")
   const amount = opts.amount != null && !Number.isNaN(Number(opts.amount)) ? Number(opts.amount) : null
   const method = opts.method?.trim() || null
+  const nowIso = new Date().toISOString()
   const { error } = await supabase
     .from("jobs")
     .update({
       stage: "delivered",
-      paid_at: new Date().toISOString(),
+      paid_at: nowIso,
       paid_amount: amount,
       payment_method: method,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     })
     .eq("id", jobId)
   if (error) throw new Error(error.message)
+
+  // Keep the invoice in sync: if this job has an open invoice, settle it too so
+  // the invoice list / detail page don't keep showing "unpaid" after cash was
+  // collected here. Record the payment against the invoice's remaining balance.
+  const { data: openInvoices } = await supabase
+    .from("invoices")
+    .select("id, total, amount_paid")
+    .eq("job_id", jobId)
+    .in("status", ["unpaid", "partial"])
+  for (const inv of openInvoices ?? []) {
+    const total = Number(inv.total) || 0
+    const already = Number(inv.amount_paid) || 0
+    const balance = Math.max(0, total - already)
+    if (balance <= 0) continue
+    await supabase.from("payments").insert({
+      direction: "in",
+      invoice_id: inv.id,
+      amount: balance,
+      method: (method || "Cash").toLowerCase(),
+      note: "Recorded from Car Flow delivery payment",
+      created_by: user.id,
+    })
+    await supabase
+      .from("invoices")
+      .update({ amount_paid: already + balance, status: "paid", updated_at: nowIso })
+      .eq("id", inv.id)
+    revalidatePath(`/invoices/${inv.id}`)
+  }
+
   await logAction(ctx, "job.mark_paid", "job", jobId, { amount, method })
   revalidatePath("/crm")
   revalidatePath("/flow")
   revalidatePath("/history")
+  revalidatePath("/invoices")
   revalidatePath(`/jobs/${jobId}`)
   return { ok: true }
 }

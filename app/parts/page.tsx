@@ -1,22 +1,17 @@
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
+import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
-import { Card } from "@/components/ui"
+import { Button, Card } from "@/components/ui"
 import { PART_STATUSES } from "@/lib/constants"
 import { formatCurrency, cn } from "@/lib/utils"
-import { Package, ExternalLink } from "lucide-react"
+import { Package, ExternalLink, ScanLine } from "lucide-react"
 
 export default async function PartsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   const { status } = await searchParams
+  const user = await getShellUser()
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user!.id)
-    .maybeSingle()
+  const canScan = user.permissions.includes("purchase_orders.manage")
 
   let query = supabase
     .from("parts_requests")
@@ -34,12 +29,21 @@ export default async function PartsPage({ searchParams }: { searchParams: Promis
   )
 
   return (
-    <AppShell user={{ name: profile?.full_name || user!.email || "Staff", role: profile?.role || "advisor" }}>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Parts</h1>
-        <p className="text-sm text-muted-foreground">
-          Order, track and receive parts. Requests appear here as soon as a customer approves a job.
-        </p>
+    <AppShell user={user}>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Parts</h1>
+          <p className="text-sm text-muted-foreground">
+            Order, track and receive parts. Requests appear here as soon as a customer approves a job.
+          </p>
+        </div>
+        {canScan && (
+          <Link href="/purchasing/invoices">
+            <Button variant="danger">
+              <ScanLine className="h-4 w-4" /> Scan Purchase Invoice
+            </Button>
+          </Link>
+        )}
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">

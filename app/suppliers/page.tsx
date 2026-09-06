@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
+import { PurchasingTabs } from "@/components/purchasing-tabs"
 import { SuppliersClient } from "@/components/suppliers-client"
 
 export const metadata = { title: "Suppliers · SHWURX Auto Service Center" }
@@ -47,6 +48,7 @@ export default async function SuppliersPage() {
   return (
     <AppShell user={user}>
       <div className="mx-auto max-w-6xl">
+        <PurchasingTabs perms={user.permissions} />
         <SuppliersClient suppliers={rows} />
       </div>
     </AppShell>

@@ -2,9 +2,10 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
+import { PurchasingTabs } from "@/components/purchasing-tabs"
 import { Card, Button, Badge } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import { Plus, ShoppingCart } from "lucide-react"
+import { Plus, ShoppingCart, ScanLine } from "lucide-react"
 
 export const metadata = { title: "Purchasing · SHWURX Auto Service Center" }
 
@@ -46,12 +47,21 @@ export default async function PurchasingPage({
             {(pos ?? []).length} purchase orders · {formatCurrency(totalOutstanding)} payable
           </p>
         </div>
-        <Link href="/purchasing/new">
-          <Button>
-            <Plus className="h-4 w-4" /> New Purchase Order
-          </Button>
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/purchasing/invoices">
+            <Button variant="danger">
+              <ScanLine className="h-4 w-4" /> New Purchase Invoice
+            </Button>
+          </Link>
+          <Link href="/purchasing/new">
+            <Button variant="outline">
+              <Plus className="h-4 w-4" /> New Purchase Order
+            </Button>
+          </Link>
+        </div>
       </div>
+
+      <PurchasingTabs perms={user.permissions} />
 
       {(pos ?? []).length === 0 ? (
         <Card className="flex flex-col items-center justify-center gap-2 p-16 text-center">

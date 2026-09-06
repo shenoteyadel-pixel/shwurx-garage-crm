@@ -2,6 +2,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
+import { PurchasingTabs } from "@/components/purchasing-tabs"
 import { Card, Badge } from "@/components/ui"
 import { InvoiceUpload } from "@/components/invoice-upload"
 import { formatCurrency, formatDate } from "@/lib/utils"
@@ -49,6 +50,8 @@ export default async function InvoiceCapturePage() {
             Snap or upload a supplier invoice — the details, parts and VAT are read automatically, then you confirm.
           </p>
         </div>
+
+        <PurchasingTabs perms={user.permissions} />
 
         <div className="grid gap-4 sm:grid-cols-3">
           <Stat label="Input VAT (this month)" value={formatCurrency(inputVatThisMonth)} />

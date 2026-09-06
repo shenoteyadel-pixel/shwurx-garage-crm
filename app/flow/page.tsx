@@ -19,12 +19,17 @@ export default async function FlowPage() {
     .eq("id", user!.id)
     .maybeSingle()
 
+  // Delivered is a terminal stage, but keep just-delivered cars visible in the
+  // Delivery column for a short window so the board reflects recent handovers
+  // before they drop off. Older delivered jobs stay out of the active board.
+  const deliveredWindowCutoff = new Date(Date.now() - 3 * 86400_000).toISOString()
+
   const { data: jobsRaw } = await supabase
     .from("jobs")
     .select(
       "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, vehicle_reference_image_url, cover_photo_url, stage, approval_status, mileage, advisor_id, technician_id, estimated_completion, created_at, updated_at",
     )
-    .neq("stage", "delivered")
+    .or(`stage.neq.delivered,updated_at.gte.${deliveredWindowCutoff}`)
     .order("updated_at", { ascending: false })
 
   const jobs = jobsRaw ?? []

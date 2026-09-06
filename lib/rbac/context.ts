@@ -94,6 +94,17 @@ export async function requireStaff(): Promise<SessionContext> {
   return ctx
 }
 
+/**
+ * Require the Owner / Super Admin. The AI Control Center exposes full financials
+ * (profit, margins, supplier costs), so it is strictly owner-only: everyone
+ * else is sent to the Access Denied page.
+ */
+export async function requireOwner(): Promise<SessionContext> {
+  const ctx = await requireStaff()
+  if (ctx.role !== "owner") redirect("/denied?from=AI%20Control%20Center")
+  return ctx
+}
+
 export function ctxCan(ctx: SessionContext | null, perm: Permission): boolean {
   return !!ctx && ctx.isActive && ctx.permissions.has(perm)
 }

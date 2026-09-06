@@ -600,7 +600,8 @@ function FlowCard({
         {/* Photo with plate directly beneath */}
         <div className="relative mt-2 bg-gradient-to-b from-muted/40 to-card">
           <VehicleVisual
-            variant="illustration"
+            coverPhoto={job.cover}
+            referenceImage={job.vehicle_reference_image_url}
             make={job.vehicle_make}
             model={job.vehicle_model}
             bodyType={job.body_type}
@@ -718,13 +719,14 @@ function BayCard({
     <DragHandleCard job={job} pending={pending} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="flex flex-1 flex-col gap-1 rounded-md bg-card p-1.5">
         <VehicleVisual
-          variant="illustration"
-          onLift
+          variant="bay"
+          coverPhoto={job.cover}
+          referenceImage={job.vehicle_reference_image_url}
           make={job.vehicle_make}
           model={job.vehicle_model}
           bodyType={job.body_type}
           color={job.color}
-          className="h-16 w-full rounded"
+          className="h-24 w-full rounded"
         />
         {(job.plate_emirate || job.plate_code || job.plate_number) && (
           <div className="flex justify-center">

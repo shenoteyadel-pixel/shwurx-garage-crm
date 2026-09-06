@@ -95,11 +95,11 @@ export function VehicleVisual({
   alt?: string
   /**
    * "auto" (default) shows the most real image available (photo → reference →
-   * illustration). "illustration" always renders the colour-accurate drawing on
-   * a shared workshop backdrop, so a board of cards looks uniform.
+   * illustration). "bay" places the real car photo on a photoreal 2-post lift
+   * workshop backdrop, for cars parked on a workshop bay.
    */
-  variant?: "auto" | "illustration"
-  /** Raise the car on a 2-post lift (illustration variant only). */
+  variant?: "auto" | "bay"
+  /** Deprecated no-op, kept for call-site compatibility. */
   onLift?: boolean
 }) {
   const [coverFailed, setCoverFailed] = useState(false)
@@ -108,25 +108,36 @@ export function VehicleVisual({
   const profile = resolveVehicleProfile(make, model, bodyType)
   const label = `${make ?? ""} ${model ?? ""}`.trim() || "Vehicle"
 
-  // Board mode: identical illustration + backdrop on every card. Cars parked on
-  // a bay are raised on a 2-post lift to show they're up for checking.
-  if (variant === "illustration") {
+  // Bay mode: the real car photo sitting on a photorealistic 2-post lift, so a
+  // car parked in a workshop bay looks like it's actually up on the lift.
+  if (variant === "bay") {
+    const photo = coverPhoto && !coverFailed ? coverPhoto : null
+    const ref = !photo && referenceImage && !refFailed ? referenceImage : null
+    const car = photo || ref
     return (
-      <div
-        className={cn(
-          "relative overflow-hidden bg-gradient-to-b from-secondary/50 via-card to-background",
-          className,
-        )}
-      >
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/40 to-transparent" />
-        <div className="absolute inset-0 flex items-center justify-center p-1">
-          <CarSilhouette
-            profile={profile}
-            color={color}
-            onLift={onLift}
-            title={`${label} — ${color || "unspecified"}`}
+      <div className={cn("relative overflow-hidden bg-black", className)}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/images/workshop-lift-bay.png"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/25" />
+        {car ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={car || "/placeholder.svg"}
+            alt={alt || label}
+            referrerPolicy="no-referrer"
+            onError={() => (photo ? setCoverFailed(true) : setRefFailed(true))}
+            className="absolute left-1/2 top-[42%] max-h-[68%] w-[74%] -translate-x-1/2 -translate-y-1/2 object-contain drop-shadow-[0_14px_16px_rgba(0,0,0,0.7)]"
           />
-        </div>
+        ) : (
+          <div className="absolute left-1/2 top-[42%] w-[64%] -translate-x-1/2 -translate-y-1/2">
+            <CarSilhouette profile={profile} color={color} title={`${label} — ${color || "unspecified"}`} />
+          </div>
+        )}
       </div>
     )
   }

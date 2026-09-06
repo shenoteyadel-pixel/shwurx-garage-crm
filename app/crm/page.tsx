@@ -172,7 +172,13 @@ export default async function DashboardPage() {
             </Link>
           )}
         </div>
-        <CarFlow jobs={jobCards.filter((j) => j.stage !== "delivered")} />
+        <CarFlow
+          jobs={jobCards.filter(
+            (j) =>
+              j.stage !== "delivered" ||
+              (j.updated_at ? new Date(j.updated_at).getTime() >= Date.now() - 3 * 86400_000 : false),
+          )}
+        />
       </div>
     </AppShell>
   )

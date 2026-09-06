@@ -3,7 +3,7 @@ import { createHash } from "crypto"
 import { generateImage } from "ai"
 import { gateway } from "@ai-sdk/gateway"
 import { canonicalizeVehicle } from "@/lib/vehicle"
-import { removeWhiteBackground, uploadVehiclePng } from "@/lib/vehicle-image-cutout"
+import { removeDarkBackground, uploadVehiclePng } from "@/lib/vehicle-image-cutout"
 
 // One consistent studio model + framing for EVERY car, so the whole board looks
 // uniform. gpt-image-1 gives the best factory-correct body shape and a clean
@@ -23,7 +23,7 @@ export type VehicleForImage = {
 function cacheKey(year: string, make: string, model: string, color: string) {
   // Bump the version prefix whenever the prompt changes so every vehicle
   // regenerates instead of serving a stale cached render.
-  return createHash("sha1").update(`v5|${year}|${make}|${model}|${color}`.toLowerCase()).digest("hex").slice(0, 20)
+  return createHash("sha1").update(`v6|${year}|${make}|${model}|${color}`.toLowerCase()).digest("hex").slice(0, 20)
 }
 
 // gpt-image-1 has a strong prior to paint luxury cars (S-Class, Evoque) black,
@@ -56,15 +56,16 @@ function buildPrompt(year: string, make: string, model: string, color: string) {
   // A tightly constrained prompt keeps angle, framing, lighting and background
   // identical across cars — the key to a uniform board — while the specific
   // year/make/model/colour makes it the correct vehicle from the job card.
-  // Lead with the colour, and use a LIGHT GREY backdrop (not pure white) so a
-  // white/silver car still reads with contrast instead of being darkened; the
-  // cutout step removes the grey cleanly anyway.
+  // Use a DARK CHARCOAL backdrop: gpt-image-1 otherwise darkens white/silver
+  // cars to keep contrast against a light background, painting them black. A
+  // dark backdrop flips that so light colours render correctly, and the dark
+  // cutout step removes the charcoal cleanly.
   return [
     `A photorealistic studio product photograph of a single ${yearText}${brand} car with a ${paint} exterior paint colour.`,
-    `The entire car body is ${paint}. This is essential: the paint colour must be ${paint}, covering every body panel, roof, doors, bonnet and bumpers — do not render it black or any other colour.`,
+    `The entire car body is ${paint}. This is essential: the paint colour must be ${paint}, covering every body panel, roof, doors, bonnet and bumpers — do not darken it, do not render it black.`,
     `Exact factory-correct body shape and proportions for a ${brand}, with the correct genuine ${make} manufacturer badge and grille — never another car brand's logo.`,
     "Three-quarter front view from a slightly low angle, the front of the car facing to the left, the whole vehicle centred and fully in frame with even margin on all sides, always the same camera distance and framing.",
-    "Set on a seamless neutral light grey studio background (#e9e9e9), even soft studio lighting, no cast shadow, no floor reflection, no scenery.",
+    "Set on a seamless dark charcoal grey studio background (#2a2a2a) with even soft professional automotive lighting and gentle rim light, no scenery, no floor reflection.",
     // Critical: stop the model baking the year / a number plate / captions onto the car.
     "Absolutely no text, no numbers, no license plate, no captions, no watermark, no extra logos anywhere in the image. The number plate area must be blank.",
     "Sharp focus, high detail, centered composition.",
@@ -93,7 +94,7 @@ export async function generateVehicleImage(v: VehicleForImage): Promise<string |
       abortSignal: AbortSignal.timeout(110000),
     })
     const raw = Buffer.from(image.uint8Array)
-    const cut = (await removeWhiteBackground(raw)) ?? raw
+    const cut = (await removeDarkBackground(raw)) ?? raw
     const url = await uploadVehiclePng(cut, PREFIX, cacheKey(year, make, model, color))
     if (!url) return null
     // Cache-bust so a regenerated key is picked up immediately.

@@ -11,6 +11,8 @@
     "restore": "node --env-file-if-exists=/vercel/share/.env.project scripts/restore-database.mjs"
   },
   "dependencies": {
+    "@stripe/react-stripe-js": "^6.9.0",
+    "@stripe/stripe-js": "^9.15.0",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
     "ai": "^7.0.92",
@@ -21,6 +23,7 @@
     "react-dom": "^19.2.0",
     "recharts": "latest",
     "resend": "^6.25.0",
+    "stripe": "^22.6.1",
     "swr": "^2.5.1",
     "tailwind-merge": "^2.5.4"
   },

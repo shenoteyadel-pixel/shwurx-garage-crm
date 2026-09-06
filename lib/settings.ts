@@ -16,6 +16,12 @@ export type Settings = {
   quotation_validity_days: number
   /** Days a customer's tracking link stays valid after the job is delivered. 0 = never expires. */
   tracking_expire_after_delivery_days: number
+  /** Default parts pricing markup percentage applied to cost (e.g. 35 = cost x 1.35). */
+  default_markup_pct: number
+  /** How suggested sale price is derived: "markup" (cost + %) or "margin" (target profit %). */
+  pricing_method: "markup" | "margin"
+  /** Standard VAT rate percentage (UAE = 5). */
+  vat_rate: number
 }
 
 const DEFAULTS: Settings = {
@@ -33,6 +39,9 @@ const DEFAULTS: Settings = {
   labour_rate_default: 0,
   quotation_validity_days: 14,
   tracking_expire_after_delivery_days: 30,
+  default_markup_pct: 35,
+  pricing_method: "markup",
+  vat_rate: 5,
 }
 
 // Fetch the singleton company settings row (id=1). Falls back to sane defaults

@@ -125,14 +125,22 @@ export function VehicleVisual({
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/25" />
         {car ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={car || "/placeholder.svg"}
-            alt={alt || label}
-            referrerPolicy="no-referrer"
-            onError={() => (photo ? setCoverFailed(true) : setRefFailed(true))}
-            className="absolute left-1/2 top-[42%] max-h-[68%] w-[74%] -translate-x-1/2 -translate-y-1/2 object-contain drop-shadow-[0_14px_16px_rgba(0,0,0,0.7)]"
-          />
+          <>
+            {/* Contact shadow where the tyres meet the lift arms, so the car
+                reads as resting ON the lift instead of floating above it. */}
+            <div
+              aria-hidden="true"
+              className="absolute bottom-[15%] left-1/2 h-[5%] w-[62%] -translate-x-1/2 rounded-[50%] bg-black/60 blur-[3px]"
+            />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={car || "/placeholder.svg"}
+              alt={alt || label}
+              referrerPolicy="no-referrer"
+              onError={() => (photo ? setCoverFailed(true) : setRefFailed(true))}
+              className="absolute bottom-[16%] left-1/2 max-h-[76%] w-[90%] -translate-x-1/2 object-contain object-bottom drop-shadow-[0_4px_5px_rgba(0,0,0,0.5)]"
+            />
+          </>
         ) : (
           <div className="absolute left-1/2 top-[42%] w-[64%] -translate-x-1/2 -translate-y-1/2">
             <CarSilhouette profile={profile} color={color} title={`${label} — ${color || "unspecified"}`} />

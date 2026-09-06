@@ -23,7 +23,7 @@ export type VehicleForImage = {
 function cacheKey(year: string, make: string, model: string, color: string) {
   // Bump the version prefix whenever the prompt changes so every vehicle
   // regenerates instead of serving a stale cached render.
-  return createHash("sha1").update(`v6|${year}|${make}|${model}|${color}`.toLowerCase()).digest("hex").slice(0, 20)
+  return createHash("sha1").update(`v7|${year}|${make}|${model}|${color}`.toLowerCase()).digest("hex").slice(0, 20)
 }
 
 // gpt-image-1 has a strong prior to paint luxury cars (S-Class, Evoque) black,

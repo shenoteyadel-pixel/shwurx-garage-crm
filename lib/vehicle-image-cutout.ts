@@ -195,9 +195,19 @@ export async function removeDarkBackground(input: Buffer): Promise<Buffer | null
     }
   }
 
-  return sharp(data, { raw: { width: w, height: h, channels: 4 } })
-    .png({ compressionLevel: 9 })
-    .toBuffer()
+  // Trim the now-transparent border so the PNG is a tight bounding box of the
+  // car. This lets the board anchor the wheels precisely on the lift arms (the
+  // car's bottom edge == the tyres) instead of floating on invisible margin.
+  try {
+    return await sharp(data, { raw: { width: w, height: h, channels: 4 } })
+      .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 12 })
+      .png({ compressionLevel: 9 })
+      .toBuffer()
+  } catch {
+    return sharp(data, { raw: { width: w, height: h, channels: 4 } })
+      .png({ compressionLevel: 9 })
+      .toBuffer()
+  }
 }
 
 /**

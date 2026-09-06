@@ -208,11 +208,14 @@ export function CarSilhouette({
   color,
   className,
   title,
+  onLift = false,
 }: {
   profile: VehicleProfile
   color?: string | null
   className?: string
   title?: string
+  /** Raise the car on a 2-post lift (used for cars parked on a workshop bay). */
+  onLift?: boolean
 }) {
   const p = P[profile] ?? P.sedan
   const { paint, isLight } = resolvePaint(color)
@@ -225,9 +228,15 @@ export function CarSilhouette({
   const body = buildBody(p)
   const glass = buildGlass(p)
 
+  // When on the lift the whole car is translated up so the lift arms tuck under
+  // the sills. Extra viewBox height gives the raised car and floor room.
+  const lift = onLift ? 22 : 0
+  const floorY = 118
+  const vbH = onLift ? 128 : 120
+
   return (
     <svg
-      viewBox="0 0 248 120"
+      viewBox={`0 0 248 ${vbH}`}
       className={cn("h-full w-full", className)}
       preserveAspectRatio="xMidYMid meet"
       role="img"
@@ -241,8 +250,14 @@ export function CarSilhouette({
         </linearGradient>
       </defs>
 
-      {/* ground shadow */}
-      <ellipse cx="126" cy={p.bottom + 12} rx="108" ry="7" fill="#000" opacity={0.3} />
+      {/* 2-post lift behind the car (car raised for inspection) */}
+      {onLift && <TwoPostLift p={p} floorY={floorY} lift={lift} />}
+
+      {/* car group — raised when on the lift */}
+      <g transform={onLift ? `translate(0 ${-lift})` : undefined}>
+
+      {/* ground shadow (only while the car is on the ground) */}
+      {!onLift && <ellipse cx="126" cy={p.bottom + 12} rx="108" ry="7" fill="#000" opacity={0.3} />}
 
       {/* wheel arches (behind body, read as cut-outs) */}
       {[p.ax1, p.ax2].map((cx, i) => (
@@ -287,6 +302,51 @@ export function CarSilhouette({
       {/* wheels */}
       <Wheel cx={p.ax1} cy={wheelCY} r={p.wR} />
       <Wheel cx={p.ax2} cy={wheelCY} r={p.wR} />
+      </g>
     </svg>
+  )
+}
+
+/**
+ * Two-post hydraulic lift drawn in the car's own coordinate space (viewBox
+ * 248 wide), so it scales and aligns with any vehicle. The swing arms reach
+ * inward from each column to rubber pads under the sills at the raised height.
+ */
+function TwoPostLift({ p, floorY, lift }: { p: Proto; floorY: number; lift: number }) {
+  const steel = "#3a4048"
+  const steelLight = "#565e68"
+  const steelDark = "#23272d"
+  const beamY = 32
+  const padY = p.bottom - lift + 2 // just under the raised body
+  const carriageY = padY + 5
+  const frontPad = p.ax1 + 6
+  const rearPad = p.ax2 - 6
+  const colH = floorY - beamY
+  return (
+    <g>
+      {/* floor contact shadows under the columns */}
+      <ellipse cx={13} cy={floorY + 3} rx={17} ry={4} fill="#000" opacity={0.35} />
+      <ellipse cx={235} cy={floorY + 3} rx={17} ry={4} fill="#000" opacity={0.35} />
+      {/* overhead beam linking the two columns */}
+      <rect x={8} y={beamY} width={232} height={7} rx={2} fill={steelDark} />
+      {/* columns */}
+      <rect x={7} y={beamY} width={12} height={colH} rx={2} fill={steel} />
+      <rect x={229} y={beamY} width={12} height={colH} rx={2} fill={steel} />
+      {/* column highlights */}
+      <rect x={9} y={beamY} width={3} height={colH} fill={steelLight} opacity={0.7} />
+      <rect x={231} y={beamY} width={3} height={colH} fill={steelLight} opacity={0.7} />
+      {/* base plates */}
+      <rect x={1} y={floorY - 3} width={25} height={7} rx={1.5} fill={steelDark} />
+      <rect x={222} y={floorY - 3} width={25} height={7} rx={1.5} fill={steelDark} />
+      {/* carriages at lift height */}
+      <rect x={5} y={carriageY - 6} width={16} height={12} rx={2} fill={steelLight} />
+      <rect x={227} y={carriageY - 6} width={16} height={12} rx={2} fill={steelLight} />
+      {/* swing arms reaching under the car to the lift pads */}
+      <line x1={20} y1={carriageY} x2={frontPad} y2={padY} stroke={steel} strokeWidth={5} strokeLinecap="round" />
+      <line x1={228} y1={carriageY} x2={rearPad} y2={padY} stroke={steel} strokeWidth={5} strokeLinecap="round" />
+      {/* rubber lift pads at the sill contact points */}
+      <rect x={frontPad - 7} y={padY - 4} width={14} height={5} rx={1.5} fill={steelDark} />
+      <rect x={rearPad - 7} y={padY - 4} width={14} height={5} rx={1.5} fill={steelDark} />
+    </g>
   )
 }

@@ -4,7 +4,8 @@ import { useState, useTransition } from "react"
 import { Card, Button, Input, Label, Select, Textarea } from "@/components/ui"
 import { Modal } from "@/components/modal"
 import { recordInvoicePayment, cancelInvoice, setInvoicePaymentLink } from "@/lib/actions-crm"
-import { CreditCard, Ban, Link2, ExternalLink, CheckCircle2 } from "lucide-react"
+import { whatsappInvoiceLink, emailInvoiceLink } from "@/lib/actions-invoice-pay"
+import { CreditCard, Ban, Link2, ExternalLink, CheckCircle2, Send, MessageCircle, Mail, Copy, Check } from "lucide-react"
 
 export function InvoiceActions({
   invoiceId,
@@ -13,6 +14,7 @@ export function InvoiceActions({
   paymentLinkUrl,
   paymentLinkLabel,
   paymentLinkEnabled,
+  publicToken,
 }: {
   invoiceId: string
   status: string
@@ -20,12 +22,57 @@ export function InvoiceActions({
   paymentLinkUrl?: string | null
   paymentLinkLabel?: string | null
   paymentLinkEnabled?: boolean
+  publicToken?: string | null
 }) {
   const [payOpen, setPayOpen] = useState(false)
   const [linkOpen, setLinkOpen] = useState(false)
+  const [sendOpen, setSendOpen] = useState(false)
   const [payPending, startPay] = useTransition()
   const [linkPending, startLink] = useTransition()
   const [cancelPending, startCancel] = useTransition()
+  const [sendPending, startSend] = useTransition()
+  const [sendMsg, setSendMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const payUrl = publicToken
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/pay/${publicToken}`
+    : null
+
+  function sendWhatsApp() {
+    startSend(async () => {
+      setSendMsg(null)
+      const res = await whatsappInvoiceLink(invoiceId)
+      if (res.ok && res.url) {
+        window.open(res.url, "_blank", "noopener,noreferrer")
+        setSendMsg({ kind: "ok", text: "WhatsApp opened with the invoice link." })
+      } else {
+        setSendMsg({ kind: "err", text: res.error || "Could not open WhatsApp." })
+      }
+    })
+  }
+
+  function sendEmail() {
+    startSend(async () => {
+      setSendMsg(null)
+      const res = await emailInvoiceLink(invoiceId)
+      setSendMsg(
+        res.ok
+          ? { kind: "ok", text: "Invoice emailed to the customer." }
+          : { kind: "err", text: res.error || "Could not send email." },
+      )
+    })
+  }
+
+  async function copyLink() {
+    if (!payUrl) return
+    try {
+      await navigator.clipboard.writeText(payUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setSendMsg({ kind: "err", text: "Copy failed — select and copy the link manually." })
+    }
+  }
 
   if (status === "cancelled") {
     return (
@@ -43,9 +90,14 @@ export function InvoiceActions({
             <CreditCard className="h-4 w-4" /> Record Payment
           </Button>
         )}
+        {balance > 0.01 && publicToken && (
+          <Button onClick={() => setSendOpen(true)}>
+            <Send className="h-4 w-4" /> Send to Customer
+          </Button>
+        )}
         {balance > 0.01 && (
           <Button variant="outline" onClick={() => setLinkOpen(true)}>
-            <Link2 className="h-4 w-4" /> {paymentLinkUrl ? "Edit Payment Link" : "Add Payment Link"}
+            <Link2 className="h-4 w-4" /> {paymentLinkUrl ? "Edit Manual Link" : "Add Manual Link"}
           </Button>
         )}
         {status === "paid" && <span className="text-sm text-emerald-400">Fully paid.</span>}
@@ -81,6 +133,46 @@ export function InvoiceActions({
           </a>
         </Card>
       )}
+
+      <Modal
+        open={sendOpen}
+        onClose={() => {
+          setSendOpen(false)
+          setSendMsg(null)
+        }}
+        size="sm"
+        title="Send Invoice to Customer"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            The customer opens a secure page to review this invoice and pay by card. Once they pay, the invoice is
+            marked <span className="font-medium text-foreground">paid</span> automatically.
+          </p>
+
+          {payUrl && (
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-background/60 p-2">
+              <span className="flex-1 truncate font-mono text-xs text-muted-foreground">{payUrl}</span>
+              <Button type="button" variant="outline" onClick={copyLink} className="shrink-0">
+                {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <Button type="button" disabled={sendPending} onClick={sendWhatsApp}>
+              <MessageCircle className="h-4 w-4" /> WhatsApp
+            </Button>
+            <Button type="button" variant="outline" disabled={sendPending} onClick={sendEmail}>
+              <Mail className="h-4 w-4" /> Email
+            </Button>
+          </div>
+
+          {sendMsg && (
+            <p className={`text-sm ${sendMsg.kind === "ok" ? "text-emerald-400" : "text-red-400"}`}>{sendMsg.text}</p>
+          )}
+        </div>
+      </Modal>
 
       <Modal open={linkOpen} onClose={() => setLinkOpen(false)} size="sm" title="Customer Payment Link">
         <form

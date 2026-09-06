@@ -132,6 +132,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
         paymentLinkUrl={inv.payment_link_url}
         paymentLinkLabel={inv.payment_link_label}
         paymentLinkEnabled={inv.payment_link_enabled}
+        publicToken={inv.public_token}
       />
       </div>
     </AppShell>

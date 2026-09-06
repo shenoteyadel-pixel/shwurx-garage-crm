@@ -157,6 +157,33 @@ function esc(v: string | null | undefined): string {
 }
 
 /**
+ * Invoice email sent to the customer — opens the secure invoice page where they
+ * can review the bill and pay securely by card.
+ */
+export function invoiceLinkEmail(opts: {
+  name: string
+  vehicle: string
+  invoiceNumber: string
+  total: string
+  balance: string
+  url: string
+}) {
+  const body = `
+    <p>Hi ${esc(opts.name) || "there"},</p>
+    <p>Your invoice from <strong>${BRAND}</strong> for the <strong>${esc(opts.vehicle)}</strong> is ready.</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0 4px">
+      <tr><td style="padding:4px 0;color:#8b93a1;font-size:12px;text-transform:uppercase;letter-spacing:1px;width:130px">Invoice</td>
+        <td style="padding:4px 0;color:#ffffff;font-size:14px;font-weight:600">${esc(opts.invoiceNumber)}</td></tr>
+      <tr><td style="padding:4px 0;color:#8b93a1;font-size:12px;text-transform:uppercase;letter-spacing:1px">Total</td>
+        <td style="padding:4px 0;color:#ffffff;font-size:14px;font-weight:600">${esc(opts.total)}</td></tr>
+      <tr><td style="padding:4px 0;color:#8b93a1;font-size:12px;text-transform:uppercase;letter-spacing:1px">Amount due</td>
+        <td style="padding:4px 0;color:#ffffff;font-size:14px;font-weight:600">${esc(opts.balance)}</td></tr>
+    </table>
+    <p style="margin-top:14px">Review your full invoice and pay securely by card using the button below.</p>`
+  return shell("Your invoice is ready", body, { label: "View & pay invoice", url: opts.url })
+}
+
+/**
  * Approval request email — the customer opens the secure link to review each
  * recommended item and Approve/Reject before signing. Used for both the initial
  * quotation and mid-repair additional-work requests.

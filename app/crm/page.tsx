@@ -38,10 +38,37 @@ export default async function DashboardPage() {
   const { data: parts } = await supabase.from("parts_requests").select("status").is("deleted_at", null)
   const { data: quotes } = await supabase.from("quotations").select("total, job_id, created_at")
 
+  // Latest invoice per job drives the payment badge on the board.
+  const payByJob = new Map<string, { total: number; paid: number }>()
+  if (jobs.length) {
+    const { data: invs } = await supabase
+      .from("invoices")
+      .select("job_id, total, amount_paid, created_at")
+      .in(
+        "job_id",
+        jobs.map((j) => j.id),
+      )
+      .order("created_at", { ascending: false })
+    for (const inv of invs ?? []) {
+      if (inv.job_id && !payByJob.has(inv.job_id)) {
+        payByJob.set(inv.job_id, { total: Number(inv.total ?? 0), paid: Number(inv.amount_paid ?? 0) })
+      }
+    }
+  }
+
+  function paymentStatus(j: (typeof jobs)[number]): JobCardData["payment_status"] {
+    if (j.paid_at) return "paid"
+    const p = payByJob.get(j.id)
+    if (!p) return undefined
+    if (p.total > 0 && p.paid >= p.total - 0.01) return "paid"
+    if (p.paid > 0) return "partial"
+    return "unpaid"
+  }
+
   const jobCards: JobCardData[] = jobs.map((j) => ({
     ...(j as any),
     cover: coverByJob.get(j.id) ?? null,
-    payment_status: j.paid_at ? "paid" : undefined,
+    payment_status: paymentStatus(j),
   }))
 
   // ---- Metrics ----

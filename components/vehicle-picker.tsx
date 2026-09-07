@@ -14,7 +14,9 @@ import {
   yearOptions,
   type CatalogSearchResult,
 } from "@/lib/vehicle-catalog"
-import { Search, X } from "lucide-react"
+import { Search, X, Sparkles, Loader2 } from "lucide-react"
+import { identifyVehicle, type VehicleIdentification } from "@/lib/actions-vehicle-id"
+import { VehicleIdCard } from "@/components/vehicle-id-card"
 
 export type VehicleDraft = {
   make: string
@@ -52,6 +54,42 @@ export function VehiclePicker({
   const [query, setQuery] = React.useState("")
   const results = React.useMemo(() => searchCatalog(query), [query])
   const [open, setOpen] = React.useState(false)
+
+  // AI-assisted identification for free-text that the local catalog can't match
+  // (e.g. "Mercedes SL63 2023", "McLaren 720 2021").
+  const [aiLoading, setAiLoading] = React.useState(false)
+  const [aiIdent, setAiIdent] = React.useState<VehicleIdentification | null>(null)
+  const [aiNote, setAiNote] = React.useState<string | null>(null)
+
+  async function onAiIdentify() {
+    const q = query.trim()
+    if (q.length < 3) return
+    setAiNote(null)
+    setAiIdent(null)
+    setAiLoading(true)
+    setOpen(false)
+    try {
+      const res = await identifyVehicle({ query: q })
+      if (res.ok) setAiIdent(res.data)
+      else setAiNote(res.error)
+    } catch {
+      setAiNote("Couldn't identify that vehicle. Enter the details manually.")
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  function applyAi(id: VehicleIdentification) {
+    onChange({
+      ...(id.make?.value ? { make: id.make.value } : {}),
+      ...(id.model?.value ? { model: id.model.value } : {}),
+      ...(id.year?.value ? { year: id.year.value } : {}),
+      ...(id.variant?.value ? { variant: id.variant.value } : {}),
+      ...(id.bodyType?.value ? { bodyType: id.bodyType.value } : {}),
+    })
+    setAiIdent(null)
+    setQuery("")
+  }
 
   const yearNum = value.year ? Number(value.year) : null
   const makeOptions = React.useMemo(() => catalogMakeNames(), [])
@@ -128,8 +166,33 @@ export function VehiclePicker({
                 </button>
               </li>
             ))}
+            <li className="border-t border-border/60 mt-1 pt-1">
+              <button
+                type="button"
+                onClick={onAiIdentify}
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <Sparkles className="h-4 w-4" /> Not listed? Identify &ldquo;{query.trim()}&rdquo; with AI
+              </button>
+            </li>
           </ul>
         )}
+
+        {/* AI fallback trigger when the catalog has no match at all. */}
+        {query.trim().length >= 3 && results.length === 0 && !aiIdent && (
+          <button
+            type="button"
+            onClick={onAiIdentify}
+            disabled={aiLoading}
+            className="mt-2 inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+          >
+            {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {aiLoading ? "Identifying…" : `Identify "${query.trim()}" with AI`}
+          </button>
+        )}
+
+        {aiNote && <p className="mt-2 text-xs text-amber-300">{aiNote}</p>}
+        {aiIdent && <VehicleIdCard id={aiIdent} onApply={applyAi} />}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

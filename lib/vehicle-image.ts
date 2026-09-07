@@ -30,6 +30,7 @@ export async function resolveVehicleImage(params: {
   year?: number | string | null
   color?: string | null
   trim?: string | null
+  generation?: string | null
 }): Promise<ResolvedVehicleImage | null> {
   const url = await generateVehicleImage({
     year: params.year,
@@ -37,6 +38,7 @@ export async function resolveVehicleImage(params: {
     model: params.model,
     color: params.color,
     trim: params.trim,
+    generation: params.generation,
   })
   return url ? { url, source: "ai-studio" } : null
 }

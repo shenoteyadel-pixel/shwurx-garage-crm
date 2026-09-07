@@ -18,8 +18,8 @@ import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { BODY_TYPES, inferBodyType } from "@/lib/vehicle"
 import { catalogBodyType } from "@/lib/vehicle-catalog"
 import { VehiclePicker, EMPTY_VEHICLE_DRAFT, type VehicleDraft } from "@/components/vehicle-picker"
-import { normalizeBodyType } from "@/lib/vehicle-catalog"
-import { decodeVin, type VinDecodeResult } from "@/lib/actions-vin"
+import { identifyVehicle, type VehicleIdentification } from "@/lib/actions-vehicle-id"
+import { VehicleIdCard } from "@/components/vehicle-id-card"
 import { UAE_EMIRATES } from "@/lib/constants"
 import {
   Search,
@@ -455,46 +455,50 @@ function NewVehicleForm({
 
   const [vin, setVin] = React.useState("")
   const [decoding, setDecoding] = React.useState(false)
-  const [decoded, setDecoded] = React.useState<VinDecodeResult | null>(null)
+  const [ident, setIdent] = React.useState<VehicleIdentification | null>(null)
   const [decodeNote, setDecodeNote] = React.useState<string | null>(null)
 
   const effectiveBody = bodyType || catalogBodyType(make, model) || inferBodyType(make, model)
 
-  async function onDecodeVin() {
+  // Hybrid VIN identification: CRM record first, then decode + AI + catalog.
+  async function onIdentify() {
     setDecodeNote(null)
-    setDecoded(null)
+    setIdent(null)
     setDupe(null)
     setDecoding(true)
     try {
-      // Surface an existing match first — a known VIN should reuse its record.
+      // STEP 1 — reuse an existing CRM record for a known VIN (no duplicate).
       const existing = await findVehicleByVinOrPlate({ vin })
       if (existing) {
         setDupe(existing as Vehicle)
         setDecoding(false)
         return
       }
-      const res = await decodeVin(vin)
+      // STEP 2-4 — real decode -> AI normalization -> catalog confirmation.
+      const res = await identifyVehicle({ vin })
       if (!res.ok) {
         setDecodeNote(res.error)
         setDecoding(false)
         return
       }
-      const d = res.data
-      // Auto-fill only fields the decode actually returned; never blank out
-      // something the advisor already typed.
-      patchDraft({
-        ...(d.make ? { make: d.make } : {}),
-        ...(d.model ? { model: d.model } : {}),
-        ...(d.year ? { year: String(d.year) } : {}),
-        ...(d.trim ? { variant: d.trim } : {}),
-        ...(normalizeBodyType(d.bodyType) ? { bodyType: normalizeBodyType(d.bodyType) as string } : {}),
-      })
-      setDecoded(d)
+      setIdent(res.data)
     } catch (e: any) {
-      setDecodeNote(e?.message ?? "VIN decode failed. Enter details manually.")
+      setDecodeNote(e?.message ?? "Identification failed. Enter details manually.")
     } finally {
       setDecoding(false)
     }
+  }
+
+  // Apply the confirmed identification as a SUGGESTION — only fields that were
+  // identified, never blanking out anything the advisor already typed.
+  function applyIdentification(id: VehicleIdentification) {
+    patchDraft({
+      ...(id.make?.value ? { make: id.make.value } : {}),
+      ...(id.model?.value ? { model: id.model.value } : {}),
+      ...(id.year?.value ? { year: id.year.value } : {}),
+      ...(id.variant?.value ? { variant: id.variant.value } : {}),
+      ...(id.bodyType?.value ? { bodyType: id.bodyType.value } : {}),
+    })
   }
 
   async function onCreate(fd: FormData) {
@@ -563,7 +567,7 @@ function NewVehicleForm({
       <div className="rounded-lg border border-border bg-background/40 p-4">
         <Label htmlFor="vin">VIN / Chassis — start here</Label>
         <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
-          Scan or enter the VIN to auto-fill make, model, year and trim. You can still edit anything below.
+          Enter the VIN to look it up: existing record → real VIN decode → AI normalization → catalog confirm. You can still edit anything below.
         </p>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Input
@@ -572,7 +576,7 @@ function NewVehicleForm({
             value={vin}
             onChange={(e) => {
               setVin(e.target.value.toUpperCase())
-              if (decoded) setDecoded(null)
+              if (ident) setIdent(null)
               if (decodeNote) setDecodeNote(null)
             }}
             placeholder="17-digit VIN"
@@ -583,12 +587,12 @@ function NewVehicleForm({
           <Button
             type="button"
             variant="secondary"
-            onClick={onDecodeVin}
+            onClick={onIdentify}
             disabled={decoding || vin.trim().length < 11}
             className="shrink-0"
           >
             {decoding ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
-            {decoding ? "Decoding…" : "Decode VIN"}
+            {decoding ? "Identifying…" : "Identify vehicle"}
           </Button>
         </div>
 
@@ -599,24 +603,7 @@ function NewVehicleForm({
           </div>
         )}
 
-        {decoded && (
-          <div className="mt-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-emerald-300">
-              <CircleCheck className="h-4 w-4" /> Vehicle identified
-            </div>
-            <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-emerald-200/90">
-              <span>{[decoded.year, decoded.make, decoded.model, decoded.trim].filter(Boolean).join(" ")}</span>
-            </div>
-            <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-3">
-              {decoded.engine && <SpecPair label="Engine" value={decoded.engine} />}
-              {decoded.fuelType && <SpecPair label="Fuel" value={decoded.fuelType} />}
-              {decoded.transmission && <SpecPair label="Transmission" value={decoded.transmission} />}
-              {decoded.drivetrain && <SpecPair label="Drivetrain" value={decoded.drivetrain} />}
-              {decoded.bodyType && <SpecPair label="Body" value={decoded.bodyType} />}
-              {decoded.madeIn && <SpecPair label="Made in" value={decoded.madeIn} />}
-            </dl>
-          </div>
-        )}
+        {ident && <VehicleIdCard id={ident} onApply={applyIdentification} />}
       </div>
 
       <VehiclePicker value={draft} onChange={patchDraft} />
@@ -675,16 +662,6 @@ function NewVehicleForm({
         </Button>
       </div>
     </form>
-  )
-}
-
-/** Compact label/value pair used inside the decoded-VIN spec grid. */
-function SpecPair({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col">
-      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground/70">{label}</dt>
-      <dd className="text-foreground">{value}</dd>
-    </div>
   )
 }
 

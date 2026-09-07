@@ -510,6 +510,52 @@ export function catalogBodyType(make: string | null | undefined, model: string |
   return findModelDef(def, model)?.body
 }
 
+export type CatalogConfirmation = {
+  make: string | null // canonical make name if recognised, else the input
+  model: string | null // canonical model name if recognised, else the input
+  variant: string | null // canonical variant name if recognised, else the input
+  body: BodyType | null
+  makeKnown: boolean
+  modelKnown: boolean
+  variantKnown: boolean
+}
+
+/**
+ * Cross-check a (already AI-normalized) make/model/variant against the local
+ * catalog. Returns canonical spellings where recognised and flags which parts
+ * are known — used to raise/lower identification confidence. Never invents
+ * data: unknown parts are passed through unchanged so free-text still works.
+ */
+export function confirmCatalog(
+  make: string | null | undefined,
+  model: string | null | undefined,
+  variant?: string | null,
+): CatalogConfirmation {
+  const def = findCatalogMake(make)
+  const md = def ? findModelDef(def, model) : undefined
+  let variantKnown = false
+  let canonicalVariant = variant?.trim() || null
+  if (md?.variants && canonicalVariant) {
+    const vKey = normalize(canonicalVariant)
+    const hit =
+      md.variants.find((v) => normalize(v.name) === vKey) ||
+      md.variants.find((v) => normalize(v.name).includes(vKey) || vKey.includes(normalize(v.name)))
+    if (hit) {
+      canonicalVariant = hit.name
+      variantKnown = true
+    }
+  }
+  return {
+    make: def?.name ?? (make?.trim() || null),
+    model: md?.name ?? (model?.trim() || null),
+    variant: canonicalVariant,
+    body: md?.body ?? null,
+    makeKnown: !!def,
+    modelKnown: !!md,
+    variantKnown,
+  }
+}
+
 export type CatalogSearchResult = {
   make: string
   model: string

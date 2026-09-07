@@ -54,7 +54,11 @@ export function LanguageProvider({
       writeCookie(detected)
       window.localStorage.setItem(LOCALE_COOKIE, detected)
       setLangState(detected)
-      router.refresh()
+      // Defer to a macrotask so the App Router is fully initialized before we
+      // dispatch a refresh — calling it synchronously on first mount (or during
+      // an HMR refresh) throws "Router action dispatched before initialization".
+      const id = window.setTimeout(() => router.refresh(), 0)
+      return () => window.clearTimeout(id)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

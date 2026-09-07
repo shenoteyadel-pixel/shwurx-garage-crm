@@ -615,6 +615,25 @@ const BODY_LABEL: Record<BodyType, string> = {
   sports: "Sports Car",
 }
 
+/**
+ * Map a free-form body/style string from a VIN decoder (CarsXE / NHTSA) onto
+ * our canonical BodyType. Returns null when we can't confidently classify it,
+ * so callers keep whatever they already had rather than guessing.
+ */
+export function normalizeBodyType(raw?: string | null): BodyType | null {
+  if (!raw) return null
+  const s = raw.toLowerCase()
+  if (/(convertible|roadster|cabriolet|spider|spyder|drop\s?top)/.test(s)) return "convertible"
+  if (/(pickup|pick-up|truck|crew cab|cab chassis)/.test(s)) return "pickup"
+  if (/(suv|sport utility|crossover|\bmpv\b|multi-purpose)/.test(s)) return "suv"
+  if (/(van|minivan|cargo)/.test(s)) return "van"
+  if (/(hatchback|liftback|wagon|estate|5-door|5 door)/.test(s)) return "hatchback"
+  if (/(coupe|coupé|2-door|2 door|fastback)/.test(s)) return "coupe"
+  if (/(roadster|supercar|sports car)/.test(s)) return "sports"
+  if (/(sedan|saloon|4-door|4 door)/.test(s)) return "sedan"
+  return null
+}
+
 /** The default year to preselect for a search result (most recent in range). */
 export function defaultYearFor(r: CatalogSearchResult): number {
   return r.yearEnd == null ? CURRENT_YEAR : Math.min(r.yearEnd, CURRENT_YEAR)

@@ -14,7 +14,7 @@ import { resolveVehicleImage } from "@/lib/vehicle-image"
  */
 export async function attachJobVehicleImage(
   jobId: string,
-  vehicle: { make: string | null; model: string | null; year: number | null; color: string | null },
+  vehicle: { make: string | null; model: string | null; year: number | null; color: string | null; trim?: string | null },
 ): Promise<void> {
   try {
     const image = await resolveVehicleImage(vehicle)

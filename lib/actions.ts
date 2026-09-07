@@ -114,7 +114,7 @@ export async function createJob(formData: FormData) {
   if (error) throw new Error(error.message)
 
   // Kick off the uniform studio image generation without blocking the response.
-  after(() => attachJobVehicleImage(data.id, { make, model, year, color }))
+  after(() => attachJobVehicleImage(data.id, { make, model, year, color, trim: payload.variant }))
 
   // attach uploaded photo urls (comma separated)
   const photoUrls = String(formData.get("photo_urls") || "").split(",").filter(Boolean)

@@ -36,6 +36,7 @@ export async function resolveVehicleImage(params: {
     make: params.make,
     model: params.model,
     color: params.color,
+    trim: params.trim,
   })
   return url ? { url, source: "ai-studio" } : null
 }

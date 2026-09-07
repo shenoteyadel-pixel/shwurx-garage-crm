@@ -20,12 +20,16 @@ export type VehicleForImage = {
   model?: string | null
   color?: string | null
   trim?: string | null // variant/trim, e.g. "SL 63 AMG", "S 580", "720S Spider"
+  generation?: string | null // chassis/generation code, e.g. "R232", "W223"
 }
 
-function cacheKey(year: string, make: string, model: string, color: string, trim: string) {
+function cacheKey(year: string, make: string, model: string, color: string, trim: string, generation: string) {
   // Bump the version prefix whenever the prompt changes so every vehicle
   // regenerates instead of serving a stale cached render.
-  return createHash("sha1").update(`v8|${year}|${make}|${model}|${trim}|${color}`.toLowerCase()).digest("hex").slice(0, 20)
+  return createHash("sha1")
+    .update(`v9|${year}|${make}|${model}|${generation}|${trim}|${color}`.toLowerCase())
+    .digest("hex")
+    .slice(0, 20)
 }
 
 // A short body-shape phrase so the model renders the correct silhouette
@@ -64,7 +68,7 @@ function paintPhrase(color: string): string {
   return map[c] || (color ? color.toUpperCase() : "factory-colour")
 }
 
-function buildPrompt(year: string, make: string, model: string, color: string, trim: string, body: BodyType | undefined) {
+function buildPrompt(year: string, make: string, model: string, color: string, trim: string, body: BodyType | undefined, generation: string) {
   const brand = [make, model].filter(Boolean).join(" ").trim()
   const yearText = year ? `${year} ` : ""
   const paint = paintPhrase(color)
@@ -72,6 +76,9 @@ function buildPrompt(year: string, make: string, model: string, color: string, t
   // duplication like "SL SL 63 AMG" while still pinning the right variant),
   // and describe the correct body shape when we know it from the catalog.
   const trimClause = trim ? ` This is specifically the ${trim} variant, so render that exact trim's body kit, wheels and details.` : ""
+  // The generation/chassis code pins the exact styling era so a current-gen car
+  // never renders as its predecessor (e.g. R232 SL, not the older R231).
+  const genClause = generation ? ` It is the ${generation} generation specifically — use that generation's exact bodywork, lights and styling, not an earlier or later generation.` : ""
   const bodyClause = body ? ` The overall body style is ${BODY_PHRASE[body]}.` : ""
   // A tightly constrained prompt keeps angle, framing, lighting and background
   // identical across cars — the key to a uniform board — while the specific
@@ -83,7 +90,7 @@ function buildPrompt(year: string, make: string, model: string, color: string, t
   return [
     `A photorealistic studio product photograph of a single ${yearText}${brand} car with a ${paint} exterior paint colour.`,
     `The entire car body is ${paint}. This is essential: the paint colour must be ${paint}, covering every body panel, roof, doors, bonnet and bumpers — do not darken it, do not render it black.`,
-    `Exact factory-correct body shape and proportions for a ${brand}, with the correct genuine ${make} manufacturer badge and grille — never another car brand's logo.${trimClause}${bodyClause}`,
+    `Exact factory-correct body shape and proportions for a ${brand}, with the correct genuine ${make} manufacturer badge and grille — never another car brand's logo.${genClause}${trimClause}${bodyClause}`,
     "Three-quarter front view from a slightly low angle, the front of the car facing to the left, the whole vehicle centred and fully in frame with even margin on all sides, always the same camera distance and framing.",
     "Set on a seamless dark charcoal grey studio background (#2a2a2a) with even soft professional automotive lighting and gentle rim light, no scenery, no floor reflection.",
     // Critical: stop the model baking the year / a number plate / captions onto the car.
@@ -105,14 +112,15 @@ export async function generateVehicleImage(v: VehicleForImage): Promise<string |
   const color = (v.color ?? "").trim()
   const year = v.year ? String(v.year).trim() : ""
   const trim = (v.trim ?? "").trim()
+  const generation = (v.generation ?? "").trim()
   const body = catalogBodyType(make, model)
   if (!make && !model) return null
 
   try {
-    const key = cacheKey(year, make, model, color, trim)
+    const key = cacheKey(year, make, model, color, trim, generation)
     const { image } = await generateImage({
       model: gateway.imageModel(IMAGE_MODEL),
-      prompt: buildPrompt(year, make, model, color, trim, body),
+      prompt: buildPrompt(year, make, model, color, trim, body, generation),
       size: IMAGE_SIZE,
       abortSignal: AbortSignal.timeout(110000),
     })

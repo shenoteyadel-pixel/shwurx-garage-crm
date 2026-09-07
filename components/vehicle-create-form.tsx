@@ -3,20 +3,20 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { createVehicleInline, findVehicleByVinOrPlate } from "@/lib/actions-customers"
-import { Button, Card, Combo, Input, Label, Select } from "@/components/ui"
+import { Button, Card, Input, Label, Select } from "@/components/ui"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { UAEPlate } from "@/components/ui"
-import { BODY_TYPES, inferBodyType, MODEL_SUGGESTIONS } from "@/lib/vehicle"
-import { COMMON_MAKES, COMMON_COLORS, UAE_EMIRATES } from "@/lib/constants"
+import { BODY_TYPES, inferBodyType } from "@/lib/vehicle"
+import { catalogBodyType } from "@/lib/vehicle-catalog"
+import { VehiclePicker, EMPTY_VEHICLE_DRAFT, type VehicleDraft } from "@/components/vehicle-picker"
+import { UAE_EMIRATES } from "@/lib/constants"
 import { Car, Loader2 } from "lucide-react"
 
 export function VehicleCreateForm({ customerId }: { customerId: string }) {
   const router = useRouter()
-  const [make, setMake] = React.useState("")
-  const [model, setModel] = React.useState("")
-  const [variant, setVariant] = React.useState("")
-  const [color, setColor] = React.useState("")
-  const [bodyType, setBodyType] = React.useState("")
+  const [draft, setDraft] = React.useState<VehicleDraft>(EMPTY_VEHICLE_DRAFT)
+  const patchDraft = (p: Partial<VehicleDraft>) => setDraft((d) => ({ ...d, ...p }))
+  const { make, model, variant, color, bodyType } = draft
   const [plateEmirate, setPlateEmirate] = React.useState("Dubai")
   const [plateCode, setPlateCode] = React.useState("")
   const [plateNumber, setPlateNumber] = React.useState("")
@@ -24,7 +24,7 @@ export function VehicleCreateForm({ customerId }: { customerId: string }) {
   const [error, setError] = React.useState<string | null>(null)
   const [dupe, setDupe] = React.useState<{ id: string; make: string | null; model: string | null } | null>(null)
 
-  const effectiveBody = bodyType || inferBodyType(make, model)
+  const effectiveBody = bodyType || catalogBodyType(make, model) || inferBodyType(make, model)
 
   async function onCreate(fd: FormData) {
     setError(null)
@@ -90,38 +90,9 @@ export function VehicleCreateForm({ customerId }: { customerId: string }) {
           </div>
         </div>
 
+        <VehiclePicker value={draft} onChange={patchDraft} />
+
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <Label htmlFor="vehicle_make">Make</Label>
-            <Combo id="vehicle_make" name="vehicle_make" placeholder="e.g. Toyota" options={COMMON_MAKES} value={make} onChange={(e) => setMake(e.target.value)} />
-          </div>
-          <div>
-            <Label htmlFor="vehicle_model">Model</Label>
-            <Combo id="vehicle_model" name="vehicle_model" placeholder="e.g. Land Cruiser" options={MODEL_SUGGESTIONS[make] ?? []} value={model} onChange={(e) => setModel(e.target.value)} />
-          </div>
-          <div>
-            <Label htmlFor="variant">Variant / trim</Label>
-            <Combo id="variant" name="variant" placeholder="e.g. VXR / GT" options={["VXR", "GXR", "GT", "GTS", "Sport", "AMG", "M Sport", "S-Line", "Limited", "Platinum"]} value={variant} onChange={(e) => setVariant(e.target.value)} />
-          </div>
-          <div>
-            <Label htmlFor="vehicle_year">Year</Label>
-            <Input id="vehicle_year" name="vehicle_year" type="number" min="1950" max="2100" placeholder="2021" />
-          </div>
-          <div>
-            <Label htmlFor="color">Color</Label>
-            <Combo id="color" name="color" placeholder="e.g. Pearl White" options={COMMON_COLORS} value={color} onChange={(e) => setColor(e.target.value)} />
-          </div>
-          <div>
-            <Label htmlFor="body_type">Body type</Label>
-            <Select id="body_type" name="body_type" value={bodyType} onChange={(e) => setBodyType(e.target.value)}>
-              <option value="">Auto-detect</option>
-              {BODY_TYPES.map((b) => (
-                <option key={b.value} value={b.value}>
-                  {b.label}
-                </option>
-              ))}
-            </Select>
-          </div>
           <div>
             <Label htmlFor="vin">VIN / Chassis</Label>
             <Input id="vin" name="vin" placeholder="17-digit VIN" />

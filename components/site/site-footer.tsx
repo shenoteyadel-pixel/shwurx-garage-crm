@@ -27,8 +27,8 @@ export async function SiteFooter({ info }: { info: PublicSiteInfo }) {
   const { dict } = await getServerI18n()
   const t = dict.footer
   const year = new Date().getFullYear()
-  const phone = info.phone || "+971 4 123 4567"
-  const email = info.email || "info@shwurxgarage.ae"
+  const phone = info.phone || "+971 58 554 5504"
+  const email = info.email || "wurxgarage@gmail.com"
   const address = info.address || "Dubai, UAE"
 
   return (

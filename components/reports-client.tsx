@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { useState } from "react"
 import { formatCurrency as money } from "@/lib/utils"
 import { Card, PrimaryButton, GhostButton } from "@/components/ui"
@@ -154,10 +155,21 @@ export function ReportsClient({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <GhostButton onClick={() => preset("month")}>This Month</GhostButton>
-        <GhostButton onClick={() => preset("quarter")}>This Quarter</GhostButton>
-        <GhostButton onClick={() => preset("year")}>This Year</GhostButton>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-md border border-border bg-accent px-3 py-1.5 text-sm font-medium text-foreground">
+          Financial
+        </span>
+        <Link
+          href={`/reports/labour?from=${from}&to=${to}`}
+          className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+        >
+          Labour Hours
+        </Link>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <GhostButton onClick={() => preset("month")}>This Month</GhostButton>
+          <GhostButton onClick={() => preset("quarter")}>This Quarter</GhostButton>
+          <GhostButton onClick={() => preset("year")}>This Year</GhostButton>
+        </div>
       </div>
 
       {/* Headline metrics */}

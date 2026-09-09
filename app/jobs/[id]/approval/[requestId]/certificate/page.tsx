@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { getSettings } from "@/lib/settings"
 import { PrintButton } from "@/components/print-button"
+import { CertificateDownloadButton, type CertificateData, type CertificateItem } from "@/components/certificate-download-button"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
@@ -90,13 +91,78 @@ export default async function ApprovalCertificatePage({
   const legalName = settings.legal_name || settings.company_name
   const brand = settings.company_name && settings.company_name !== legalName ? settings.company_name : null
 
+  const kindLabel = req.kind === "additional_work" ? "Additional work" : "Quotation"
+  const mapItem = (it: SnapItem): CertificateItem => ({
+    name: it.name,
+    partNumber: it.part_number,
+    detail: it.detail,
+    category: it.category || (it.kind === "part" ? "Parts" : "Labour"),
+    gross: formatCurrency(Number(it.gross)),
+  })
+  const declaration =
+    `I authorize ${legalName} to carry out only the items marked Approved above at the stated prices ` +
+    `(inclusive of ${req.vat_rate}% VAT where applicable). I understand declined items will not be performed ` +
+    `or invoiced. This authorization was captured electronically with my signature below.`
+
+  const certificateData: CertificateData = {
+    fileName: `Approval-${(certificateNumber || job.job_number || "certificate").replace(/[^\w.-]+/g, "-")}.pdf`,
+    company: {
+      legalName,
+      brand,
+      address: settings.address ?? null,
+      phone: settings.phone ?? null,
+      email: settings.email ?? null,
+      tradeLicense: settings.trade_license ?? null,
+      trn: settings.trn ?? null,
+    },
+    doc: {
+      certificateNumber,
+      jobNumber: job.job_number,
+      version: req.version,
+      decided,
+      statusLabel,
+      kindLabel,
+    },
+    customer: { name: job.customer_name, mobile: job.customer_mobile ?? null },
+    vehicle: {
+      label: vehicle,
+      plate: job.plate_number ?? null,
+      mileage: job.mileage ? `${Number(job.mileage).toLocaleString()} km` : null,
+      vin: job.vin ?? null,
+    },
+    approvedItems: approvedItems.map(mapItem),
+    declinedItems: declinedItems.map(mapItem),
+    totals: {
+      subtotal: formatCurrency(Number(req.approved_subtotal ?? 0)),
+      vatRate: req.vat_rate,
+      vat: formatCurrency(Number(req.approved_vat ?? 0)),
+      total: formatCurrency(Number(req.approved_total ?? 0)),
+    },
+    declaration,
+    signature: {
+      image: req.signer_signature ?? null,
+      signerName: req.signer_name || job.customer_name,
+      comment: req.signer_comment ?? null,
+    },
+    audit: {
+      certificate: certificateNumber || "—",
+      signedAt: decided,
+      ip: req.signed_ip || "—",
+      reference: String(req.id).slice(0, 8),
+      userAgent: req.signed_user_agent ?? null,
+    },
+  }
+
   return (
     <main className="min-h-screen bg-neutral-200 py-8 print:bg-white print:py-0">
       <div className="mx-auto mb-4 flex max-w-[820px] items-center justify-between px-4 print:hidden">
         <a href={`/jobs/${id}`} className="text-sm text-neutral-600 hover:text-neutral-900">
           ← Back to job
         </a>
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          <CertificateDownloadButton data={certificateData} />
+          <PrintButton />
+        </div>
       </div>
 
       <div className="mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">

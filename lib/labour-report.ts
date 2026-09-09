@@ -30,41 +30,51 @@ export const DEPARTMENT_LABEL: Record<DepartmentKey, string> = DEPARTMENTS.reduc
 )
 
 // Keyword rules per department, tested in this order (specific → general).
+// Stems use a leading \b but no trailing \b so they match inflected forms
+// ("program" -> "programming"/"programing", "diagnos" -> "diagnostics").
+// Genuinely short/ambiguous tokens (a/c) stay whole-word to avoid false hits
+// like "acceleration".
 const RULES: { key: DepartmentKey; patterns: RegExp }[] = [
   {
     key: "programming",
     patterns:
-      /\b(program|programm|coding|code|flash|ecu|tcu|module|immobil|key\s*prog|software|retrofit|adaptation|adapt|calibrat|configur|firmware|remap|dme|dde|vin\s*writ)\b/,
+      /\b(program|coding|flash|ecu|tcu|module|immobil|key\s*prog|software|retrofit|adaptation|adapt|calibrat|configur|firmware|remap|dme|dde|vin\s*writ)/,
   },
   {
     key: "paint",
-    patterns: /\b(paint|spray|refinish|clear\s*coat|clearcoat|primer|polish|buff|lacquer|respray|colour\s*match|color\s*match)\b/,
+    patterns: /\b(paint|spray|refinish|clear\s*coat|clearcoat|primer|polish|buff|lacquer|respray|colou?r\s*match)/,
   },
   {
     key: "dent",
     patterns:
-      /\b(dent|body\s*work|bodywork|body\s*&?\s*paint|panel|bumper|fender|wing|collision|straighten|weld|chassis\s*align|pdr|filler|fabricat|accident|crash|realign)\b/,
+      /\b(dent|body\s*work|bodywork|panel|bumper|fender|collision|straighten|weld|pdr|filler|fabricat|accident|crash|realign)/,
   },
   {
     key: "electrical",
     patterns:
-      /\b(electric|electrical|a\/?c|air\s*condition|wiring|harness|battery|alternator|starter|sensor|light|lamp|electronic|diagnos|scan|fuse|relay|window|central\s*lock|audio|infotain|camera|radar|park\s*assist)\b/,
+      /(\bac\b|a\/c|\bair\s*condition|\belectric|\bwiring|\bharness|\bbattery|\balternator|\bstarter|\bsensor|\blight|\blamp|\belectronic|\bdiagnos|\bscan|\bfuse|\brelay|\bwindow|\bcentral\s*lock|\baudio|\binfotain|\bcamera|\bradar|\bpark\s*assist)/,
   },
 ]
 
 /**
- * Classify a labour line into a department using its category first, then its
- * name/detail as a fallback. Anything unmatched is treated as Mechanical, the
- * workshop's default labour bucket.
+ * Classify a labour line into a department. The item NAME/DETAIL is tested
+ * first because it describes the actual work ("dent", "paint", "programming"),
+ * and only if that is inconclusive do we fall back to the broader category
+ * (e.g. a generic "Body & Paint" category whose word "paint" would otherwise
+ * mis-bucket a dent line). Anything still unmatched defaults to Mechanical.
  */
 export function classifyLabour(
   category?: string | null,
   name?: string | null,
   detail?: string | null,
 ): DepartmentKey {
-  const haystack = `${category ?? ""} ${name ?? ""} ${detail ?? ""}`.toLowerCase()
+  const nameHay = `${name ?? ""} ${detail ?? ""}`.toLowerCase().trim()
   for (const rule of RULES) {
-    if (rule.patterns.test(haystack)) return rule.key
+    if (nameHay && rule.patterns.test(nameHay)) return rule.key
+  }
+  const categoryHay = (category ?? "").toLowerCase().trim()
+  for (const rule of RULES) {
+    if (categoryHay && rule.patterns.test(categoryHay)) return rule.key
   }
   return "mechanical"
 }

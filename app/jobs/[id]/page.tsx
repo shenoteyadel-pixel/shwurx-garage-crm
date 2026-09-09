@@ -6,6 +6,8 @@ import { Badge, Card, UAEPlate } from "@/components/ui"
 import { StageStepper } from "@/components/stage-stepper"
 import { QuotationBuilder } from "@/components/quotation-builder"
 import { PartsManager } from "@/components/parts-manager"
+import { AddonServices } from "@/components/addon-services"
+import { getJobAddons } from "@/lib/actions-addons"
 import { ApprovalsPanel } from "@/components/approvals-panel"
 import { getJobApprovals } from "@/lib/actions-approvals"
 import { JobPhotos } from "@/components/job-photos"
@@ -59,12 +61,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const { data: quotation } = await supabase
     .from("quotations")
     .select(
-      "id, vat_rate, vat_inclusive, description, internal_notes, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, category, recommendation, sort_order)",
+      "id, vat_rate, vat_inclusive, description, internal_notes, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, category, recommendation, sort_order, addon_type)",
     )
     .eq("job_id", id)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  const addons = await getJobAddons(id)
 
   const approvals = await getJobApprovals(id)
 
@@ -202,9 +206,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const vehicle =
     [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
 
-  const rawItems = [...(quotation?.quotation_items ?? [])].sort(
-    (a: any, b: any) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0),
-  )
+  // Add-on service lines (wash / pickup / delivery) are managed in their own
+  // card and materialised separately — keep them out of the editable builder so
+  // a builder save can never duplicate or strip them.
+  const rawItems = [...(quotation?.quotation_items ?? [])]
+    .filter((i: any) => !i.addon_type)
+    .sort((a: any, b: any) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
   const quoteItems =
     rawItems.map((i: any) => ({
       kind: (i.kind === "labor" || i.kind === "service" ? "labor" : "part") as "part" | "labor",
@@ -345,6 +352,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 printHref={`/jobs/${job.id}/quotation/print`}
                 locked={locked}
               />
+              <AddonServices jobId={job.id} addons={addons} locked={locked} />
               <PartsManager jobId={job.id} parts={(parts ?? []) as any} locked={locked} />
             </>
           ) : (

@@ -31,6 +31,7 @@ import {
   History,
   ScanLine,
   Sparkles,
+  Clock,
 } from "lucide-react"
 
 // Each item declares the permissions that reveal it. `anyOf` = show when the
@@ -51,6 +52,7 @@ const NAV = [
   { href: "/suppliers", label: "Suppliers", icon: Truck, anyOf: ["parts.view"] },
   { href: "/history", label: "History", icon: History, anyOf: ["jobs.view_all"] },
   { href: "/reports", label: "Reports", icon: BarChart3, anyOf: ["reports.view"] },
+  { href: "/reports/labour", label: "Labour Report", icon: Clock, anyOf: ["reports.view"] },
   { href: "/users", label: "Users & Roles", icon: ShieldCheck, anyOf: ["users.manage", "permissions.manage"] },
   { href: "/settings", label: "Settings", icon: Settings, anyOf: ["settings.manage"] },
   { href: "/recycle-bin", label: "Recycle Bin", icon: Trash2, ownerOnly: true },

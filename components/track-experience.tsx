@@ -25,7 +25,7 @@ import type { TrackingDetail, TrackMilestone, TrackPhoto } from "@/lib/tracking-
 import type { TrackingStatus } from "@/lib/portal-data"
 import { useI18n } from "@/lib/i18n/provider"
 
-const GARAGE_PHONE = "+971 4 000 0000"
+const GARAGE_PHONE = "+971 58 554 5504"
 
 function money(n: number) {
   return new Intl.NumberFormat("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)

@@ -808,7 +808,11 @@ function VisitStep({
       </Card>
 
       <Card className="p-5">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Vehicle photos</h2>
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Vehicle photos</h2>
+        <p className="mb-4 text-xs text-muted-foreground">
+          Snap the actual car here — the newest exterior shot becomes the job card image, so it always matches the real
+          vehicle instead of a generated preview.
+        </p>
         <PhotoUploader value={vehiclePhotos} onChange={setVehiclePhotos} label="Exterior / interior" />
       </Card>
 

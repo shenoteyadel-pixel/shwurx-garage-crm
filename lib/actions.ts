@@ -13,6 +13,7 @@ import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/co
 import type { Permission } from "@/lib/rbac/roles"
 import { notifyUser, notifyByPermission } from "@/lib/actions-notifications"
 import { syncPendingApproval } from "@/lib/actions-approvals"
+import { resyncQuotationAddons } from "@/lib/addons"
 import { getSettings } from "@/lib/settings"
 
 /**
@@ -543,6 +544,14 @@ export async function saveQuotation(
     .eq("id", jobId)
     .in("stage", ["check_in", "inspection"])
 
+  // Re-materialise linked add-on services (wash / pickup / delivery) onto this
+  // freshly-rebuilt quotation so they are never lost when the quote is re-saved.
+  try {
+    await resyncQuotationAddons(supabase, jobId)
+  } catch {
+    // ignore
+  }
+
   // Keep the customer's pending approval link current with these changes
   // (best-effort — staff can always re-send from the approvals panel).
   try {
@@ -571,7 +580,7 @@ export async function sendPartsToQuotation(jobId: string) {
   const { data: quotation } = await supabase
     .from("quotations")
     .select(
-      "vat_rate, vat_inclusive, description, internal_notes, quotation_items(kind, name, part_number, detail, quantity, unit_price, labour_hours, labour_rate, discount, category, recommendation, sort_order)",
+      "vat_rate, vat_inclusive, description, internal_notes, quotation_items(kind, name, part_number, detail, quantity, unit_price, labour_hours, labour_rate, discount, category, recommendation, sort_order, addon_type)",
     )
     .eq("job_id", jobId)
     .order("created_at", { ascending: false })
@@ -579,6 +588,9 @@ export async function sendPartsToQuotation(jobId: string) {
     .maybeSingle()
 
   const existingItems: QuoteItemInput[] = ((quotation?.quotation_items as any[]) ?? [])
+    // Add-on service lines are owned by resyncQuotationAddons — never carry them
+    // through here or they would be duplicated as plain quote items.
+    .filter((i) => !i.addon_type)
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
     .map((i) => ({
       kind: i.kind === "labor" ? "labor" : "part",

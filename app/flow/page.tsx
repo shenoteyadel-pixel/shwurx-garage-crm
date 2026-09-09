@@ -4,6 +4,7 @@ import { CarFlow } from "@/components/car-flow"
 import { SyncVisualsButton } from "@/components/sync-visuals-button"
 import { ZONES } from "@/lib/constants"
 import type { JobCardData } from "@/components/job-card"
+import { buildJobCoverMap } from "@/lib/job-covers"
 
 export const dynamic = "force-dynamic"
 
@@ -31,13 +32,11 @@ export default async function FlowPage() {
   // Everything not delivered always stays on the active board.
   const jobs = (jobsRaw ?? []).filter((j) => j.stage !== "delivered" || !j.paid_at)
 
-  // The Car Flow cover is ONLY the explicitly chosen cover photo. Damage,
-  // parts, and document photos can never become it; jobs without a chosen
-  // cover fall back to the model-aware, colour-accurate vehicle visual.
-  const coverByJob = new Map<string, string>()
-  for (const j of jobs) {
-    if (j.cover_photo_url) coverByJob.set(j.id, j.cover_photo_url)
-  }
+  // Cover priority: an explicitly chosen cover, else the newest REAL exterior
+  // photo taken of the actual car at check-in (kind = 'vehicle'). Only when a
+  // job has neither does the card fall back to the AI studio render. Damage,
+  // parts, and document photos can never become the cover.
+  const coverByJob = await buildJobCoverMap(supabase, jobs)
 
   // Resolve advisor / technician display names.
   const staffIds = Array.from(

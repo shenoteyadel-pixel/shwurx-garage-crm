@@ -11,6 +11,7 @@ import { formatCurrency, relativeHours } from "@/lib/utils"
 import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardCheck, ThumbsUp, ScanLine } from "lucide-react"
 import { Button } from "@/components/ui"
 import type { JobCardData } from "@/components/job-card"
+import { buildJobCoverMap } from "@/lib/job-covers"
 
 export default async function DashboardPage() {
   // getShellUser redirects unauthenticated users to login and customers to /portal.
@@ -31,11 +32,9 @@ export default async function DashboardPage() {
 
   const jobs = jobsRaw ?? []
 
-  // Cover = explicitly chosen cover photo only (never auto-derived from uploads).
-  const coverByJob = new Map<string, string>()
-  for (const j of jobs) {
-    if (j.cover_photo_url) coverByJob.set(j.id, j.cover_photo_url)
-  }
+  // Cover = explicitly chosen cover, else the newest real exterior photo of the
+  // actual car (kind = 'vehicle'); only then the AI studio render as fallback.
+  const coverByJob = await buildJobCoverMap(supabase, jobs)
 
   const { data: parts } = await supabase.from("parts_requests").select("status").is("deleted_at", null)
   const { data: quotes } = await supabase.from("quotations").select("total, job_id, created_at")

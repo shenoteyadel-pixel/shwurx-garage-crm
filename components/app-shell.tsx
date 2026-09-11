@@ -111,7 +111,7 @@ export function AppShell({
       {/* Sidebar desktop */}
       <aside className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r border-border bg-card/40 p-4 lg:flex">
         <Brand />
-        <div className="mt-6 flex-1">{nav}</div>
+        <div className="mt-6 min-h-0 flex-1 overflow-y-auto">{nav}</div>
         <UserFooter user={user} />
       </aside>
 
@@ -126,7 +126,7 @@ export function AppShell({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="mt-6 flex-1">{nav}</div>
+            <div className="mt-6 min-h-0 flex-1 overflow-y-auto">{nav}</div>
             <UserFooter user={user} />
           </aside>
         </div>

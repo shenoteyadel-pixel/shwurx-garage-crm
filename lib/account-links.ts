@@ -52,16 +52,30 @@ export async function generateActionLink(opts: {
   const sb = admin()
   const redirectTo = `${baseUrl()}/auth/callback?next=${encodeURIComponent(opts.redirectPath ?? "/auth/set-password")}`
 
-  const { data, error } = await sb.auth.admin.generateLink({
-    type: opts.type === "magiclink" ? "magiclink" : opts.type,
-    email: opts.email,
-    options: { redirectTo },
-  } as Parameters<typeof sb.auth.admin.generateLink>[0])
+  const tryType = async (type: LinkType) => {
+    const { data, error } = await sb.auth.admin.generateLink({
+      type: type === "magiclink" ? "magiclink" : type,
+      email: opts.email,
+      options: { redirectTo },
+    } as Parameters<typeof sb.auth.admin.generateLink>[0])
+    return { link: data?.properties?.action_link ?? "", error }
+  }
 
-  if (error || !data?.properties?.action_link) {
+  let { link, error } = await tryType(opts.type)
+
+  // Supabase rejects an "invite" link once the email already exists ("A user
+  // with this email address has already been registered"). For an existing
+  // account a "recovery" link achieves the same goal — it lets them set a
+  // password — so fall back transparently instead of returning an empty link
+  // (which is what left the Copy/Email buttons with nothing to share).
+  if ((!link || error) && opts.type === "invite" && /already|registered|exist/i.test(error?.message ?? "")) {
+    ;({ link, error } = await tryType("recovery"))
+  }
+
+  if (!link) {
     throw new Error(error?.message ?? "Could not generate the account link.")
   }
-  return data.properties.action_link
+  return link
 }
 
 /**

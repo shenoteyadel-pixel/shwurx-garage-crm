@@ -181,7 +181,16 @@ export async function extractAndCreateInvoice(formData: FormData): Promise<Extra
     })
     .select("id")
     .single()
-  if (error) return { ok: false, error: error.message }
+  if (error) {
+    // The row was rejected (e.g. RLS/permissions/schema) — don't leave the
+    // uploaded file orphaned in blob storage.
+    try {
+      await del(blobPathname)
+    } catch (e) {
+      console.error("[v0] failed to clean up orphaned invoice blob:", e)
+    }
+    return { ok: false, error: error.message }
+  }
 
   const lines = extracted?.line_items ?? []
   if (lines.length) {

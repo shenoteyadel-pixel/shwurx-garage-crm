@@ -134,10 +134,10 @@ export function SuppliersClient({ suppliers }: { suppliers: Supplier[] }) {
               </div>
 
               <Link
-                href={`/purchasing?supplier=${s.id}`}
+                href={`/suppliers/${s.id}`}
                 className="mt-3 text-center text-xs font-medium text-primary hover:underline"
               >
-                View {s.order_count} purchase orders →
+                View dealer account →
               </Link>
             </Card>
           ))}

@@ -5,6 +5,8 @@ import { getShellUser } from "@/lib/shell-user"
 import { getSettings } from "@/lib/settings"
 import { AppShell } from "@/components/app-shell"
 import { InvoiceReview, type InvoiceHeader, type InvoiceItemRow } from "@/components/invoice-review"
+import { LinkedSalesPanel } from "@/components/linked-sales-panel"
+import { getLinkedSalesForSupplierInvoice } from "@/lib/linked-sales"
 import { ArrowLeft } from "lucide-react"
 
 export const metadata = { title: "Review Invoice · SHWURX Auto Service Center" }
@@ -57,6 +59,8 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
     .select("id, amount, method, reference, paid_at")
     .eq("supplier_invoice_id", id)
     .order("paid_at", { ascending: false })
+
+  const linkedVehicles = await getLinkedSalesForSupplierInvoice(supabase, id)
 
   const header: InvoiceHeader = {
     id: invoice.id,
@@ -122,6 +126,7 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
           pricing={{ method: settings.pricing_method, markup: settings.default_markup_pct, vat: settings.vat_rate }}
           payments={payments ?? []}
         />
+        <LinkedSalesPanel vehicles={linkedVehicles} />
       </div>
     </AppShell>
   )

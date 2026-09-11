@@ -39,7 +39,7 @@ export default async function LabourReportPage({
   const { data: quotations } = await supabase
     .from("quotations")
     .select(
-      "id, job_id, created_at, jobs(job_number), quotation_items(kind, name, detail, category, labour_hours, labour_rate, labor)",
+      "id, job_id, created_at, jobs(job_number), quotation_items(kind, name, detail, category, labour_hours, labour_rate, labor, addon_type, line_total, vat)",
     )
     .gte("created_at", from)
     .lte("created_at", toEnd)
@@ -53,6 +53,9 @@ export default async function LabourReportPage({
     labour_hours?: number | null
     labour_rate?: number | null
     labor?: number | null
+    addon_type?: string | null
+    line_total?: number | null
+    vat?: number | null
   }
   type QRow = {
     id: string
@@ -88,13 +91,22 @@ export default async function LabourReportPage({
 
     for (const it of items) {
       if (!LABOUR_KINDS.has((it.kind ?? "").toLowerCase())) continue
+      const isAddon = Boolean(it.addon_type)
       const hours = Number(it.labour_hours) || 0
       const rate = Number(it.labour_rate) || 0
-      const amount = hours > 0 && rate > 0 ? hours * rate : Number(it.labor) || 0
-      // Skip empty labour lines that carry neither hours nor a labour amount.
-      if (hours === 0 && amount === 0) continue
+      // Add-on services (wash / pickup / delivery) are flat-fee labour: they carry
+      // no hours and store their price in labour_rate / line_total, so value them
+      // from the net line total (falling back to the flat rate).
+      const amount = isAddon
+        ? (Number(it.line_total) || 0) - (Number(it.vat) || 0) || rate
+        : hours > 0 && rate > 0
+          ? hours * rate
+          : Number(it.labor) || 0
+      // Skip empty hand-entered labour lines, but always keep enabled add-on
+      // services so completed washing/valet/transport work stays visible.
+      if (!isAddon && hours === 0 && amount === 0) continue
 
-      const dept = classifyLabour(it.category, it.name, it.detail)
+      const dept = classifyLabour(it.category, it.name, it.detail, it.addon_type)
       const t = totalsMap.get(dept)!
       t.hours += hours
       t.amount += amount

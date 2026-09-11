@@ -14,7 +14,12 @@ export default async function NewJobPage() {
     .eq("id", user!.id)
     .maybeSingle()
 
-  const { data: staff } = await supabase.from("profiles").select("id, full_name, role").order("full_name")
+  const { data: staff } = await supabase
+    .from("profiles")
+    .select("id, full_name, role")
+    .neq("role", "customer")
+    .eq("is_active", true)
+    .order("full_name")
 
   return (
     <AppShell user={{ name: profile?.full_name || user!.email || "Staff", role: profile?.role || "advisor" }}>

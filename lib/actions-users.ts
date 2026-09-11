@@ -164,12 +164,19 @@ async function inviteStaffUserInner(formData: FormData): Promise<CredentialLinkR
   })
 
   // Generate the secure set-password link first so we can record the true status.
+  // NOTE: createManagedAuthUser always created (or found) a CONFIRMED auth user
+  // above, so by this point the email ALWAYS exists. Supabase only allows an
+  // "invite" link for an email that does NOT yet exist and otherwise rejects it
+  // with "A user with this email address has already been registered", which
+  // left the link empty. A "recovery" link is the correct type for an existing
+  // account that needs to set a password, so we always use it here.
   let link = ""
   let linkError: string | undefined
+  void alreadyExisted // both new and existing users take the recovery path now
   try {
     link = await generateActionLink({
       email,
-      type: alreadyExisted ? "recovery" : "invite",
+      type: "recovery",
       redirectPath: "/auth/set-password",
     })
   } catch (e) {
@@ -253,7 +260,10 @@ export async function resendStaffInvite(userId: string): Promise<CredentialLinkR
 
     const meta = ROLE_MAP[profile.role as Role]
     const now = new Date().toISOString()
-    const link = await generateActionLink({ email: profile.email, type: "invite", redirectPath: "/auth/set-password" })
+    // The staff auth account already exists (it was created at invite time), so
+    // a "recovery" link is the correct set-password link. An "invite" link is
+    // only valid for a not-yet-registered email and Supabase would reject it.
+    const link = await generateActionLink({ email: profile.email, type: "recovery", redirectPath: "/auth/set-password" })
     const send = await sendEmail({
       to: profile.email,
       subject: "Set up your SHWURX Auto Service Center account",

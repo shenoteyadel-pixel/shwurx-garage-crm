@@ -34,28 +34,62 @@ import {
   Clock,
 } from "lucide-react"
 
-// Each item declares the permissions that reveal it. `anyOf` = show when the
-// user has at least one. Items with no perms are shown to all staff.
-const NAV = [
-  { href: "/crm", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/control-center", label: "AI Control Center", icon: Sparkles, ownerOnly: true },
-  { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all"] },
-  { href: "/jobs", label: "Job Cards", icon: Car, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
-  { href: "/appointments", label: "Appointments", icon: CalendarClock, anyOf: ["appointments.view"] },
-  { href: "/leads", label: "Leads", icon: Inbox, anyOf: ["leads.view"] },
-  { href: "/customers", label: "Customers", icon: Users, anyOf: ["customers.view"] },
-  { href: "/invoices", label: "Invoices", icon: FileText, anyOf: ["invoices.view"] },
-  { href: "/parts", label: "Parts", icon: Package, anyOf: ["parts.view"] },
-  { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, anyOf: ["purchase_orders.manage", "parts.view"] },
-  { href: "/purchasing/invoices", label: "Scan Invoice", icon: ScanLine, anyOf: ["purchase_orders.manage", "parts.view"] },
-  { href: "/inventory", label: "Store / Inventory", icon: Warehouse, anyOf: ["parts.view"] },
-  { href: "/suppliers", label: "Suppliers", icon: Truck, anyOf: ["parts.view"] },
-  { href: "/history", label: "History", icon: History, anyOf: ["jobs.view_all"] },
-  { href: "/reports", label: "Reports", icon: BarChart3, anyOf: ["reports.view"] },
-  { href: "/reports/labour", label: "Labour Report", icon: Clock, anyOf: ["reports.view"] },
-  { href: "/users", label: "Users & Roles", icon: ShieldCheck, anyOf: ["users.manage", "permissions.manage"] },
-  { href: "/settings", label: "Settings", icon: Settings, anyOf: ["settings.manage"] },
-  { href: "/recycle-bin", label: "Recycle Bin", icon: Trash2, ownerOnly: true },
+// Nav is grouped into labeled sections so every area — especially admin tools
+// like Users & Roles and Settings — is easy to find instead of being lost at
+// the bottom of one long flat list. Each item declares the permissions that
+// reveal it: `anyOf` = show when the user has at least one; `ownerOnly` = owner
+// only; items with neither are shown to all staff. A group renders only when at
+// least one of its items is visible to the current user.
+const NAV_GROUPS = [
+  {
+    label: null,
+    items: [
+      { href: "/crm", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/control-center", label: "AI Control Center", icon: Sparkles, ownerOnly: true },
+    ],
+  },
+  {
+    label: "Workshop",
+    items: [
+      { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all"] },
+      { href: "/jobs", label: "Job Cards", icon: Car, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
+      { href: "/appointments", label: "Appointments", icon: CalendarClock, anyOf: ["appointments.view"] },
+      { href: "/history", label: "History", icon: History, anyOf: ["jobs.view_all"] },
+    ],
+  },
+  {
+    label: "Sales & Customers",
+    items: [
+      { href: "/leads", label: "Leads", icon: Inbox, anyOf: ["leads.view"] },
+      { href: "/customers", label: "Customers", icon: Users, anyOf: ["customers.view"] },
+      { href: "/invoices", label: "Invoices", icon: FileText, anyOf: ["invoices.view"] },
+    ],
+  },
+  {
+    label: "Parts & Purchasing",
+    items: [
+      { href: "/parts", label: "Parts", icon: Package, anyOf: ["parts.view"] },
+      { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, anyOf: ["purchase_orders.manage", "parts.view"] },
+      { href: "/purchasing/invoices", label: "Scan Invoice", icon: ScanLine, anyOf: ["purchase_orders.manage", "parts.view"] },
+      { href: "/inventory", label: "Store / Inventory", icon: Warehouse, anyOf: ["parts.view"] },
+      { href: "/suppliers", label: "Suppliers", icon: Truck, anyOf: ["parts.view"] },
+    ],
+  },
+  {
+    label: "Insights",
+    items: [
+      { href: "/reports", label: "Reports", icon: BarChart3, anyOf: ["reports.view"] },
+      { href: "/reports/labour", label: "Labour Report", icon: Clock, anyOf: ["reports.view"] },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      { href: "/users", label: "Users & Roles", icon: ShieldCheck, anyOf: ["users.manage", "permissions.manage"] },
+      { href: "/settings", label: "Settings", icon: Settings, anyOf: ["settings.manage"] },
+      { href: "/recycle-bin", label: "Recycle Bin", icon: Trash2, ownerOnly: true },
+    ],
+  },
 ] as const
 
 export function AppShell({
@@ -71,38 +105,53 @@ export function AppShell({
   const has = (anyOf?: readonly string[]) => !anyOf || anyOf.some((p) => perms.has(p))
   const isOwner = user.role === "owner"
   const canCreateJob = perms.has("jobs.create")
-  const visibleNav = NAV.filter((item) => {
-    const meta = item as { anyOf?: readonly string[]; ownerOnly?: boolean }
-    if (meta.ownerOnly) return isOwner
-    return has(meta.anyOf)
-  })
+  const canSee = (item: { anyOf?: readonly string[]; ownerOnly?: boolean }) =>
+    item.ownerOnly ? isOwner : has(item.anyOf)
+
+  // Keep only groups (and items) the current user may see; drop empty groups so
+  // no heading renders without links beneath it.
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    label: group.label,
+    items: group.items.filter((item) => canSee(item as { anyOf?: readonly string[]; ownerOnly?: boolean })),
+  })).filter((group) => group.items.length > 0)
 
   // The active item is the one whose href is the longest prefix of the current
   // path, so nested routes (e.g. /purchasing/invoices) don't also light up their parent.
-  const activeHref = visibleNav
-    .map((i) => i.href)
+  const activeHref = visibleGroups
+    .flatMap((g) => g.items.map((i) => i.href))
     .filter((href) => (href === "/crm" ? pathname === "/crm" : pathname === href || pathname.startsWith(`${href}/`)))
     .sort((a, b) => b.length - a.length)[0]
 
   const nav = (
-    <nav className="flex flex-col gap-1">
-      {visibleNav.map((item) => {
-        const active = item.href === activeHref
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={() => setOpen(false)}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
-              active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-            )}
-          >
-            <item.icon className="h-4.5 w-4.5" />
-            {item.label}
-          </Link>
-        )
-      })}
+    <nav className="flex flex-col gap-4">
+      {visibleGroups.map((group, gi) => (
+        <div key={group.label ?? `group-${gi}`} className="flex flex-col gap-1">
+          {group.label && (
+            <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+              {group.label}
+            </p>
+          )}
+          {group.items.map((item) => {
+            const active = item.href === activeHref
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setOpen(false)}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+              >
+                <item.icon className="h-4.5 w-4.5" />
+                {item.label}
+              </Link>
+            )
+          })}
+        </div>
+      ))}
     </nav>
   )
 

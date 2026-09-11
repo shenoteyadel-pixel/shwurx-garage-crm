@@ -12,6 +12,8 @@ import { ApprovalsPanel } from "@/components/approvals-panel"
 import { getJobApprovals } from "@/lib/actions-approvals"
 import { JobPhotos } from "@/components/job-photos"
 import { StaffAssign } from "@/components/staff-assign"
+import { CarExpensesManager, type CarExpense } from "@/components/car-expenses-manager"
+import { getSessionContext } from "@/lib/rbac/context"
 import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
 import { DiagnosticsPanel, type DiagnosticTest } from "@/components/diagnostics-panel"
@@ -113,6 +115,16 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .eq("job_id", id)
     .is("deleted_at", null)
     .order("created_at")
+
+  // Per-car expenses (incl. no-invoice cash costs). RLS returns rows only to
+  // viewers with costs.view / purchase_orders.manage, so a null result for
+  // other roles simply hides the panel.
+  const { data: carExpenses } = await supabase
+    .from("car_expenses")
+    .select("id, category, description, amount, vendor, has_invoice, reference, receipt_url, expense_date")
+    .eq("job_id", id)
+    .order("expense_date", { ascending: false })
+  const canManageExpenses = (await getSessionContext())?.permissions.has("purchase_orders.manage") ?? false
 
   // AI Diagnostic Assistant: session + technician-verified test workflow.
   const { data: diagnosticSession } = await supabase
@@ -447,6 +459,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             advisorId={job.advisor_id}
             technicianId={job.technician_id}
           />
+
+          {showPrices && (
+            <CarExpensesManager
+              jobId={job.id}
+              expenses={(carExpenses ?? []) as CarExpense[]}
+              canManage={canManageExpenses}
+            />
+          )}
 
           {job.customer_id && <JobCustomerAccess jobId={job.id} />}
 

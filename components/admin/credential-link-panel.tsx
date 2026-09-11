@@ -43,11 +43,15 @@ export function CredentialLinkPanel({
     kind,
   })
 
+  const hasLink = Boolean(result.link)
   const targetPhone = phone ?? result.mobile ?? null
-  const waHref = buildWhatsAppLink(targetPhone, waMessage)
-  const mailHref = `mailto:${result.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  const waHref = hasLink ? buildWhatsAppLink(targetPhone, waMessage) : null
+  const mailHref = hasLink
+    ? `mailto:${result.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    : null
 
   async function copy() {
+    if (!hasLink) return
     try {
       await navigator.clipboard.writeText(result.link)
       setCopied(true)
@@ -97,7 +101,7 @@ export function CredentialLinkPanel({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={copy}>
+          <Button type="button" size="sm" variant="outline" onClick={copy} disabled={!hasLink}>
             {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             {copied ? "Copied" : "Copy link"}
           </Button>
@@ -112,8 +116,12 @@ export function CredentialLinkPanel({
               <MessageCircle className="h-4 w-4" /> WhatsApp
             </Button>
           </a>
-          <a href={mailHref}>
-            <Button type="button" size="sm" variant="outline">
+          <a
+            href={mailHref ?? undefined}
+            className={mailHref ? "" : "pointer-events-none opacity-40"}
+            aria-disabled={!mailHref}
+          >
+            <Button type="button" size="sm" variant="outline" disabled={!mailHref}>
               <Mail className="h-4 w-4" /> Email
             </Button>
           </a>

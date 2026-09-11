@@ -63,12 +63,28 @@ export async function generateActionLink(opts: {
 
   let { link, error } = await tryType(opts.type)
 
-  // Supabase rejects an "invite" link once the email already exists ("A user
-  // with this email address has already been registered"). For an existing
-  // account a "recovery" link achieves the same goal — it lets them set a
-  // password — so fall back transparently instead of returning an empty link
-  // (which is what left the Copy/Email buttons with nothing to share).
-  if ((!link || error) && opts.type === "invite" && /already|registered|exist/i.test(error?.message ?? "")) {
+  // Supabase's link types are mutually exclusive about account existence, and
+  // which one applies isn't always knowable up front:
+  //   • "invite"   only works for an email that does NOT yet exist; once the
+  //                account exists it fails with "A user with this email address
+  //                has already been registered".
+  //   • "recovery" only works for an email that DOES exist; otherwise it fails
+  //                with "User with this email not found".
+  // Either failure previously left the link empty (nothing to copy/email/WA).
+  // Both link types serve the same purpose here (let the person set a password),
+  // so we transparently fall back to the opposite type on the tell-tale error.
+  const missing = () => !link || Boolean(error)
+  if (missing() && /already|registered|exist/i.test(error?.message ?? "")) {
+    ;({ link, error } = await tryType("recovery"))
+  }
+  if (missing() && /not\s*found|no\s*user|does\s*not\s*exist/i.test(error?.message ?? "")) {
+    ;({ link, error } = await tryType("invite"))
+  }
+  // Last resort: try whichever standard type we haven't attempted yet.
+  if (missing()) {
+    ;({ link, error } = await tryType("invite"))
+  }
+  if (missing()) {
     ;({ link, error } = await tryType("recovery"))
   }
 

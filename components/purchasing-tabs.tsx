@@ -14,6 +14,7 @@ const TABS: Tab[] = [
   { href: "/purchasing", label: "Orders", anyOf: ["purchase_orders.manage"] },
   { href: "/purchasing/invoices", label: "Supplier Invoices", anyOf: ["purchase_orders.manage", "parts.view"] },
   { href: "/purchasing/payments", label: "Payments", anyOf: ["purchase_orders.manage"] },
+  { href: "/purchasing/expenses", label: "Car Expenses", anyOf: ["purchase_orders.manage", "costs.view"] },
   { href: "/suppliers", label: "Suppliers", anyOf: ["parts.view", "suppliers.view"] },
 ]
 

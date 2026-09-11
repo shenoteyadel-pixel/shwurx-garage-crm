@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextResponse, after } from "next/server"
 import { createPublicClient } from "@/lib/supabase/public"
 import { notifyApprovalDecision } from "@/lib/actions-approvals"
 
@@ -40,14 +40,18 @@ export async function POST(request: Request) {
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 })
     if (!data?.ok) return NextResponse.json(data, { status: 400 })
 
-    // Resolve the job (token-scoped) and notify staff of the outcome.
-    try {
-      const { data: req } = await supabase.rpc("get_approval_by_token", { p_token: token })
-      const jobId = (req as any)?.job?.id
-      if (jobId) await notifyApprovalDecision(jobId as string, String(data.status))
-    } catch {
-      /* notification is best-effort */
-    }
+    // The customer's decision is already saved. Notify staff AFTER the response
+    // is sent so slow email/WhatsApp I/O can never delay (and time out) the
+    // customer's request — that timeout was surfacing as a "Network error".
+    after(async () => {
+      try {
+        const { data: req } = await supabase.rpc("get_approval_by_token", { p_token: token })
+        const jobId = (req as any)?.job?.id
+        if (jobId) await notifyApprovalDecision(jobId as string, String(data.status))
+      } catch {
+        /* notification is best-effort */
+      }
+    })
 
     return NextResponse.json(data)
   } catch {

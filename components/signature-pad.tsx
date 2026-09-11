@@ -16,7 +16,25 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, { className?: s
 
     React.useImperativeHandle(ref, () => ({
       isEmpty: () => !dirty.current,
-      toDataURL: () => canvasRef.current?.toDataURL("image/png") ?? "",
+      toDataURL: () => {
+        const c = canvasRef.current
+        if (!c) return ""
+        // The live canvas is sized at devicePixelRatio (2.5-4x on phones), which
+        // makes a full-res PNG large and slow to upload on mobile. Downscale to a
+        // capped width on a white background before export so the payload stays
+        // small and reliable to send.
+        const maxWidth = 600
+        const scale = c.width > maxWidth ? maxWidth / c.width : 1
+        const out = document.createElement("canvas")
+        out.width = Math.round(c.width * scale)
+        out.height = Math.round(c.height * scale)
+        const octx = out.getContext("2d")
+        if (!octx) return c.toDataURL("image/png")
+        octx.fillStyle = "#ffffff"
+        octx.fillRect(0, 0, out.width, out.height)
+        octx.drawImage(c, 0, 0, out.width, out.height)
+        return out.toDataURL("image/jpeg", 0.85)
+      },
       clear: () => {
         const c = canvasRef.current
         if (!c) return

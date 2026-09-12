@@ -739,78 +739,99 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
       return { ok: false, error: error.message }
     }
 
-    if (!vehicle.reference_image_url) after(() => backfillVehicleImage(vehicleId))
-
-    // If the wizard collected a fresher (valid) mileage, update the master vehicle too.
-    if (freshMileage !== null) {
-      await supabase
-        .from("vehicles")
-        .update({ mileage: freshMileage, updated_at: new Date().toISOString() })
-        .eq("id", vehicleId)
-    }
-
-    const photoUrls = String(fd.get("photo_urls") || "").split(",").filter(Boolean)
-    const damageUrls = String(fd.get("damage_urls") || "").split(",").filter(Boolean)
-    const rows = [
-      ...photoUrls.map((url) => ({ job_id: job.id, url, kind: "vehicle" })),
-      ...damageUrls.map((url) => ({ job_id: job.id, url, kind: "damage" })),
-    ]
-    if (rows.length) await supabase.from("vehicle_photos").insert(rows)
-
-    await logAction(ctx, "job.create", "job", job.id, {
-      job_number: payload.job_number,
-      vehicle_id: vehicleId,
-    })
-
+    // The job row now EXISTS. Everything below is a best-effort side effect
+    // (image backfill, mileage sync, photos, audit log, tracking token,
+    // portal/email provisioning, cache revalidation). None of these may turn a
+    // successfully created job into a reported failure — if one throws and we
+    // fall to the outer catch, the UI shows "something went wrong" for a job
+    // that WAS created, and the retry then trips the duplicate guard. That is
+    // the exact "I deleted the car and can't add it again" loop. So we run the
+    // whole tail inside its own try/catch and always return ok:true with the
+    // new job id; a partial side-effect failure just degrades gracefully.
     const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || "Vehicle"
     const plate = [vehicle.plate_emirate, vehicle.plate_code, vehicle.plate_number].filter(Boolean).join(" ") || null
-
-    // Issue a secure, opaque tracking token (no raw DB ids exposed).
     let trackingPath: string | null = null
-    try {
-      const svc = createServiceClient()
-      // Reuse a live token if one already exists for this customer.
-      const { data: live } = await svc
-        .from("customer_portal_tokens")
-        .select("token, expires_at, revoked")
-        .eq("customer_id", customerId)
-        .eq("revoked", false)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      let token = live && !live.revoked && new Date(live.expires_at).getTime() > Date.now() ? live.token : null
-      if (!token) {
-        token = randomBytes(24).toString("base64url")
-        await svc.from("customer_portal_tokens").insert({
-          customer_id: customerId,
-          token,
-          expires_at: new Date(Date.now() + 90 * 86400_000).toISOString(),
-          created_by: user.id,
-        })
-      }
-      trackingPath = `/track/${token}`
-    } catch (e) {
-      console.log("[v0] tracking token issue failed:", (e as Error).message)
+    let access: import("@/lib/actions-customer-portal").CustomerAccessResult = {
+      portalStatus: "failed",
+      emailStatus: "skipped",
+      passwordStatus: "pending",
+      setPasswordLink: null,
+      hasEmail: false,
     }
 
-    // Provision (or reuse) the customer portal account and send the check-in email.
-    const base = appBaseUrl()
-    const { ensureCustomerPortalForJob } = await import("@/lib/actions-customer-portal")
-    const access = await ensureCustomerPortalForJob({
-      customerId,
-      jobId: job.id,
-      jobNumber: payload.job_number,
-      vehicleLabel,
-      plate,
-      trackingUrl: trackingPath ? `${base}${trackingPath}` : `${base}/portal`,
-      portalUrl: `${base}/portal`,
-    })
+    try {
+      if (!vehicle.reference_image_url) after(() => backfillVehicleImage(vehicleId))
 
-    revalidatePath("/crm")
-    revalidatePath(`/customers/${customerId}`)
-    revalidatePath(`/vehicles/${vehicleId}`)
-    revalidatePath("/jobs")
-    revalidatePath("/flow")
+      // If the wizard collected a fresher (valid) mileage, update the master vehicle too.
+      if (freshMileage !== null) {
+        await supabase
+          .from("vehicles")
+          .update({ mileage: freshMileage, updated_at: new Date().toISOString() })
+          .eq("id", vehicleId)
+      }
+
+      const photoUrls = String(fd.get("photo_urls") || "").split(",").filter(Boolean)
+      const damageUrls = String(fd.get("damage_urls") || "").split(",").filter(Boolean)
+      const rows = [
+        ...photoUrls.map((url) => ({ job_id: job.id, url, kind: "vehicle" })),
+        ...damageUrls.map((url) => ({ job_id: job.id, url, kind: "damage" })),
+      ]
+      if (rows.length) await supabase.from("vehicle_photos").insert(rows)
+
+      await logAction(ctx, "job.create", "job", job.id, {
+        job_number: payload.job_number,
+        vehicle_id: vehicleId,
+      })
+
+      // Issue a secure, opaque tracking token (no raw DB ids exposed).
+      try {
+        const svc = createServiceClient()
+        // Reuse a live token if one already exists for this customer.
+        const { data: live } = await svc
+          .from("customer_portal_tokens")
+          .select("token, expires_at, revoked")
+          .eq("customer_id", customerId)
+          .eq("revoked", false)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        let token = live && !live.revoked && new Date(live.expires_at).getTime() > Date.now() ? live.token : null
+        if (!token) {
+          token = randomBytes(24).toString("base64url")
+          await svc.from("customer_portal_tokens").insert({
+            customer_id: customerId,
+            token,
+            expires_at: new Date(Date.now() + 90 * 86400_000).toISOString(),
+            created_by: user.id,
+          })
+        }
+        trackingPath = `/track/${token}`
+      } catch (e) {
+        console.log("[v0] tracking token issue failed:", (e as Error).message)
+      }
+
+      // Provision (or reuse) the customer portal account and send the check-in email.
+      const base = appBaseUrl()
+      const { ensureCustomerPortalForJob } = await import("@/lib/actions-customer-portal")
+      access = await ensureCustomerPortalForJob({
+        customerId,
+        jobId: job.id,
+        jobNumber: payload.job_number,
+        vehicleLabel,
+        plate,
+        trackingUrl: trackingPath ? `${base}${trackingPath}` : `${base}/portal`,
+        portalUrl: `${base}/portal`,
+      })
+
+      revalidatePath("/crm")
+      revalidatePath(`/customers/${customerId}`)
+      revalidatePath(`/vehicles/${vehicleId}`)
+      revalidatePath("/jobs")
+      revalidatePath("/flow")
+    } catch (e) {
+      // Job was created; a side-effect failed. Log and still report success.
+      console.log("[v0] createJobFromMaster post-insert side-effect failed:", (e as Error).message)
+    }
 
     return {
       ok: true,

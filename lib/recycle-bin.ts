@@ -12,6 +12,7 @@ import { requireSession } from "@/lib/rbac/context"
  */
 
 export type RecycleEntityKey =
+  | "jobs"
   | "suppliers"
   | "inventory_items"
   | "parts_requests"
@@ -35,6 +36,14 @@ interface EntityConfig {
 }
 
 export const RECYCLE_ENTITIES: EntityConfig[] = [
+  {
+    key: "jobs",
+    table: "jobs",
+    label: "Job cards",
+    columns: "id, job_number, vehicle_make, vehicle_model, plate_number, deleted_at, deleted_by",
+    describe: (r) => r.job_number || "Job card",
+    detail: (r) => [r.vehicle_make, r.vehicle_model].filter(Boolean).join(" ") || r.plate_number || null,
+  },
   {
     key: "suppliers",
     table: "suppliers",

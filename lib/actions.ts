@@ -365,6 +365,29 @@ export async function updateJobDetails(jobId: string, formData: FormData) {
   revalidatePath("/crm")
 }
 
+/**
+ * Soft-delete a job card into the Recycle Bin (Owner only). We never hard-delete
+ * because job cards are referenced by invoices and supplier-invoice items, so a
+ * hard delete would either fail or sever accounting history. Setting deleted_at
+ * hides it everywhere while keeping it fully restorable from the Recycle Bin.
+ */
+export async function deleteJob(jobId: string) {
+  const { supabase, ctx } = await guard("jobs.delete")
+  if (ctx.role !== "owner") throw new Error("Only the Owner can delete job cards.")
+  const { error } = await supabase
+    .from("jobs")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+    .eq("id", jobId)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "job.delete", "job", jobId, {})
+  revalidatePath("/flow")
+  revalidatePath("/crm")
+  revalidatePath("/jobs")
+  revalidatePath("/history")
+  revalidatePath("/recycle-bin")
+  redirect("/flow")
+}
+
 // Photo categories. "vehicle" = exterior/general car shots; the cover photo is
 // chosen explicitly (see setCoverPhoto), never auto-derived from these.
 export type PhotoKind = "vehicle" | "damage" | "parts" | "document" | "other"

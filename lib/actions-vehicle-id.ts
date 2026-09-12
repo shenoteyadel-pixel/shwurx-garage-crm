@@ -126,11 +126,17 @@ export async function identifyVehicle(input: {
   }
 
   const query = (input.query ?? "").trim()
-  if (!decoded && !query) {
+  const rawVin = (input.vin ?? "").trim().toUpperCase()
+  if (!decoded && !query && !rawVin) {
     return { ok: false, error: "Enter a VIN or a search term to identify the vehicle." }
   }
 
   // STEP 2 — AI normalization.
+  // When the VIN decode succeeded we hand the AI the decoded ground truth.
+  // When it did NOT (e.g. the VIN service is unavailable or over quota) but a
+  // VIN was supplied, we still ask the AI to identify the car directly from the
+  // VIN — the World Manufacturer Identifier (first 3 chars) and VDS encode the
+  // make, region and often model/year. Free-text search is the final option.
   const context = decoded
     ? `VIN-decoded raw data (ground truth for make/model/year):\n${JSON.stringify(
         {
@@ -149,12 +155,18 @@ export async function identifyVehicle(input: {
         null,
         2,
       )}\n\nIdentify and normalize this exact vehicle.`
-    : `Identify and normalize this vehicle from the user's search text: "${query}"`
+    : query
+      ? `Identify and normalize this vehicle from the user's search text: "${query}"`
+      : `Identify this vehicle from its VIN / chassis number: "${rawVin}". ` +
+        `Decode the World Manufacturer Identifier (first 3 characters) and the ` +
+        `Vehicle Descriptor Section to determine make, region and, where the ` +
+        `pattern is well known, the model and model year. Only fill fields you ` +
+        `are genuinely confident about; leave the rest as empty strings with low confidence.`
 
   const ai = await runAi(context)
 
   // Graceful fallback when AI is unavailable: use decode + catalog search only.
-  if (!ai) return fallbackIdentify(decoded, query)
+  if (!ai) return fallbackIdentify(decoded, query || rawVin)
 
   // STEP 3 — confirm against the local catalog (canonical spellings + known flags).
   const confirmed = confirmCatalog(ai.make || decoded?.make, ai.model || decoded?.model, ai.variant || decoded?.trim)

@@ -26,6 +26,7 @@ export default async function JobsPage({
     .select(
       "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, vehicle_reference_image_url, cover_photo_url, stage, approval_status, created_at, updated_at",
     )
+    .is("deleted_at", null)
     .order("updated_at", { ascending: false })
 
   if (stage) query = query.eq("stage", stage)

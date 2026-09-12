@@ -14,6 +14,7 @@ import { JobPhotos } from "@/components/job-photos"
 import { StaffAssign } from "@/components/staff-assign"
 import { CarExpensesManager, type CarExpense } from "@/components/car-expenses-manager"
 import { EditJobVehicle } from "@/components/edit-job-vehicle"
+import { DeleteJobButton } from "@/components/delete-job-button"
 import { getSessionContext } from "@/lib/rbac/context"
 import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
@@ -52,7 +53,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .maybeSingle()
 
   const { data: job } = await supabase.from("jobs").select("*").eq("id", id).maybeSingle()
-  if (!job) notFound()
+  if (!job || job.deleted_at) notFound()
 
   const { data: photos } = await supabase
     .from("vehicle_photos")
@@ -128,6 +129,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const sessionCtx = await getSessionContext()
   const canManageExpenses = sessionCtx?.permissions.has("purchase_orders.manage") ?? false
   const canEditVehicle = sessionCtx?.permissions.has("jobs.update_status") ?? false
+  const isOwner = sessionCtx?.role === "owner"
 
   // AI Diagnostic Assistant: session + technician-verified test workflow.
   const { data: diagnosticSession } = await supabase
@@ -315,19 +317,22 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             )}
           </div>
         </div>
-        {(job.plate_emirate || job.plate_code || job.plate_number) &&
-          (job.plate_emirate || job.plate_code ? (
-            <UAEPlate
-              emirate={job.plate_emirate}
-              code={job.plate_code}
-              number={job.plate_number}
-              className="h-11 text-base"
-            />
-          ) : (
-            <span className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm">
-              {job.plate_number}
-            </span>
-          ))}
+        <div className="flex items-center gap-3">
+          {(job.plate_emirate || job.plate_code || job.plate_number) &&
+            (job.plate_emirate || job.plate_code ? (
+              <UAEPlate
+                emirate={job.plate_emirate}
+                code={job.plate_code}
+                number={job.plate_number}
+                className="h-11 text-base"
+              />
+            ) : (
+              <span className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm">
+                {job.plate_number}
+              </span>
+            ))}
+          {isOwner && <DeleteJobButton jobId={job.id} jobNumber={job.job_number} />}
+        </div>
       </div>
 
       <Card className="mb-6 p-4">

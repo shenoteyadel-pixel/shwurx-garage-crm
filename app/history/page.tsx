@@ -33,6 +33,7 @@ export default async function HistoryPage() {
     )
     .eq("stage", "delivered")
     .not("paid_at", "is", null)
+    .is("deleted_at", null)
     .order("paid_at", { ascending: false })
 
   const jobs = jobsRaw ?? []

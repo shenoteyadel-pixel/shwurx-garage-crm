@@ -5,7 +5,7 @@ import { restoreArchived, purgeArchived, type RecycleEntityKey } from "@/lib/rec
 
 // Paths that may display any soft-deletable record, revalidated after a
 // restore so the recovered row reappears immediately.
-const AFFECTED_PATHS = ["/recycle-bin", "/suppliers", "/inventory", "/parts", "/crm", "/reports", "/flow"]
+const AFFECTED_PATHS = ["/recycle-bin", "/suppliers", "/inventory", "/parts", "/crm", "/reports", "/flow", "/jobs", "/history"]
 
 function revalidateAll() {
   for (const p of AFFECTED_PATHS) revalidatePath(p)

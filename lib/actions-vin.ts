@@ -20,8 +20,11 @@ export type VinDecodeResponse =
   | { ok: true; data: VinDecodeResult }
   | { ok: false; error: string; code: "invalid" | "not_found" | "quota" | "unconfigured" | "network" }
 
-// A VIN is 17 chars, excluding I/O/Q to avoid ambiguity with 1/0.
-const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/i
+// Standard VINs are 17 chars, but UAE imports, classics and grey-market cars
+// often carry shorter or non-standard chassis numbers. We accept 6–20
+// alphanumerics (spaces/dashes stripped) and let the decode service — then AI —
+// decide, rather than hard-rejecting a real car before we even try.
+const CHASSIS_RE = /^[A-Z0-9]{6,20}$/
 
 /** Pick the first present, non-empty string from a list of candidate keys. */
 function pick(obj: Record<string, unknown>, keys: string[]): string | null {
@@ -39,9 +42,9 @@ function pick(obj: Record<string, unknown>, keys: string[]): string | null {
  * VIN) we return a typed error so the UI can fall back to manual entry.
  */
 export async function decodeVin(vinInput: string): Promise<VinDecodeResponse> {
-  const vin = vinInput.trim().toUpperCase()
-  if (!VIN_RE.test(vin)) {
-    return { ok: false, code: "invalid", error: "Enter a valid 17-character VIN." }
+  const vin = vinInput.trim().toUpperCase().replace(/[\s-]/g, "")
+  if (!CHASSIS_RE.test(vin)) {
+    return { ok: false, code: "invalid", error: "Enter a valid chassis / VIN number." }
   }
 
   const key = process.env.CARSXE_API_KEY

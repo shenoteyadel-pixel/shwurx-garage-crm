@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button, Input, Label, Select, Combo } from "@/components/ui"
 import { Modal } from "@/components/modal"
 import { updateJobDetails } from "@/lib/actions"
+import { identifyVehicle } from "@/lib/actions-vehicle-id"
 import { UAE_EMIRATES, COMMON_COLORS } from "@/lib/constants"
 import { BODY_TYPES, inferBodyType, MODEL_SUGGESTIONS } from "@/lib/vehicle"
 import {
@@ -14,7 +15,7 @@ import {
   catalogBodyType,
   yearOptions,
 } from "@/lib/vehicle-catalog"
-import { Pencil } from "lucide-react"
+import { Pencil, Sparkles } from "lucide-react"
 
 type JobVehicle = {
   id: string
@@ -53,6 +54,11 @@ export function EditJobVehicle({ job }: { job: JobVehicle }) {
   const [year, setYear] = useState(job.vehicle_year ? String(job.vehicle_year) : "")
   const [color, setColor] = useState(job.color ?? "")
   const [bodyType, setBodyType] = useState(job.body_type ?? "")
+  const [vin, setVin] = useState(job.vin ?? "")
+
+  // Intelligent identify (VIN decode + AI) state, separate from the save transition.
+  const [idNote, setIdNote] = useState<string | null>(null)
+  const [identifying, startId] = useTransition()
 
   const yearNum = year ? Number(year) : null
 
@@ -76,12 +82,53 @@ export function EditJobVehicle({ job }: { job: JobVehicle }) {
     setYear(job.vehicle_year ? String(job.vehicle_year) : "")
     setColor(job.color ?? "")
     setBodyType(job.body_type ?? "")
+    setVin(job.vin ?? "")
     setError(null)
+    setIdNote(null)
   }
 
   function close() {
     setOpen(false)
     reset()
+  }
+
+  // Run the hybrid VIN decode + AI identification and apply the suggestions to
+  // the form. Uses any make/model already typed as extra context, so it still
+  // helps when the chassis number is non-standard and can't be decoded.
+  function autofill() {
+    setIdNote(null)
+    setError(null)
+    const q = [make, model, variant].filter(Boolean).join(" ").trim()
+    const trimmedVin = vin.trim()
+    if (!trimmedVin && !q) {
+      setIdNote("Enter a chassis / VIN, or a make and model, then try again.")
+      return
+    }
+    startId(async () => {
+      try {
+        const res = await identifyVehicle({
+          vin: trimmedVin || undefined,
+          query: q || trimmedVin || undefined,
+        })
+        if (!res.ok) {
+          setIdNote(res.error)
+          return
+        }
+        const d = res.data
+        if (d.make?.value) setMake(d.make.value)
+        if (d.model?.value) setModel(d.model.value)
+        if (d.year?.value) setYear(d.year.value)
+        if (d.variant?.value) setVariant(d.variant.value)
+        if (d.bodyType?.value) setBodyType(d.bodyType.value)
+        setIdNote(
+          d.reviewRequired
+            ? (d.note ?? "Filled in from the chassis — please review before saving.")
+            : "Filled in from the chassis. Review the fields and save.",
+        )
+      } catch (e: any) {
+        setIdNote(e?.message ?? "Couldn't identify the vehicle. Enter details manually.")
+      }
+    })
   }
 
   function onSave(fd: FormData) {
@@ -211,7 +258,27 @@ export function EditJobVehicle({ job }: { job: JobVehicle }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="vin">VIN / Chassis</Label>
-              <Input id="vin" name="vin" defaultValue={job.vin ?? ""} className="font-mono" />
+              <div className="flex gap-2">
+                <Input
+                  id="vin"
+                  name="vin"
+                  value={vin}
+                  onChange={(e) => setVin(e.target.value)}
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={autofill}
+                  disabled={identifying}
+                  className="shrink-0 gap-1.5 whitespace-nowrap"
+                  title="Identify make, model and year from the chassis / VIN"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {identifying ? "Identifying…" : "Auto-fill"}
+                </Button>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="mileage">Mileage (km)</Label>
@@ -241,6 +308,7 @@ export function EditJobVehicle({ job }: { job: JobVehicle }) {
             </div>
           </div>
 
+          {idNote ? <p className="text-sm text-muted-foreground">{idNote}</p> : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
           <div className="flex justify-end gap-2">

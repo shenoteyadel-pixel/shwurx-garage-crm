@@ -482,12 +482,32 @@ function NewVehicleForm({
         return
       }
       setIdent(res.data)
+      // Confident results fill the form immediately so the advisor never has to
+      // hunt for an "apply" button; low-confidence ones stay as a suggestion
+      // card they can confirm.
+      if (!res.data.reviewRequired) applyIdentification(res.data)
     } catch (e: any) {
       setDecodeNote(e?.message ?? "Identification failed. Enter details manually.")
     } finally {
       setDecoding(false)
     }
   }
+
+  // Auto-run identification once a plausible chassis/VIN has been typed, so the
+  // details appear without needing a separate click. Debounced, and guarded so
+  // it only fires once per distinct value.
+  const lastAutoVin = React.useRef("")
+  React.useEffect(() => {
+    const v = vin.trim()
+    if (v.length < 11 || v === lastAutoVin.current) return
+    const t = setTimeout(() => {
+      lastAutoVin.current = v
+      void onIdentify()
+    }, 700)
+    return () => clearTimeout(t)
+    // onIdentify is stable enough for this effect; we key strictly off the VIN.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vin])
 
   // Apply the confirmed identification as a SUGGESTION — only fields that were
   // identified, never blanking out anything the advisor already typed.

@@ -482,10 +482,12 @@ function NewVehicleForm({
         return
       }
       setIdent(res.data)
-      // Confident results fill the form immediately so the advisor never has to
-      // hunt for an "apply" button; low-confidence ones stay as a suggestion
-      // card they can confirm.
-      if (!res.data.reviewRequired) applyIdentification(res.data)
+      // Always fill in whatever we identified — even partial / low-confidence
+      // results — so the advisor never lands on an empty form after entering a
+      // chassis. applyIdentification only sets fields that were actually
+      // identified and never blanks anything already typed. When review is
+      // required the suggestion card still shows so the advisor can verify.
+      applyIdentification(res.data)
     } catch (e: any) {
       setDecodeNote(e?.message ?? "Identification failed. Enter details manually.")
     } finally {

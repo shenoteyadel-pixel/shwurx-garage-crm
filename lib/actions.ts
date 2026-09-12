@@ -330,9 +330,15 @@ export async function updateJobDetails(jobId: string, formData: FormData) {
   const { supabase } = await guard("jobs.update_status")
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
   const textFields = [
+    "vehicle_make",
+    "vehicle_model",
     "variant",
     "color",
     "body_type",
+    "vin",
+    "plate_emirate",
+    "plate_code",
+    "plate_number",
     "complaint",
     "diagnosis",
     "repair_instructions",
@@ -340,7 +346,15 @@ export async function updateJobDetails(jobId: string, formData: FormData) {
     "qc_status",
   ]
   for (const f of textFields) {
-    if (formData.has(f)) patch[f] = String(formData.get(f) || "") || null
+    if (formData.has(f)) patch[f] = String(formData.get(f) || "").trim() || null
+  }
+  // Numeric fields — accept blank as null, otherwise coerce and ignore junk.
+  const numberFields = ["vehicle_year", "mileage"]
+  for (const f of numberFields) {
+    if (formData.has(f)) {
+      const raw = String(formData.get(f) || "").trim()
+      patch[f] = raw ? Number(raw.replace(/[^\d.-]/g, "")) || null : null
+    }
   }
   if (formData.has("estimated_completion")) {
     patch.estimated_completion = String(formData.get("estimated_completion") || "") || null

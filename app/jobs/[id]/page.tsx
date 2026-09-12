@@ -13,6 +13,7 @@ import { getJobApprovals } from "@/lib/actions-approvals"
 import { JobPhotos } from "@/components/job-photos"
 import { StaffAssign } from "@/components/staff-assign"
 import { CarExpensesManager, type CarExpense } from "@/components/car-expenses-manager"
+import { EditJobVehicle } from "@/components/edit-job-vehicle"
 import { getSessionContext } from "@/lib/rbac/context"
 import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
@@ -124,7 +125,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .select("id, category, description, amount, vendor, has_invoice, reference, receipt_url, expense_date")
     .eq("job_id", id)
     .order("expense_date", { ascending: false })
-  const canManageExpenses = (await getSessionContext())?.permissions.has("purchase_orders.manage") ?? false
+  const sessionCtx = await getSessionContext()
+  const canManageExpenses = sessionCtx?.permissions.has("purchase_orders.manage") ?? false
+  const canEditVehicle = sessionCtx?.permissions.has("jobs.update_status") ?? false
 
   // AI Diagnostic Assistant: session + technician-verified test workflow.
   const { data: diagnosticSession } = await supabase
@@ -421,12 +424,21 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 </Link>
               ) : null}
             </div>
-            <div className="mt-4 space-y-2 border-t border-border pt-4 text-sm">
-              <Detail icon={Car} label="Variant" value={job.variant || "—"} />
-              <Detail icon={Palette} label="Color" value={job.color || "—"} />
-              <Detail icon={Gauge} label="Year" value={job.vehicle_year ? String(job.vehicle_year) : "—"} />
-              <Detail icon={Hash} label="Mileage" value={job.mileage ? `${job.mileage.toLocaleString()} km` : "—"} />
-              <Detail icon={Fingerprint} label="VIN" value={job.vin || "—"} mono />
+            <div className="mt-4 border-t border-border pt-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Vehicle details
+                </span>
+                {canEditVehicle && <EditJobVehicle job={job as any} />}
+              </div>
+              <div className="space-y-2 text-sm">
+                <Detail icon={Car} label="Make / Model" value={[job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "—"} />
+                <Detail icon={Car} label="Variant" value={job.variant || "—"} />
+                <Detail icon={Palette} label="Color" value={job.color || "—"} />
+                <Detail icon={Gauge} label="Year" value={job.vehicle_year ? String(job.vehicle_year) : "—"} />
+                <Detail icon={Hash} label="Mileage" value={job.mileage ? `${job.mileage.toLocaleString()} km` : "—"} />
+                <Detail icon={Fingerprint} label="VIN" value={job.vin || "—"} mono />
+              </div>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm">
               <span className="text-muted-foreground">QC</span>

@@ -443,6 +443,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 <Detail icon={Hash} label="Mileage" value={job.mileage ? `${job.mileage.toLocaleString()} km` : "—"} />
                 <Detail icon={Fingerprint} label="VIN" value={job.vin || "—"} mono />
               </div>
+              {isOwner && (
+                <div className="mt-4">
+                  <DeleteJobButton jobId={job.id} jobNumber={job.job_number} />
+                </div>
+              )}
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm">
               <span className="text-muted-foreground">QC</span>
@@ -453,11 +458,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 </span>
               )}
             </div>
-            {isOwner && (
-              <div className="mt-4 border-t border-border pt-4">
-                <DeleteJobButton jobId={job.id} jobNumber={job.job_number} />
-              </div>
-            )}
             {job.complaint && (
               <div className="mt-4 border-t border-border pt-4">
                 <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">

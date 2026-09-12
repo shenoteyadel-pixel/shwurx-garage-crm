@@ -4,6 +4,7 @@ import { generateText, Output } from "ai"
 import { z } from "zod"
 import { confirmCatalog, normalizeBodyType, searchCatalog } from "@/lib/vehicle-catalog"
 import { decodeVin, type VinDecodeResult } from "@/lib/actions-vin"
+import { decodeVinOffline } from "@/lib/vin-wmi"
 
 export type Confidence = "high" | "medium" | "low"
 
@@ -127,6 +128,31 @@ export async function identifyVehicle(input: {
 
   const query = (input.query ?? "").trim()
   const rawVin = (input.vin ?? "").trim().toUpperCase()
+
+  // STEP 1b — deterministic offline baseline. A well-formed 17-char VIN encodes
+  // the manufacturer (WMI) and model year positionally per the ISO standard, so
+  // we can always establish make + year even when the paid decode service is
+  // down or over quota. This is standards data, not a guess — it seeds a
+  // partial `decoded` that the AI step then enriches with model/variant.
+  if (!decoded && rawVin) {
+    const base = decodeVinOffline(rawVin)
+    if (base.make || base.year) {
+      decoded = {
+        vin: rawVin,
+        make: base.make,
+        model: null,
+        year: base.year,
+        trim: null,
+        bodyType: null,
+        fuelType: null,
+        transmission: null,
+        drivetrain: null,
+        engine: null,
+        madeIn: null,
+      }
+    }
+  }
+
   if (!decoded && !query && !rawVin) {
     return { ok: false, error: "Enter a VIN or a search term to identify the vehicle." }
   }

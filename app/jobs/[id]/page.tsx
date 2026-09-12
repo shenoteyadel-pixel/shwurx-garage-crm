@@ -331,7 +331,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 {job.plate_number}
               </span>
             ))}
-          {isOwner && <DeleteJobButton jobId={job.id} jobNumber={job.job_number} />}
         </div>
       </div>
 
@@ -454,6 +453,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 </span>
               )}
             </div>
+            {isOwner && (
+              <div className="mt-4 border-t border-border pt-4">
+                <DeleteJobButton jobId={job.id} jobNumber={job.job_number} />
+              </div>
+            )}
             {job.complaint && (
               <div className="mt-4 border-t border-border pt-4">
                 <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">

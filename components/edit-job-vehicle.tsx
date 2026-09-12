@@ -1,11 +1,19 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useMemo, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Button, Input, Label, Select } from "@/components/ui"
+import { Button, Input, Label, Select, Combo } from "@/components/ui"
 import { Modal } from "@/components/modal"
 import { updateJobDetails } from "@/lib/actions"
-import { UAE_EMIRATES } from "@/lib/constants"
+import { UAE_EMIRATES, COMMON_COLORS } from "@/lib/constants"
+import { BODY_TYPES, inferBodyType, MODEL_SUGGESTIONS } from "@/lib/vehicle"
+import {
+  catalogMakeNames,
+  modelsForYear,
+  variantsForModelYear,
+  catalogBodyType,
+  yearOptions,
+} from "@/lib/vehicle-catalog"
 import { Pencil } from "lucide-react"
 
 type JobVehicle = {
@@ -26,8 +34,11 @@ type JobVehicle = {
 /**
  * Manual vehicle-detail editor for the job card. Needed because a VIN/chassis
  * added at check-in may not resolve through AI decode, leaving make/model/year
- * blank with no way to fill them in. Writes straight to the job row via
- * updateJobDetails (guarded by jobs.update_status).
+ * blank with no way to fill them in. Uses the same catalog-backed comboboxes as
+ * the intake VehiclePicker so make/model/variant/colour can be *chosen* from a
+ * list (year-aware), while still allowing free text for anything not catalogued.
+ * Writes straight to the job row via updateJobDetails (guarded by
+ * jobs.update_status).
  */
 export function EditJobVehicle({ job }: { job: JobVehicle }) {
   const router = useRouter()
@@ -35,7 +46,48 @@ export function EditJobVehicle({ job }: { job: JobVehicle }) {
   const [pending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
+  // Controlled so the model/variant option lists react to make + year.
+  const [make, setMake] = useState(job.vehicle_make ?? "")
+  const [model, setModel] = useState(job.vehicle_model ?? "")
+  const [variant, setVariant] = useState(job.variant ?? "")
+  const [year, setYear] = useState(job.vehicle_year ? String(job.vehicle_year) : "")
+  const [color, setColor] = useState(job.color ?? "")
+  const [bodyType, setBodyType] = useState(job.body_type ?? "")
+
+  const yearNum = year ? Number(year) : null
+
+  const makeOptions = useMemo(() => catalogMakeNames(), [])
+  const modelOptions = useMemo(() => {
+    const catalog = modelsForYear(make, yearNum)
+    return catalog.length ? catalog : MODEL_SUGGESTIONS[make] ?? []
+  }, [make, yearNum])
+  const variantOptions = useMemo(
+    () => variantsForModelYear(make, model, yearNum),
+    [make, model, yearNum],
+  )
+  const years = useMemo(() => yearOptions(make, model), [make, model])
+  const detectedBody = catalogBodyType(make, model) ?? inferBodyType(make, model)
+  const effectiveBody = bodyType || detectedBody || ""
+
+  function reset() {
+    setMake(job.vehicle_make ?? "")
+    setModel(job.vehicle_model ?? "")
+    setVariant(job.variant ?? "")
+    setYear(job.vehicle_year ? String(job.vehicle_year) : "")
+    setColor(job.color ?? "")
+    setBodyType(job.body_type ?? "")
+    setError(null)
+  }
+
+  function close() {
+    setOpen(false)
+    reset()
+  }
+
   function onSave(fd: FormData) {
+    // Ensure the derived body type is submitted even if the field was left on
+    // the auto-detected placeholder.
+    if (!fd.get("body_type") && effectiveBody) fd.set("body_type", effectiveBody)
     setError(null)
     start(async () => {
       try {
@@ -59,36 +111,100 @@ export function EditJobVehicle({ job }: { job: JobVehicle }) {
         <Pencil className="h-3.5 w-3.5" /> Edit
       </Button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Edit vehicle details">
+      <Modal open={open} onClose={close} title="Edit vehicle details">
         <form action={onSave} className="space-y-4">
           <p className="text-xs text-muted-foreground">
-            Fill these in manually when the chassis / VIN could not be identified automatically.
+            Choose the make and model from the list, or type your own when the chassis / VIN could
+            not be identified automatically.
           </p>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="vehicle_make">Make</Label>
-              <Input id="vehicle_make" name="vehicle_make" defaultValue={job.vehicle_make ?? ""} placeholder="e.g. Toyota" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="vehicle_model">Model</Label>
-              <Input id="vehicle_model" name="vehicle_model" defaultValue={job.vehicle_model ?? ""} placeholder="e.g. Land Cruiser" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="variant">Variant</Label>
-              <Input id="variant" name="variant" defaultValue={job.variant ?? ""} placeholder="e.g. GXR" />
+              <Combo
+                id="vehicle_make"
+                name="vehicle_make"
+                placeholder="e.g. Mercedes-Benz"
+                options={makeOptions}
+                value={make}
+                onChange={(e) => {
+                  // Changing the make invalidates the previously chosen model/variant.
+                  setMake(e.target.value)
+                  setModel("")
+                  setVariant("")
+                }}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="vehicle_year">Year</Label>
-              <Input id="vehicle_year" name="vehicle_year" type="number" min="1950" max="2100" defaultValue={job.vehicle_year ?? ""} />
+              <Combo
+                id="vehicle_year"
+                name="vehicle_year"
+                type="number"
+                inputMode="numeric"
+                min="1950"
+                max="2100"
+                placeholder="e.g. 2021"
+                options={years.map(String)}
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="vehicle_model">Model</Label>
+              <Combo
+                id="vehicle_model"
+                name="vehicle_model"
+                placeholder={make ? "Select or type a model" : "Pick a make first"}
+                options={modelOptions}
+                value={model}
+                onChange={(e) => {
+                  setModel(e.target.value)
+                  setVariant("")
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="variant">Variant</Label>
+              <Combo
+                id="variant"
+                name="variant"
+                placeholder={variantOptions.length ? "Select or type a trim" : "e.g. GXR, AMG, Sport"}
+                options={
+                  variantOptions.length
+                    ? variantOptions
+                    : ["AMG", "GT", "GTS", "Sport", "M Sport", "S-Line", "Limited", "Platinum"]
+                }
+                value={variant}
+                onChange={(e) => setVariant(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="color">Colour</Label>
-              <Input id="color" name="color" defaultValue={job.color ?? ""} placeholder="e.g. White" />
+              <Combo
+                id="color"
+                name="color"
+                placeholder="e.g. Pearl White"
+                options={COMMON_COLORS}
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="body_type">Body type</Label>
-              <Input id="body_type" name="body_type" defaultValue={job.body_type ?? ""} placeholder="e.g. SUV" />
+              <Select
+                id="body_type"
+                name="body_type"
+                value={effectiveBody}
+                onChange={(e) => setBodyType(e.target.value)}
+              >
+                <option value="">{detectedBody ? `Auto: ${detectedBody}` : "—"}</option>
+                {BODY_TYPES.map((b) => (
+                  <option key={b.value} value={b.value}>
+                    {b.label}
+                  </option>
+                ))}
+              </Select>
             </div>
           </div>
 
@@ -128,7 +244,7 @@ export function EditJobVehicle({ job }: { job: JobVehicle }) {
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={close}>
               Cancel
             </Button>
             <Button type="submit" variant="primary" disabled={pending}>

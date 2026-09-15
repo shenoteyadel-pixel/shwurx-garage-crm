@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { put, del } from "@vercel/blob"
 import { revalidatePath } from "next/cache"
-import { requireAnyPermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import { requireAnyPermission, logAction, ForbiddenError, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
 import { getSettings } from "@/lib/settings"
 import { extractInvoice } from "@/lib/invoice-ocr"
@@ -114,6 +114,25 @@ function suggestPartsRequest(
 export type ExtractResult = { ok: true; id: string } | { ok: false; error: string }
 
 export async function extractAndCreateInvoice(formData: FormData): Promise<ExtractResult> {
+  // A server action that THROWS is surfaced to the browser as an opaque
+  // "Minified React error #441" with no detail. Catch everything here and
+  // return a readable message so the upload UI can show the real reason
+  // instead of a cryptic React error.
+  try {
+    return await runExtractAndCreateInvoice(formData)
+  } catch (e) {
+    console.error("[v0] extractAndCreateInvoice failed:", e)
+    const message =
+      e instanceof ForbiddenError
+        ? e.message
+        : e instanceof Error && e.message
+          ? e.message
+          : "Something went wrong while saving the invoice. Please try again."
+    return { ok: false, error: message }
+  }
+}
+
+async function runExtractAndCreateInvoice(formData: FormData): Promise<ExtractResult> {
   const { supabase, ctx, userId } = await guard()
 
   const file = formData.get("file")
@@ -192,6 +211,11 @@ export async function extractAndCreateInvoice(formData: FormData): Promise<Extra
     return { ok: false, error: error.message }
   }
 
+  // The draft row now exists and is fully editable in the review UI. Every
+  // step below (OEM auto-matching, line-item insert, audit log) is best-effort
+  // enrichment — if any of it fails it must NOT fail the upload and strand the
+  // user, since the draft is already saved.
+  try {
   const lines = extracted?.line_items ?? []
   if (lines.length) {
     // OEM-first auto-match: a line links to an existing part ONLY when its OEM
@@ -231,7 +255,13 @@ export async function extractAndCreateInvoice(formData: FormData): Promise<Extra
     )
   }
 
-  await logAction(ctx, "supplier_invoice_captured", "supplier_invoice", inv.id)
+    await logAction(ctx, "supplier_invoice_captured", "supplier_invoice", inv.id)
+  } catch (e) {
+    // Draft is already created and editable — never fail the upload for an
+    // enrichment error.
+    console.error("[v0] invoice enrichment failed (draft still created):", e)
+  }
+
   revalidatePath("/purchasing/invoices")
   return { ok: true, id: inv.id }
 }

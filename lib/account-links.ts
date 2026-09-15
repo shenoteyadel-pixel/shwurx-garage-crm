@@ -33,9 +33,32 @@ function baseUrl() {
   return "http://localhost:3000"
 }
 
-/** Absolute base URL for building customer-facing links (tracking, portal) in emails. */
+/**
+ * Absolute base URL for customer-facing links (approval, tracking, portal).
+ *
+ * These links are opened by customers on their own devices, so they MUST point
+ * at the real public site — never at NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL, which
+ * is the v0/Supabase auth redirect proxy. That proxy origin resolves only for a
+ * signed-in staff session (why the link "works from the CRM laptop") and errors
+ * for an anonymous customer (why it "always shows an error" on their phone).
+ *
+ * Auth callbacks still use baseUrl() above, which intentionally prefers the proxy.
+ */
 export function appBaseUrl(): string {
-  return baseUrl()
+  const clean = (v: string) => (v.startsWith("http") ? v : `https://${v}`).replace(/\/+$/, "")
+  if (process.env.NEXT_PUBLIC_SITE_URL) return clean(process.env.NEXT_PUBLIC_SITE_URL)
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return clean(process.env.VERCEL_PROJECT_PRODUCTION_URL)
+  if (process.env.VERCEL_URL) return clean(process.env.VERCEL_URL)
+  // Local dev only: fall back to the proxy origin, then localhost.
+  const proxy = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL
+  if (proxy) {
+    try {
+      return new URL(proxy).origin
+    } catch {
+      /* fall through */
+    }
+  }
+  return "http://localhost:3000"
 }
 
 type LinkType = "invite" | "recovery" | "magiclink"

@@ -49,6 +49,53 @@ export default async function NewInvoicePage({
           unit_price: price,
         }
       })
+
+      // Also pull in any additional-work items the customer approved after the
+      // quotation was locked, so this single invoice reflects everything signed
+      // off for the job. Only items the customer actually approved are included.
+      const { data: awReqs } = await supabase
+        .from("approval_requests")
+        .select("id, mode, snapshot")
+        .eq("job_id", job)
+        .eq("kind", "additional_work")
+        .in("status", ["approved", "partial"])
+
+      if (awReqs?.length) {
+        const { data: decisions } = await supabase
+          .from("approval_item_decisions")
+          .select("approval_request_id, item_key, decision")
+          .in(
+            "approval_request_id",
+            awReqs.map((r) => r.id),
+          )
+
+        const approvedByReq = new Map<string, Set<string>>()
+        for (const d of decisions ?? []) {
+          if (d.decision !== "approved") continue
+          const set = approvedByReq.get(d.approval_request_id) ?? new Set<string>()
+          set.add(d.item_key)
+          approvedByReq.set(d.approval_request_id, set)
+        }
+
+        for (const req of awReqs) {
+          const approvedKeys = approvedByReq.get(req.id) ?? new Set<string>()
+          const wholeApproved = req.mode === "whole" && approvedKeys.has("__whole__")
+          const snapItems = (((req.snapshot as any)?.items ?? []) as any[]) ?? []
+          for (const it of snapItems) {
+            if (!wholeApproved && !approvedKeys.has(it.key)) continue
+            const isPart = it.kind === "part"
+            const qty = isPart ? Number(it.quantity) || 1 : Number(it.labour_hours) > 0 ? Number(it.labour_hours) : 1
+            const price = isPart ? Number(it.unit_price) || 0 : Number(it.labour_rate) || 0
+            items.push({
+              kind: isPart ? "part" : "labour",
+              description: it.name || (isPart ? "Part" : "Labour"),
+              quantity: qty,
+              unit_price: price,
+            })
+          }
+        }
+      }
+
       prefill = {
         jobId: j.id,
         customerName: j.customer_name ?? "",

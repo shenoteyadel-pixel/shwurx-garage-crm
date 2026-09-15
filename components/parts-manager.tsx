@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { addPart, updatePart, deletePart, sendPartsToQuotation } from "@/lib/actions"
+import { sendPartsAsAdditionalWork } from "@/lib/actions-approvals"
 import { Button, Card, Input, Select } from "@/components/ui"
 import { PART_STATUSES } from "@/lib/constants"
 import { formatCurrency, cn } from "@/lib/utils"
@@ -40,6 +41,34 @@ export function PartsManager({
       setFeedback({ tone: "ok", text: "Parts added to the quotation. Scroll up to review and send for approval." })
     } catch (err) {
       setFeedback({ tone: "error", text: err instanceof Error ? err.message : "Could not add parts to the quotation." })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function handleSendAdditional() {
+    setSending(true)
+    setFeedback(null)
+    try {
+      const res = await sendPartsAsAdditionalWork(jobId)
+      if (!res.ok) {
+        const text =
+          res.error === "nothing_new"
+            ? "These parts are already on the approved quotation. Add the new parts first, then send them as additional work."
+            : res.error === "no_items"
+              ? "Add a part first."
+              : "Could not create the additional-work request."
+        setFeedback({ tone: "error", text })
+      } else {
+        setFeedback({
+          tone: "ok",
+          text: res.emailed
+            ? "New parts sent to the customer as an additional-work request. Once approved they're added to this job's invoice."
+            : "Additional-work request created. Share the approval link from Customer Approvals above.",
+        })
+      }
+    } catch (err) {
+      setFeedback({ tone: "error", text: err instanceof Error ? err.message : "Could not create the request." })
     } finally {
       setSending(false)
     }
@@ -117,9 +146,23 @@ export function PartsManager({
             <span className="font-semibold tabular-nums">{formatCurrency(partsTotal)}</span>
           </div>
           {locked ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              The quotation is approved and locked, so parts can no longer be sent for approval.
-            </p>
+            <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+              <p className="text-xs text-muted-foreground">
+                The quotation is approved and locked. To add parts the customer now wants, send them as additional work
+                for a separate approval &mdash; once approved they&apos;re added to this job&apos;s invoice.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleSendAdditional}
+                disabled={sending}
+                className="self-start"
+              >
+                {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileUp className="h-3.5 w-3.5" />}
+                Send new parts as additional work
+              </Button>
+            </div>
           ) : null}
         </>
       )}

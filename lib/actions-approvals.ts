@@ -316,6 +316,55 @@ export async function syncPendingApproval(jobId: string): Promise<{ ok: boolean;
 }
 
 /**
+ * Parts-panel shortcut for a locked quotation: take the parts on the job that
+ * aren't already on the approved quotation and raise them as a signed
+ * additional-work request the customer can approve. Once approved they flow
+ * onto the same job invoice. Skips parts already quoted so nothing is billed
+ * twice, and is safe to run more than once.
+ */
+export async function sendPartsAsAdditionalWork(
+  jobId: string,
+): Promise<{ ok: boolean; token?: string; url?: string; emailed?: boolean; error?: string }> {
+  await requirePermission("quotations.edit")
+  const svc = createServiceClient()
+
+  const { data: parts } = await svc
+    .from("parts_requests")
+    .select("part_name, quantity, cost")
+    .eq("job_id", jobId)
+    .is("deleted_at", null)
+    .order("created_at")
+  if (!parts?.length) return { ok: false, error: "no_items" }
+
+  // Names already on the latest quotation — those were quoted/approved already.
+  const { data: quotation } = await svc
+    .from("quotations")
+    .select("quotation_items(name)")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const quoted = new Set(
+    (((quotation?.quotation_items as any[]) ?? [])
+      .map((i) => String(i.name || "").trim().toLowerCase())
+      .filter(Boolean)),
+  )
+
+  const fresh = parts.filter((p) => !quoted.has(String(p.part_name || "").trim().toLowerCase()))
+  if (!fresh.length) return { ok: false, error: "nothing_new" }
+
+  return createAdditionalWorkRequest(jobId, {
+    title: "Additional parts",
+    items: fresh.map((p) => ({
+      kind: "part" as const,
+      name: p.part_name || "Part",
+      quantity: Number(p.quantity) || 1,
+      unit_price: Number(p.cost) || 0,
+    })),
+  })
+}
+
+/**
  * Create a mid-repair additional-work request from ad-hoc items (not tied to
  * the main quotation). Each item is priced with the job's default VAT mode.
  */

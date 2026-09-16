@@ -1,6 +1,8 @@
 import { notFound, redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { PrintButton } from "@/components/print-button"
+import { DocHeader } from "@/components/doc-header"
+import { getSettings } from "@/lib/settings"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
 export default async function QuotationPrintPage({ params }: { params: Promise<{ id: string }> }) {
@@ -13,6 +15,8 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
 
   const { data: job } = await supabase.from("jobs").select("*").eq("id", id).maybeSingle()
   if (!job) notFound()
+
+  const settings = await getSettings()
 
   const { data: quotation } = await supabase
     .from("quotations")
@@ -43,19 +47,12 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
       {/* Document */}
       <div className="mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
         {/* Header */}
-        <div className="flex items-start justify-between border-b-2 border-[#e51f2b] pb-5">
-          <div>
-            <div className="text-2xl font-extrabold tracking-tight">
-              SHWURX<span className="text-[#e51f2b]"> GARAGE</span>
-            </div>
-            <p className="mt-1 text-xs text-neutral-500">Automotive Workshop &amp; Service Center</p>
-          </div>
-          <div className="text-right">
-            <div className="text-lg font-bold uppercase tracking-wide">Quotation</div>
-            <p className="mt-1 font-mono text-sm text-neutral-600">{job.job_number}</p>
-            <p className="text-xs text-neutral-500">{formatDate(quotation.created_at)}</p>
-          </div>
-        </div>
+        <DocHeader
+          settings={settings}
+          title="Quotation"
+          number={job.job_number}
+          date={formatDate(quotation.created_at)}
+        />
 
         {/* Parties */}
         <div className="grid grid-cols-2 gap-6 py-5 text-sm">

@@ -125,8 +125,10 @@ const CUSTOMER_FIELDS = [
   "alt_mobile",
   "whatsapp",
   "email",
+  "customer_type",
   "company_name",
   "trn",
+  "trade_license",
   "address",
   "notes",
 ] as const

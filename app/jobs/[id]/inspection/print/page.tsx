@@ -1,5 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { getSettings } from "@/lib/settings"
+import { DocHeader, DocWatermark, DocBrandStrip } from "@/components/doc-header"
 import { PrintButton } from "@/components/print-button"
 import { formatDate } from "@/lib/utils"
 import { DAMAGE_MAP } from "@/lib/inspection-config"
@@ -14,7 +16,10 @@ export default async function InspectionReportPage({ params }: { params: Promise
   } = await supabase.auth.getUser()
   if (!user) redirect("/auth/login")
 
-  const { data: job } = await supabase.from("jobs").select("*").eq("id", id).maybeSingle()
+  const [settings, { data: job }] = await Promise.all([
+    getSettings(),
+    supabase.from("jobs").select("*").eq("id", id).maybeSingle(),
+  ])
   if (!job) notFound()
 
   const { data: inspection } = await supabase
@@ -45,21 +50,15 @@ export default async function InspectionReportPage({ params }: { params: Promise
         <PrintButton />
       </div>
 
-      <div className="mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
+      <div className="relative isolate mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
+        <DocWatermark settings={settings} />
         {/* Header */}
-        <div className="flex items-start justify-between border-b-2 border-[#e51f2b] pb-5">
-          <div>
-            <div className="text-2xl font-extrabold tracking-tight">
-              SHWURX<span className="text-[#e51f2b]"> GARAGE</span>
-            </div>
-            <p className="mt-1 text-xs text-neutral-500">Automotive Workshop &amp; Service Center</p>
-          </div>
-          <div className="text-right">
-            <div className="text-lg font-bold uppercase tracking-wide">Vehicle Condition Report</div>
-            <p className="mt-1 font-mono text-sm text-neutral-600">{job.job_number}</p>
-            <p className="text-xs text-neutral-500">{formatDate(inspection.created_at)}</p>
-          </div>
-        </div>
+        <DocHeader
+          settings={settings}
+          title="Vehicle Condition Report"
+          number={job.job_number}
+          date={formatDate(inspection.created_at)}
+        />
 
         {/* Parties + condition */}
         <div className="grid grid-cols-2 gap-6 py-5 text-sm">
@@ -204,7 +203,8 @@ export default async function InspectionReportPage({ params }: { params: Promise
           </div>
         </div>
 
-        <div className="mt-10 border-t border-neutral-200 pt-4 text-center text-xs text-neutral-400">
+        <DocBrandStrip />
+        <div className="mt-6 border-t border-neutral-200 pt-4 text-center text-xs text-neutral-400">
           This condition report documents pre-existing damage recorded at vehicle check-in.
           <br />
           Thank you for choosing SHWURX Auto Service Center.

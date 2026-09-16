@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { getSettings } from "@/lib/settings"
-import { DocHeader, DocFooter } from "@/components/doc-header"
+import { DocHeader, DocFooter, DocWatermark, DocBrandStrip } from "@/components/doc-header"
 import { PrintButton } from "@/components/print-button"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
@@ -20,6 +20,24 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
   if (!inv) notFound()
   const items = ((inv.invoice_items ?? []) as any[]).sort((a, b) => a.sort_order - b.sort_order)
 
+  // Pull the linked customer's company details (company customers show their
+  // Trade License and TRN on the bill). Resolved via the invoice's job → customer.
+  let company: { company_name: string | null; trade_license: string | null; trn: string | null } | null = null
+  if (inv.job_id) {
+    const { data: job } = await supabase.from("jobs").select("customer_id").eq("id", inv.job_id).maybeSingle()
+    if (job?.customer_id) {
+      const { data: cust } = await supabase
+        .from("customers")
+        .select("customer_type, company_name, trade_license, trn")
+        .eq("id", job.customer_id)
+        .maybeSingle()
+      if (cust && (cust.customer_type === "company" || cust.company_name)) {
+        company = { company_name: cust.company_name, trade_license: cust.trade_license, trn: cust.trn }
+      }
+    }
+  }
+  const billedTrn = company?.trn || inv.customer_trn
+
   return (
     <main className="min-h-screen bg-neutral-200 py-8 print:bg-white print:py-0">
       <div className="mx-auto mb-4 flex max-w-[820px] items-center justify-between px-4 print:hidden">
@@ -29,7 +47,8 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
         <PrintButton />
       </div>
 
-      <div className="mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
+      <div className="relative isolate mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
+        <DocWatermark settings={settings} />
         <DocHeader
           settings={settings}
           title="Tax Invoice"
@@ -40,9 +59,11 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
         <div className="grid grid-cols-2 gap-6 py-5 text-sm">
           <div>
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Billed to</div>
-            <div className="font-semibold">{inv.customer_name}</div>
+            {company?.company_name && <div className="font-semibold">{company.company_name}</div>}
+            <div className={company?.company_name ? "text-neutral-600" : "font-semibold"}>{inv.customer_name}</div>
             {inv.customer_mobile && <div className="text-neutral-600">{inv.customer_mobile}</div>}
-            {inv.customer_trn && <div className="text-neutral-600">TRN {inv.customer_trn}</div>}
+            {company?.trade_license && <div className="text-neutral-600">Trade License {company.trade_license}</div>}
+            {billedTrn && <div className="text-neutral-600">TRN {billedTrn}</div>}
           </div>
           <div className="text-right">
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Vehicle</div>
@@ -122,6 +143,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
 
         {inv.notes && <p className="mt-6 whitespace-pre-wrap text-sm text-neutral-600">{inv.notes}</p>}
 
+        <DocBrandStrip />
         <DocFooter settings={settings} />
       </div>
     </main>

@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { PrintButton } from "@/components/print-button"
-import { DocHeader } from "@/components/doc-header"
+import { DocHeader, DocWatermark, DocBrandStrip } from "@/components/doc-header"
 import { getSettings } from "@/lib/settings"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
@@ -35,6 +35,19 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
   const labourItems = items.filter((it) => it.kind !== "part")
   const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
 
+  // Company customers show their Trade License and TRN on the bill.
+  let company: { company_name: string | null; trade_license: string | null; trn: string | null } | null = null
+  if (job.customer_id) {
+    const { data: cust } = await supabase
+      .from("customers")
+      .select("customer_type, company_name, trade_license, trn")
+      .eq("id", job.customer_id)
+      .maybeSingle()
+    if (cust && (cust.customer_type === "company" || cust.company_name)) {
+      company = { company_name: cust.company_name, trade_license: cust.trade_license, trn: cust.trn }
+    }
+  }
+
   return (
     <main className="min-h-screen bg-neutral-200 py-8 print:bg-white print:py-0">
       <div className="mx-auto mb-4 flex max-w-[820px] items-center justify-between px-4 print:hidden">
@@ -45,7 +58,8 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
       </div>
 
       {/* Document */}
-      <div className="mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
+      <div className="relative isolate mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
+        <DocWatermark settings={settings} />
         {/* Header */}
         <DocHeader
           settings={settings}
@@ -60,8 +74,11 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
               Billed to
             </div>
-            <div className="font-semibold">{job.customer_name}</div>
+            {company?.company_name && <div className="font-semibold">{company.company_name}</div>}
+            <div className={company?.company_name ? "text-neutral-600" : "font-semibold"}>{job.customer_name}</div>
             <div className="text-neutral-600">{job.customer_mobile}</div>
+            {company?.trade_license && <div className="text-neutral-600">Trade License {company.trade_license}</div>}
+            {company?.trn && <div className="text-neutral-600">TRN {company.trn}</div>}
           </div>
           <div>
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Vehicle</div>
@@ -110,8 +127,11 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
           </div>
         </div>
 
+        {/* Brands */}
+        <DocBrandStrip />
+
         {/* Footer */}
-        <div className="mt-10 border-t border-neutral-200 pt-4 text-center text-xs text-neutral-400">
+        <div className="mt-6 border-t border-neutral-200 pt-4 text-center text-xs text-neutral-400">
           This quotation is valid for 14 days from the date of issue. Prices are inclusive of VAT where applicable.
           <br />
           Thank you for choosing SHWURX Auto Service Center.

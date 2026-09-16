@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { getSettings } from "@/lib/settings"
-import { DocHeader, DocFooter } from "@/components/doc-header"
+import { DocHeader, DocFooter, DocWatermark, DocBrandStrip } from "@/components/doc-header"
 import { PrintButton } from "@/components/print-button"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
@@ -34,7 +34,8 @@ export default async function POPrintPage({ params }: { params: Promise<{ id: st
         <PrintButton />
       </div>
 
-      <div className="mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
+      <div className="relative isolate mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
+        <DocWatermark settings={settings} />
         <DocHeader settings={settings} title="Purchase Order" number={po.po_number} date={formatDate(po.order_date)} />
 
         <div className="grid grid-cols-2 gap-6 py-5 text-sm">
@@ -87,6 +88,7 @@ export default async function POPrintPage({ params }: { params: Promise<{ id: st
 
         {po.notes && <p className="mt-6 whitespace-pre-wrap text-sm text-neutral-600">{po.notes}</p>}
 
+        <DocBrandStrip />
         <DocFooter settings={settings} />
       </div>
     </main>

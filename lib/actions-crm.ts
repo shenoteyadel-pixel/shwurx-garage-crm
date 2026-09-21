@@ -52,9 +52,40 @@ export async function saveSettings(formData: FormData) {
   const { error } = await supabase.from("settings").update(patch).eq("id", 1)
   if (error) throw new Error(error.message)
   revalidatePath("/settings")
-}
+  }
 
-/* ============================ Suppliers ============================ */
+  /* ==================== Website tracking / marketing ==================== */
+  // Keep only the digits/letters an ID may legitimately contain, so a pasted
+  // full <script> tag or stray characters can't inject markup site-wide.
+  function trackingId(value: FormDataEntryValue | null, allowed: RegExp): string | null {
+    const raw = str(value)
+    if (!raw) return null
+    const cleaned = raw.trim().match(allowed)?.[0]
+    return cleaned || null
+  }
+
+  export async function saveMarketingSettings(formData: FormData) {
+  const { supabase } = await guard("marketing.manage")
+  const patch = {
+  tracking_enabled: String(formData.get("tracking_enabled") || "") === "on",
+  // Google verification tokens are long base64-ish strings; keep safe chars only.
+  google_site_verification: (() => {
+    const raw = str(formData.get("google_site_verification"))
+    if (!raw) return null
+    return raw.trim().replace(/^<meta[^>]*content=["']?/i, "").replace(/["'][^>]*>?$/i, "").replace(/[^A-Za-z0-9_\-]/g, "") || null
+  })(),
+  ga4_measurement_id: trackingId(formData.get("ga4_measurement_id"), /G-[A-Z0-9]+/i),
+  gtm_container_id: trackingId(formData.get("gtm_container_id"), /GTM-[A-Z0-9]+/i),
+  meta_pixel_id: trackingId(formData.get("meta_pixel_id"), /\d{5,}/),
+  updated_at: new Date().toISOString(),
+  }
+  const { error } = await supabase.from("settings").update(patch).eq("id", 1)
+  if (error) throw new Error(error.message)
+  revalidatePath("/marketing")
+  revalidatePath("/", "layout")
+  }
+
+  /* ============================ Suppliers ============================ */
 export async function saveSupplier(formData: FormData) {
   const { supabase, user } = await guard("parts.manage")
   const id = str(formData.get("id"))

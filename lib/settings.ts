@@ -22,6 +22,16 @@ export type Settings = {
   pricing_method: "markup" | "margin"
   /** Standard VAT rate percentage (UAE = 5). */
   vat_rate: number
+  /** Master switch for website tracking / marketing integrations. */
+  tracking_enabled: boolean
+  /** Google Search Console site-verification token (the content value, not the full tag). */
+  google_site_verification: string | null
+  /** Google Analytics 4 measurement ID, e.g. G-XXXXXXX. */
+  ga4_measurement_id: string | null
+  /** Google Tag Manager container ID, e.g. GTM-XXXXXX. */
+  gtm_container_id: string | null
+  /** Meta (Facebook) Pixel ID. */
+  meta_pixel_id: string | null
 }
 
 const DEFAULTS: Settings = {
@@ -42,6 +52,11 @@ const DEFAULTS: Settings = {
   default_markup_pct: 35,
   pricing_method: "markup",
   vat_rate: 5,
+  tracking_enabled: true,
+  google_site_verification: null,
+  ga4_measurement_id: null,
+  gtm_container_id: null,
+  meta_pixel_id: null,
 }
 
 // Fetch the singleton company settings row (id=1). Falls back to sane defaults

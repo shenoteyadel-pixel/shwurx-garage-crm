@@ -68,19 +68,17 @@ function baseUrl() {
  */
 export function appBaseUrl(): string {
   const clean = (v: string) => (v.startsWith("http") ? v : `https://${v}`).replace(/\/+$/, "")
+  // A validated NEXT_PUBLIC_SITE_URL always wins when set correctly.
   const site = siteUrl()
   if (site) return site
+  // Known branded production domain. Used as the reliable default so that
+  // invite / recovery links always land on the real public site even when
+  // NEXT_PUBLIC_SITE_URL is unset or was entered incorrectly. The domain is the
+  // same one verified for outbound email (RESEND_EMAIL_DOMAIN).
+  const emailDomain = process.env.RESEND_EMAIL_DOMAIN?.trim()
+  if (emailDomain && emailDomain.includes(".")) return `https://${emailDomain}`
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return clean(process.env.VERCEL_PROJECT_PRODUCTION_URL)
   if (process.env.VERCEL_URL) return clean(process.env.VERCEL_URL)
-  // Local dev only: fall back to the proxy origin, then localhost.
-  const proxy = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL
-  if (proxy) {
-    try {
-      return new URL(proxy).origin
-    } catch {
-      /* fall through */
-    }
-  }
   return "http://localhost:3000"
 }
 

@@ -13,6 +13,27 @@ function admin() {
 }
 
 /**
+ * Returns a normalized absolute origin for a configured site URL, or undefined
+ * when the value is missing/malformed. Guards against data-entry mistakes such
+ * as pasting the variable NAME ("NEXT_PUBLIC_SITE_URL") into the value field,
+ * which would otherwise produce an invalid host like https://NEXT_PUBLIC_SITE_URL
+ * and break every generated link.
+ */
+function siteUrl(): string | undefined {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+  if (!raw) return undefined
+  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+  try {
+    const u = new URL(candidate)
+    // A real domain has a dot in the host (or is localhost). Reject bare tokens.
+    if (!u.hostname.includes(".") && u.hostname !== "localhost") return undefined
+    return u.origin
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Absolute base URL for building the redirect target on generated links.
  * Prefers the v0/Supabase redirect proxy so callbacks reach the preview.
  */
@@ -27,7 +48,8 @@ function baseUrl() {
       /* fall through */
     }
   }
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL
+  const site = siteUrl()
+  if (site) return site
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
   return "http://localhost:3000"
@@ -46,7 +68,8 @@ function baseUrl() {
  */
 export function appBaseUrl(): string {
   const clean = (v: string) => (v.startsWith("http") ? v : `https://${v}`).replace(/\/+$/, "")
-  if (process.env.NEXT_PUBLIC_SITE_URL) return clean(process.env.NEXT_PUBLIC_SITE_URL)
+  const site = siteUrl()
+  if (site) return site
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return clean(process.env.VERCEL_PROJECT_PRODUCTION_URL)
   if (process.env.VERCEL_URL) return clean(process.env.VERCEL_URL)
   // Local dev only: fall back to the proxy origin, then localhost.

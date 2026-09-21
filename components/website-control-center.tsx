@@ -38,27 +38,38 @@ interface FieldMaps {
 
 export function WebsiteControlCenter({
   settings,
-  canManage,
+  canManageWebsite,
+  canManageMarketing,
+  canViewMarketing,
   fieldValues,
   fieldDefaults,
   images,
   posts,
 }: {
   settings: Settings
-  canManage: boolean
+  canManageWebsite: boolean
+  canManageMarketing: boolean
+  canViewMarketing: boolean
   fieldValues: FieldMaps
   fieldDefaults: FieldMaps
   images: Record<string, string>
   posts: BlogPost[]
 }) {
-  const [tab, setTab] = useState<TabKey>("content")
-
+  // Tabs are scoped strictly to the viewer's permissions so the two concerns
+  // never overlap: website content/images/blog require website.manage, while
+  // tracking & analytics require marketing.view (edit needs marketing.manage).
   const tabs: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { key: "content", label: "Text & Content", icon: Type },
-    { key: "images", label: "Images", icon: ImageIcon },
-    { key: "blog", label: "Blog", icon: Newspaper },
-    { key: "tracking", label: "Tracking & Analytics", icon: BarChart3 },
+    ...(canManageWebsite
+      ? ([
+          { key: "content", label: "Text & Content", icon: Type },
+          { key: "images", label: "Images", icon: ImageIcon },
+          { key: "blog", label: "Blog", icon: Newspaper },
+        ] as const)
+      : []),
+    ...(canViewMarketing ? ([{ key: "tracking", label: "Tracking & Analytics", icon: BarChart3 }] as const) : []),
   ]
+
+  const [tab, setTab] = useState<TabKey>(() => tabs[0]?.key ?? "content")
 
   return (
     <div className="flex flex-col gap-6">
@@ -85,11 +96,11 @@ export function WebsiteControlCenter({
       </div>
 
       {tab === "content" && (
-        <ContentEditor fieldValues={fieldValues} fieldDefaults={fieldDefaults} canManage={canManage} />
+        <ContentEditor fieldValues={fieldValues} fieldDefaults={fieldDefaults} canManage={canManageWebsite} />
       )}
-      {tab === "images" && <ImageManager images={images} canManage={canManage} />}
-      {tab === "blog" && <BlogManager posts={posts} canManage={canManage} />}
-      {tab === "tracking" && <MarketingForm settings={settings} canManage={canManage} />}
+      {tab === "images" && <ImageManager images={images} canManage={canManageWebsite} />}
+      {tab === "blog" && <BlogManager posts={posts} canManage={canManageWebsite} />}
+      {tab === "tracking" && <MarketingForm settings={settings} canManage={canManageMarketing} />}
     </div>
   )
 }

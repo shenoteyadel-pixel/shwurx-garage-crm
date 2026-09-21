@@ -20,7 +20,12 @@ export default async function MarketingPage() {
   ])
   const perms = new Set(user.permissions ?? [])
   if (!perms.has("marketing.view") && !perms.has("marketing.manage") && !perms.has("website.manage")) redirect("/")
-  const canManage = perms.has("marketing.manage") || perms.has("website.manage")
+  // Two independent concerns, kept cleanly separated:
+  //  - website.manage  → edit site text, images and blog
+  //  - marketing.view  → see tracking/analytics; marketing.manage → edit it
+  const canManageWebsite = perms.has("website.manage")
+  const canManageMarketing = perms.has("marketing.manage")
+  const canViewMarketing = perms.has("marketing.view") || perms.has("marketing.manage")
 
   const enDict = getDictionary("en")
   const arDict = getDictionary("ar")
@@ -56,7 +61,9 @@ export default async function MarketingPage() {
         </div>
         <WebsiteControlCenter
           settings={settings}
-          canManage={canManage}
+          canManageWebsite={canManageWebsite}
+          canManageMarketing={canManageMarketing}
+          canViewMarketing={canViewMarketing}
           fieldValues={fieldValues}
           fieldDefaults={fieldDefaults}
           images={images}

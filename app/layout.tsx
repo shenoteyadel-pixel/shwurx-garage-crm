@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, IBM_Plex_Sans_Arabic } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
 import { LanguageProvider } from "@/lib/i18n/provider"
 import { getServerLocale } from "@/lib/i18n/server"
+import { getSiteContentOverrides } from "@/lib/site-content"
 import { dirFor } from "@/lib/i18n/config"
 import { SiteTracking } from "@/components/site-tracking"
 import { Suspense } from "react"
@@ -30,7 +31,7 @@ export const viewport: Viewport = {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const locale = await getServerLocale()
+  const [locale, overrides] = await Promise.all([getServerLocale(), getSiteContentOverrides()])
 
   return (
     <html
@@ -44,7 +45,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <SiteTracking />
         </Suspense>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
-          <LanguageProvider initialLang={locale}>{children}</LanguageProvider>
+          <LanguageProvider initialLang={locale} overrides={{ en: overrides.en, ar: overrides.ar }}>
+            {children}
+          </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -38,6 +38,7 @@ function isPublicPath(path: string): boolean {
     "/about",
     "/appointment",
     "/contact",
+    "/blog",
   ]
   if (path === "/") return true
   for (const prefix of publicSitePrefixes) {

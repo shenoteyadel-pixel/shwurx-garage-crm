@@ -1,34 +1,30 @@
-import { createClient } from "@/lib/supabase/server"
-import type { EmailOtpType } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 
 /**
- * Verifies a Supabase auth action token WITHOUT relying on Supabase's hosted
- * /auth/v1/verify?...&redirect_to= flow.
+ * Pass-through for auth action links (invite / recovery / set-password).
  *
- * The hosted flow only redirects to a `redirect_to` that is present in the
- * project's Auth "Redirect URLs" allow-list; when it isn't, Supabase silently
- * falls back to the project Site URL (which defaults to http://localhost:3000),
- * which is why invite / recovery links "gave an error" or opened localhost.
+ * IMPORTANT: this route deliberately does NOT call verifyOtp. Auth tokens are
+ * one-time use, and email security scanners (Gmail, Outlook SafeLinks, corporate
+ * antivirus proxies) PREFETCH links in emails — a background GET here would burn
+ * the one-time token before the human ever clicks, which is exactly why invite /
+ * recovery links were landing on /auth/error.
  *
- * Instead, account-links.ts builds links that point here with the
- * `hashed_token` returned by admin.generateLink, and we exchange it for a
- * session directly with verifyOtp. This makes the links work on any device
- * regardless of the Supabase allow-list / Site URL configuration.
+ * Instead we forward the token_hash + type to the set-password page and verify it
+ * ONLY when the person submits their new password (a form POST that scanners do
+ * not trigger). See app/auth/set-password/page.tsx.
  */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const tokenHash = searchParams.get("token_hash")
-  const type = searchParams.get("type") as EmailOtpType | null
-  const next = searchParams.get("next") ?? "/"
+  const type = searchParams.get("type")
+  const next = searchParams.get("next") ?? "/auth/set-password"
 
-  if (tokenHash && type) {
-    const supabase = await createClient()
-    const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`)
-    }
+  if (!tokenHash || !type) {
+    return NextResponse.redirect(`${origin}/auth/error`)
   }
 
-  return NextResponse.redirect(`${origin}/auth/error`)
+  const target = new URL(next.startsWith("/") ? next : "/auth/set-password", origin)
+  target.searchParams.set("token_hash", tokenHash)
+  target.searchParams.set("type", type)
+  return NextResponse.redirect(target)
 }

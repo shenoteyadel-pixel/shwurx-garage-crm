@@ -73,7 +73,14 @@ export async function generateActionLink(opts: {
   redirectPath?: string
 }): Promise<string> {
   const sb = admin()
-  const redirectTo = `${baseUrl()}/auth/callback?next=${encodeURIComponent(opts.redirectPath ?? "/auth/set-password")}`
+  // Auth action links (invite / recovery / set-password) are opened by staff and
+  // customers on their OWN devices, so redirectTo MUST resolve to the real public
+  // site's /auth/callback — never the v0/Supabase redirect proxy origin
+  // (https://v0.app), which has no /auth/callback route and therefore errors for
+  // everyone. appBaseUrl() prefers the deployed domain and only falls back to the
+  // proxy for local dev. (Previously this used baseUrl(), the proxy origin, which
+  // produced https://v0.app/auth/callback — the "link shows an error" bug.)
+  const redirectTo = `${appBaseUrl()}/auth/callback?next=${encodeURIComponent(opts.redirectPath ?? "/auth/set-password")}`
 
   const tryType = async (type: LinkType) => {
     const { data, error } = await sb.auth.admin.generateLink({

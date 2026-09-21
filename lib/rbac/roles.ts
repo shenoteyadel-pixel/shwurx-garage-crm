@@ -80,6 +80,7 @@ export type Permission =
   | "appointments.view" | "appointments.manage"
   | "leads.view" | "leads.manage"
   | "marketing.view" | "marketing.manage"
+  | "website.manage"
   | "users.manage" | "permissions.manage" | "settings.manage" | "audit.view"
 
 export interface PermGroup {
@@ -172,6 +173,7 @@ export const PERMISSION_CATALOG: PermGroup[] = [
       { key: "leads.manage", label: "Manage leads" },
       { key: "marketing.view", label: "View website analytics" },
       { key: "marketing.manage", label: "Manage website tracking & integrations" },
+      { key: "website.manage", label: "Edit website content, images & blog" },
     ],
   },
   {

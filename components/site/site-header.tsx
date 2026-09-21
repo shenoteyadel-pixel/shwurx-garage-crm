@@ -13,6 +13,7 @@ import { SiteControls, SiteControlsStacked } from "@/components/site/site-contro
 const NAV = [
   { href: "/", key: "home" as const },
   { href: "/services", key: "services" as const },
+  { href: "/blog", key: "blog" as const },
   { href: "/#brands", key: "brands" as const },
   { href: "/about", key: "about" as const },
   { href: "/contact", key: "contact" as const },

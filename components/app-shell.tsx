@@ -64,7 +64,7 @@ const NAV_GROUPS = [
       { href: "/leads", label: "Leads", icon: Inbox, anyOf: ["leads.view"] },
       { href: "/customers", label: "Customers", icon: Users, anyOf: ["customers.view"] },
       { href: "/invoices", label: "Invoices", icon: FileText, anyOf: ["invoices.view"] },
-      { href: "/marketing", label: "Marketing & Website", icon: Megaphone, anyOf: ["marketing.view", "marketing.manage"] },
+      { href: "/marketing", label: "Website Control Center", icon: Megaphone, anyOf: ["marketing.view", "marketing.manage", "website.manage"] },
     ],
   },
   {

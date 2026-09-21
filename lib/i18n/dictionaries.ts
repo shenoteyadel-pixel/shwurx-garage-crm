@@ -18,6 +18,7 @@ const en = {
   nav: {
     home: "Home",
     services: "Services",
+    blog: "Blog",
     brands: "Brands",
     about: "About",
     contact: "Contact",
@@ -110,6 +111,14 @@ const en = {
     notSureTitle: "Not sure what you need?",
     notSureBody:
       "Book a visit and our advisors will diagnose the issue and walk you through the options — no pressure.",
+  },
+  blogPage: {
+    title: "News & insights",
+    intro: "Tips, updates and stories from the workshop.",
+    readMore: "Read more",
+    empty: "No posts yet. Check back soon.",
+    backToBlog: "Back to blog",
+    published: "Published",
   },
   aboutPage: {
     title: "Built on trust and craftsmanship",
@@ -322,6 +331,7 @@ const ar: typeof en = {
   nav: {
     home: "الرئيسية",
     services: "الخدمات",
+    blog: "المدونة",
     brands: "الماركات",
     about: "من نحن",
     contact: "اتصل بنا",
@@ -385,7 +395,7 @@ const ar: typeof en = {
     aboutBody:
       "{company} مركز سيارات حديث ومستقل متخصص في المركبات الفاخرة والراقية. نجمع بين قدرات بمستوى الوكالة وتجربة شخصية تركّز على العميل.",
     aboutPoints: [
-      "متخصصون في الماركات الفاخرة",
+      "متخصصون في الم��ركات الفاخرة",
       "تشخيص وبرمجة متقدمة",
       "فني��ن مهرة ومعتمدون",
       "عملية وأسعار شفافة",
@@ -414,10 +424,18 @@ const ar: typeof en = {
     notSureTitle: "لست متأكداً مما تحتاجه؟",
     notSureBody: "احجز زيارة وسيقوم مستشارونا بتشخيص المشكلة وشرح الخيارات لك — دون أي ضغط.",
   },
+  blogPage: {
+    title: "أخبار ومقالات",
+    intro: "نصائح وتحديثات وقصص من الورشة.",
+    readMore: "اقرأ المزيد",
+    empty: "لا توجد مقالات بعد. تفقّد لاحقاً.",
+    backToBlog: "العودة إلى المدونة",
+    published: "نُشر في",
+  },
   aboutPage: {
     title: "مبنيّ على الثقة والحرفية",
     body1:
-      "تأسس {company} على قناعة بسيطة: العناية بسيارة أحدهم يجب أن تكون شفافة ودقيقة وخالية من التوتر تماماً. منذ لحظة استلام مركبتك، ترى بالضبط ما يجري وتوافق على كل خطوة.",
+      "تأسس {company} على قناعة بسيطة: العناية بسيارة أحدهم يجب أن تكون شفا��ة ودقيقة وخالية من التوتر تماماً. منذ لحظة استلام مركبتك، ترى بالضبط ما يجري وتوافق على كل خطوة.",
     body2:
       "يجلب فنيونا المتخصصون خبرة بمستوى الوكالة إلى كل مهمة، مدعومة بتشخيص سليم وقطع غيار أصلية — لتغادر سيارتك بالحالة التي تستحقها.",
     stats: [
@@ -620,4 +638,33 @@ export function getDictionary(locale: Locale): Dict {
 /** Replace {token} placeholders with provided values. */
 export function interpolate(template: string, vars: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, k) => (k in vars ? String(vars[k]) : `{${k}}`))
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+}
+
+/**
+ * Deep-merge editable overrides (from the DB `site_content` table) over the
+ * built-in dictionary. Only keys present in the override replace the defaults,
+ * so unedited text always falls back to the shipped copy. Arrays are replaced
+ * wholesale (the editor submits the full array). This is the single lever that
+ * makes every piece of site text editable from the Website Control Center.
+ */
+export function mergeDict(base: Dict, override: unknown): Dict {
+  if (!isPlainObject(override)) return base
+  return deepMerge(base as unknown as Record<string, unknown>, override) as unknown as Dict
+}
+
+function deepMerge<T>(base: T, override: Record<string, unknown>): T {
+  const out: Record<string, unknown> = Array.isArray(base)
+    ? ([...(base as unknown[])] as unknown as Record<string, unknown>)
+    : { ...(base as Record<string, unknown>) }
+  for (const [k, v] of Object.entries(override)) {
+    if (v === undefined || v === null) continue
+    const bv = (base as Record<string, unknown>)?.[k]
+    if (isPlainObject(v) && isPlainObject(bv)) out[k] = deepMerge(bv, v)
+    else out[k] = v
+  }
+  return out as unknown as T
 }

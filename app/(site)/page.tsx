@@ -12,6 +12,7 @@ import {
 import { SITE_SERVICES } from "@/lib/site-services"
 import { getPublicSiteInfo } from "@/lib/site-info"
 import { getServerI18n } from "@/lib/i18n/server"
+import { getSiteContentOverrides, resolveImage } from "@/lib/site-content"
 import { interpolate } from "@/lib/i18n/dictionaries"
 import { TrackLink } from "@/components/site/track-link"
 
@@ -54,8 +55,14 @@ const BRANDS = [
 ]
 
 export default async function HomePage() {
-  const [info, { dict }] = await Promise.all([getPublicSiteInfo(), getServerI18n()])
+  const [info, { dict }, overrides] = await Promise.all([
+    getPublicSiteInfo(),
+    getServerI18n(),
+    getSiteContentOverrides(),
+  ])
   const t = dict.home
+  const heroImg = resolveImage(overrides.images, "home.hero", "/site/hero-porsche.png")
+  const aboutImg = resolveImage(overrides.images, "home.about", "/site/about-tech.png")
 
   return (
     <>
@@ -64,7 +71,7 @@ export default async function HomePage() {
         {/* Desktop hero image bleeding to the right edge */}
         <div className="absolute inset-y-0 right-0 z-0 hidden w-[62%] lg:block">
           <Image
-            src="/site/hero-porsche.png"
+            src={heroImg || "/placeholder.svg"}
             alt="Porsche parked in the SHWURX Auto Service Center workshop"
             fill
             priority
@@ -132,7 +139,7 @@ export default async function HomePage() {
             {/* Mobile hero image */}
             <div className="relative -mx-4 h-64 sm:h-80 lg:hidden">
               <Image
-                src="/site/hero-porsche.png"
+                src={heroImg || "/placeholder.svg"}
                 alt="Porsche parked in the SHWURX Auto Service Center workshop"
                 fill
                 priority
@@ -189,7 +196,7 @@ export default async function HomePage() {
 
           <div className="relative h-64 overflow-hidden rounded-xl border border-border lg:h-80">
             <Image
-              src="/site/about-tech.png"
+              src={aboutImg || "/placeholder.svg"}
               alt="SHWURX technician running diagnostics on a luxury vehicle"
               fill
               className="object-cover"

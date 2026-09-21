@@ -11,7 +11,10 @@ import {
   isPublicPath,
   type Locale,
 } from "./config"
-import { getDictionary, interpolate, type Dict } from "./dictionaries"
+import { getDictionary, mergeDict, interpolate, type Dict } from "./dictionaries"
+
+/** Editable text overrides for each locale, passed from the server layout. */
+export type DictOverrides = { en?: Record<string, unknown>; ar?: Record<string, unknown> }
 
 type LangContextValue = {
   lang: Locale
@@ -32,9 +35,11 @@ function writeCookie(locale: Locale) {
 
 export function LanguageProvider({
   initialLang,
+  overrides,
   children,
 }: {
   initialLang: Locale
+  overrides?: DictOverrides
   children: React.ReactNode
 }) {
   const router = useRouter()
@@ -85,7 +90,7 @@ export function LanguageProvider({
   )
 
   const value = React.useMemo<LangContextValue>(() => {
-    const dict = getDictionary(lang)
+    const dict = mergeDict(getDictionary(lang), lang === "ar" ? overrides?.ar : overrides?.en)
     return {
       lang,
       dir: dirFor(lang),
@@ -94,7 +99,7 @@ export function LanguageProvider({
       setLang,
       fmt: interpolate,
     }
-  }, [lang, setLang])
+  }, [lang, setLang, overrides])
 
   return <LangContext.Provider value={value}>{children}</LangContext.Provider>
 }

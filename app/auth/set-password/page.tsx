@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import type { EmailOtpType } from "@supabase/supabase-js"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
@@ -12,7 +13,11 @@ export default function SetPasswordPage() {
   const router = useRouter()
   const supabase = createClient()
   const [checking, setChecking] = useState(true)
-  const [hasSession, setHasSession] = useState(false)
+  // Either an already-established session OR a one-time token from the emailed
+  // link makes the form usable. The token is verified on submit (below), never
+  // on page load, so email-scanner prefetches cannot burn it.
+  const [ready, setReady] = useState(false)
+  const [token, setToken] = useState<{ token_hash: string; type: EmailOtpType } | null>(null)
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -20,8 +25,21 @@ export default function SetPasswordPage() {
   const [done, setDone] = useState(false)
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tokenHash = params.get("token_hash")
+    const type = params.get("type") as EmailOtpType | null
+
+    if (tokenHash && type) {
+      // Deferred verification: keep the token and verify only when the user submits.
+      setToken({ token_hash: tokenHash, type })
+      setReady(true)
+      setChecking(false)
+      return
+    }
+
+    // No token in the URL — fall back to an existing session (e.g. hosted-flow link).
     supabase.auth.getSession().then(({ data }) => {
-      setHasSession(!!data.session)
+      setReady(!!data.session)
       setChecking(false)
     })
   }, [supabase])
@@ -38,6 +56,23 @@ export default function SetPasswordPage() {
       return
     }
     setLoading(true)
+
+    // If we arrived with a one-time token, exchange it for a session NOW — this
+    // is the human-initiated action, so the token is spent exactly once here.
+    if (token) {
+      const { error: otpErr } = await supabase.auth.verifyOtp({
+        type: token.type,
+        token_hash: token.token_hash,
+      })
+      if (otpErr) {
+        setError(
+          "This link has expired or was already used. Ask an administrator to resend your invite, or use \u201cForgot password\u201d on the login page.",
+        )
+        setLoading(false)
+        return
+      }
+    }
+
     const { error: updErr } = await supabase.auth.updateUser({ data: { must_set_password: false }, password })
     if (updErr) {
       setError(updErr.message)
@@ -73,7 +108,7 @@ export default function SetPasswordPage() {
             <CheckCircle2 className="h-10 w-10 text-primary" />
             <p className="text-sm text-foreground">Password set. Signing you in…</p>
           </div>
-        ) : !hasSession ? (
+        ) : !ready ? (
           <div className="space-y-3">
             <h1 className="text-lg font-semibold text-foreground">Link expired or invalid</h1>
             <p className="text-sm text-muted-foreground">

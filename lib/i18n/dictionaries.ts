@@ -134,6 +134,7 @@ const en = {
     bookWithUs: "Book with us",
   },
   contactPage: {
+    kicker: "Contact us",
     title: "Get in touch",
     intro:
       "Have a question or want to speak to an advisor? Send us a message and we'll reply quickly — or reach us directly using the details below.",
@@ -142,6 +143,12 @@ const en = {
     whatsappAction: "Message us",
     email: "Email",
     visitUs: "Visit us",
+    whatsappCta: "Chat on WhatsApp",
+    responseTitle: "Quick response",
+    responseBody: "We usually reply within a couple of hours during working hours.",
+    formHeading: "Send us a message",
+    formSub: "Fill in your details and we'll get back to you shortly.",
+    mapTitle: "Our location",
   },
   contactForm: {
     name: "Name",
@@ -395,7 +402,7 @@ const ar: typeof en = {
     aboutBody:
       "{company} مركز سيارات حديث ومستقل متخصص في المركبات الفاخرة والراقية. نجمع بين قدرات بمستوى الوكالة وتجربة شخصية تركّز على العميل.",
     aboutPoints: [
-      "متخصصون في الم��ركات الفاخرة",
+      "متخصصون في الم��ركات الفا��رة",
       "تشخيص وبرمجة متقدمة",
       "فني��ن مهرة ومعتمدون",
       "عملية وأسعار شفافة",
@@ -446,6 +453,7 @@ const ar: typeof en = {
     bookWithUs: "احجز معنا",
   },
   contactPage: {
+    kicker: "تواصل معنا",
     title: "تواصل معنا",
     intro:
       "لديك سؤال أو تود التحدث إلى مستشار؟ أرسل لنا رسالة وسنرد بسرعة — أو تواصل معنا مباشرة عبر التفاصيل أدناه.",
@@ -454,6 +462,12 @@ const ar: typeof en = {
     whatsappAction: "راسلنا",
     email: "البريد الإلكتروني",
     visitUs: "قم بزيارتنا",
+    whatsappCta: "الدردشة على واتساب",
+    responseTitle: "رد سريع",
+    responseBody: "عادةً نرد خلال ساعتين خلال ساعات العمل.",
+    formHeading: "أرسل لنا رسالة",
+    formSub: "أدخل بياناتك وسنعاود التواصل معك قريباً.",
+    mapTitle: "موقعنا",
   },
   contactForm: {
     name: "الاسم",

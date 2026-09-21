@@ -73,14 +73,17 @@ export async function generateActionLink(opts: {
   redirectPath?: string
 }): Promise<string> {
   const sb = admin()
+  const next = opts.redirectPath ?? "/auth/set-password"
   // Auth action links (invite / recovery / set-password) are opened by staff and
-  // customers on their OWN devices, so redirectTo MUST resolve to the real public
-  // site's /auth/callback — never the v0/Supabase redirect proxy origin
-  // (https://v0.app), which has no /auth/callback route and therefore errors for
-  // everyone. appBaseUrl() prefers the deployed domain and only falls back to the
-  // proxy for local dev. (Previously this used baseUrl(), the proxy origin, which
-  // produced https://v0.app/auth/callback — the "link shows an error" bug.)
-  const redirectTo = `${appBaseUrl()}/auth/callback?next=${encodeURIComponent(opts.redirectPath ?? "/auth/set-password")}`
+  // customers on their OWN devices. We deliberately DO NOT use Supabase's hosted
+  // /auth/v1/verify?...&redirect_to= flow, because that redirect is validated
+  // against the project's Auth "Redirect URLs" allow-list; when a target isn't
+  // allow-listed, Supabase silently falls back to the project Site URL (which
+  // defaults to http://localhost:3000) — that was the "link opens localhost /
+  // shows an error" bug. Instead we take the hashed_token that generateLink
+  // returns and build our OWN link to /auth/confirm, which calls verifyOtp
+  // directly. That works on any device regardless of the Supabase URL config.
+  const redirectTo = `${appBaseUrl()}/auth/confirm?next=${encodeURIComponent(next)}`
 
   const tryType = async (type: LinkType) => {
     const { data, error } = await sb.auth.admin.generateLink({
@@ -88,7 +91,19 @@ export async function generateActionLink(opts: {
       email: opts.email,
       options: { redirectTo },
     } as Parameters<typeof sb.auth.admin.generateLink>[0])
-    return { link: data?.properties?.action_link ?? "", error }
+    const props = data?.properties as
+      | { hashed_token?: string; verification_type?: string; action_link?: string }
+      | undefined
+    const hashed = props?.hashed_token
+    const verType = props?.verification_type ?? (type === "magiclink" ? "magiclink" : type)
+    // Prefer our own allow-list-independent confirm link built from the token
+    // hash; only fall back to the raw hosted action_link if the hash is absent.
+    const link = hashed
+      ? `${appBaseUrl()}/auth/confirm?token_hash=${encodeURIComponent(hashed)}&type=${encodeURIComponent(
+          verType,
+        )}&next=${encodeURIComponent(next)}`
+      : (props?.action_link ?? "")
+    return { link, error }
   }
 
   let { link, error } = await tryType(opts.type)

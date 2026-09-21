@@ -17,6 +17,7 @@ export type Role =
   | "parts_staff"
   | "finance"
   | "washing"
+  | "marketing"
   | "viewer"
   | "customer"
 
@@ -44,6 +45,7 @@ export const ROLE_LIST: RoleMeta[] = [
   { value: "parts_staff", label: "Parts Staff", description: "Handles parts and inventory. No purchasing or reports.", home: "/parts", staff: true },
   { value: "finance", label: "Finance / Accounts", description: "Invoices, payments and financial reports. No workshop edits.", home: "/invoices", staff: true },
   { value: "washing", label: "Washing / Detailing", description: "Works on assigned wash jobs and updates their status.", home: "/", staff: true },
+  { value: "marketing", label: "Marketing / Agency", description: "Manages website tracking codes and integrations (GA4, Tag Manager, Meta Pixel) and views leads. No workshop or financial access.", home: "/marketing", staff: true },
   { value: "viewer", label: "Viewer (Read-only)", description: "Read-only visibility across the CRM.", home: "/", staff: true },
   { value: "customer", label: "Customer", description: "Portal access to own vehicles, jobs and invoices only.", home: "/portal", staff: false },
 ]
@@ -77,7 +79,7 @@ export type Permission =
   | "reports.view" | "reports.financial"
   | "appointments.view" | "appointments.manage"
   | "leads.view" | "leads.manage"
-  | "marketing.view"
+  | "marketing.view" | "marketing.manage"
   | "users.manage" | "permissions.manage" | "settings.manage" | "audit.view"
 
 export interface PermGroup {
@@ -169,6 +171,7 @@ export const PERMISSION_CATALOG: PermGroup[] = [
       { key: "leads.view", label: "View leads" },
       { key: "leads.manage", label: "Manage leads" },
       { key: "marketing.view", label: "View website analytics" },
+      { key: "marketing.manage", label: "Manage website tracking & integrations" },
     ],
   },
   {

@@ -669,13 +669,6 @@ function PartRow({
 }
 
 /* ---------------- Labour row ---------------- */
-const LABOUR_PRESETS: { name: string; rate: number; category: string }[] = [
-  { name: "Mechanic labour", rate: 170, category: "Mechanical" },
-  { name: "Electric labour", rate: 270, category: "Electrical" },
-  { name: "Paint", rate: 150, category: "Bodywork" },
-  { name: "Dent", rate: 180, category: "Bodywork" },
-]
-
 function LabourRow({
   it,
   vat,

@@ -4,7 +4,7 @@ import { useState, useMemo, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Button, Input, Label, Select, Combo } from "@/components/ui"
 import { Modal } from "@/components/modal"
-import { updateJobDetails } from "@/lib/actions"
+import { updateJobDetails, deleteJob } from "@/lib/actions"
 import { identifyVehicle } from "@/lib/actions-vehicle-id"
 import { UAE_EMIRATES, COMMON_COLORS } from "@/lib/constants"
 import { BODY_TYPES, inferBodyType, MODEL_SUGGESTIONS } from "@/lib/vehicle"
@@ -15,7 +15,7 @@ import {
   catalogBodyType,
   yearOptions,
 } from "@/lib/vehicle-catalog"
-import { Pencil, Sparkles } from "lucide-react"
+import { Pencil, Sparkles, Trash2 } from "lucide-react"
 
 type JobVehicle = {
   id: string
@@ -41,11 +41,28 @@ type JobVehicle = {
  * Writes straight to the job row via updateJobDetails (guarded by
  * jobs.update_status).
  */
-export function EditJobVehicle({ job }: { job: JobVehicle }) {
+export function EditJobVehicle({
+  job,
+  canDelete = false,
+  jobNumber,
+}: {
+  job: JobVehicle
+  /** Owner-only: reveals the "Delete job card" action inside this editor. */
+  canDelete?: boolean
+  jobNumber?: string
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
+
+  // Inline (non-nested) delete flow, owner-only. Kept in the same modal so a car
+  // can be removed straight from the editor, with a typed confirmation to guard
+  // against accidental removal of a card carrying quotes, invoices and photos.
+  const [showDelete, setShowDelete] = useState(false)
+  const [confirmText, setConfirmText] = useState("")
+  const [deleting, startDelete] = useTransition()
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // Controlled so the model/variant option lists react to make + year.
   const [make, setMake] = useState(job.vehicle_make ?? "")
@@ -320,6 +337,89 @@ export function EditJobVehicle({ job }: { job: JobVehicle }) {
             </Button>
           </div>
         </form>
+
+        {canDelete ? (
+          <div className="mt-5 border-t border-destructive/30 pt-4">
+            {!showDelete ? (
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Delete job card</p>
+                  <p className="text-xs text-muted-foreground">
+                    Moves this car to the Recycle Bin. Recoverable; linked invoices are kept.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowDelete(true)
+                    setDeleteError(null)
+                    setConfirmText("")
+                  }}
+                  className="shrink-0 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  This moves job card{" "}
+                  <span className="font-mono text-foreground">{jobNumber ?? ""}</span> to the Recycle
+                  Bin. It will be hidden from Car Flow, job lists, CRM and history, but can be restored
+                  later.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="confirm-delete-job">
+                    Type <span className="font-mono text-foreground">DELETE</span> to confirm
+                  </Label>
+                  <Input
+                    id="confirm-delete-job"
+                    value={confirmText}
+                    onChange={(e) => setConfirmText(e.target.value)}
+                    placeholder="DELETE"
+                    autoComplete="off"
+                  />
+                </div>
+                {deleteError ? <p className="text-sm text-destructive">{deleteError}</p> : null}
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowDelete(false)
+                      setConfirmText("")
+                      setDeleteError(null)
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={deleting || confirmText.trim().toUpperCase() !== "DELETE"}
+                    onClick={() => {
+                      setDeleteError(null)
+                      startDelete(async () => {
+                        try {
+                          await deleteJob(job.id)
+                          // deleteJob redirects to /flow on success.
+                        } catch (e: any) {
+                          setDeleteError(e?.message ?? "Failed to delete job card")
+                        }
+                      })
+                    }}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {deleting ? "Deleting…" : "Move to Recycle Bin"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
       </Modal>
     </>
   )

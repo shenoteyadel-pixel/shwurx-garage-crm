@@ -13,6 +13,27 @@ import { suggestSalePrice } from "@/lib/pricing"
 // invoices, matching the nav, layout and dashboard buttons.
 const INVOICE_PERMS: Permission[] = ["purchase_orders.manage", "parts.view"]
 
+/**
+ * Result contract for mutating invoice actions. We deliberately RETURN errors
+ * instead of throwing: a thrown Server Action error is redacted by Next.js in
+ * production into the opaque "Minified React error #441", which hides the real
+ * cause from staff. Returning a plain object is always serializable and lets
+ * the UI show the actual message.
+ */
+export type InvoiceActionResult = { ok: true } | { ok: false; error: string }
+
+/** Turn any caught value into a human-readable message (never leaks #441). */
+function toActionError(e: unknown, fallback: string): { ok: false; error: string } {
+  const msg =
+    e instanceof ForbiddenError
+      ? "You do not have permission to do this."
+      : e instanceof Error && e.message
+        ? e.message
+        : fallback
+  console.error(`[v0] invoice action failed: ${msg}`)
+  return { ok: false, error: msg }
+}
+
 async function guard(): Promise<{
   supabase: Awaited<ReturnType<typeof createClient>>
   ctx: SessionContext
@@ -305,7 +326,8 @@ export async function saveInvoiceDraft(payload: {
   discountAmount: number
   notes: string | null
   lines: DraftLine[]
-}) {
+}): Promise<InvoiceActionResult> {
+  try {
   const { supabase } = await guard()
 
   const clean = payload.lines.filter((l) => (l.description || "").trim())
@@ -361,12 +383,17 @@ export async function saveInvoiceDraft(payload: {
     if (itemErr) throw new Error(itemErr.message)
   }
   revalidatePath(`/purchasing/invoices/${payload.id}`)
+  return { ok: true }
+  } catch (e) {
+    return toActionError(e, "Could not save the invoice draft.")
+  }
 }
 
 /* ============================================================
    3. Confirm -> post to inventory, stock movements, ledger
    ============================================================ */
-export async function confirmSupplierInvoice(id: string) {
+export async function confirmSupplierInvoice(id: string): Promise<InvoiceActionResult> {
+  try {
   const { supabase, ctx, userId } = await guard()
 
   const { data: invoice, error: invErr } = await supabase
@@ -524,12 +551,17 @@ export async function confirmSupplierInvoice(id: string) {
   revalidatePath("/inventory")
   revalidatePath("/suppliers")
   revalidatePath("/parts")
+  return { ok: true }
+  } catch (e) {
+    return toActionError(e, "Could not confirm the invoice.")
+  }
 }
 
 /* ============================================================
    4. Record a payment against a confirmed invoice
    ============================================================ */
-export async function recordSupplierInvoicePayment(id: string, formData: FormData) {
+export async function recordSupplierInvoicePayment(id: string, formData: FormData): Promise<InvoiceActionResult> {
+  try {
   const { supabase, userId } = await guard()
   const amount = n(formData.get("amount"))
   if (amount <= 0) throw new Error("Enter a positive amount")
@@ -560,13 +592,18 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
 
   revalidatePath(`/purchasing/invoices/${id}`)
   revalidatePath("/suppliers")
+  return { ok: true }
+  } catch (e) {
+    return toActionError(e, "Could not record the payment.")
+  }
 }
 
 /**
  * Flag a confirmed invoice as on-account / credit (bought on the supplier's
  * credit terms, not yet paid). Toggles back to unpaid if undone.
  */
-export async function setSupplierInvoiceOnAccount(id: string, onAccount: boolean) {
+export async function setSupplierInvoiceOnAccount(id: string, onAccount: boolean): Promise<InvoiceActionResult> {
+  try {
   const { supabase } = await guard()
   const { data: invoice } = await supabase.from("supplier_invoices").select("status, amount_paid, total").eq("id", id).single()
   if (!invoice || invoice.status !== "confirmed") throw new Error("Invoice is not confirmed")
@@ -579,15 +616,20 @@ export async function setSupplierInvoiceOnAccount(id: string, onAccount: boolean
     .eq("id", id)
   revalidatePath(`/purchasing/invoices/${id}`)
   revalidatePath("/suppliers")
+  return { ok: true }
+  } catch (e) {
+    return toActionError(e, "Could not update the invoice.")
+  }
 }
 
 /* ============================================================
    6. Delete a draft (removes stored original)
    ============================================================ */
-export async function deleteInvoiceDraft(id: string) {
+export async function deleteInvoiceDraft(id: string): Promise<InvoiceActionResult> {
+  try {
   const { supabase, ctx } = await guard()
   const { data: invoice } = await supabase.from("supplier_invoices").select("status, blob_pathname").eq("id", id).single()
-  if (!invoice) return
+  if (!invoice) return { ok: true }
   if (invoice.status !== "draft") throw new Error("Only draft invoices can be deleted")
 
   if (invoice.blob_pathname) {
@@ -600,4 +642,8 @@ export async function deleteInvoiceDraft(id: string) {
   await supabase.from("supplier_invoices").delete().eq("id", id)
   await logAction(ctx, "supplier_invoice_deleted", "supplier_invoice", id)
   revalidatePath("/purchasing/invoices")
+  return { ok: true }
+  } catch (e) {
+    return toActionError(e, "Could not delete the draft.")
+  }
 }

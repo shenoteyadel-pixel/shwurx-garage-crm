@@ -198,7 +198,7 @@ export function InvoiceReview({
     setAction("save")
     start(async () => {
       try {
-        await saveInvoiceDraft({
+        const res = await saveInvoiceDraft({
           id: invoice.id,
           supplierId: supplierId || null,
           invoiceNumber: invoiceNumber || null,
@@ -207,6 +207,10 @@ export function InvoiceReview({
           notes: notes || null,
           lines: toDraftLines(),
         })
+        if (!res.ok) {
+          setErr(res.error)
+          return
+        }
         if (then) then()
         else router.refresh()
       } catch (e) {
@@ -227,7 +231,7 @@ export function InvoiceReview({
     start(async () => {
       try {
         // Persist current edits first, then post to stock + ledger.
-        await saveInvoiceDraft({
+        const saved = await saveInvoiceDraft({
           id: invoice.id,
           supplierId,
           invoiceNumber: invoiceNumber || null,
@@ -236,7 +240,15 @@ export function InvoiceReview({
           notes: notes || null,
           lines: toDraftLines(),
         })
-        await confirmSupplierInvoice(invoice.id)
+        if (!saved.ok) {
+          setErr(saved.error)
+          return
+        }
+        const confirmed = await confirmSupplierInvoice(invoice.id)
+        if (!confirmed.ok) {
+          setErr(confirmed.error)
+          return
+        }
         router.refresh()
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Could not confirm")
@@ -251,7 +263,12 @@ export function InvoiceReview({
     setAction("delete")
     start(async () => {
       try {
-        await deleteInvoiceDraft(invoice.id)
+        const res = await deleteInvoiceDraft(invoice.id)
+        if (!res.ok) {
+          setErr(res.error)
+          setAction(null)
+          return
+        }
         router.push("/purchasing/invoices")
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Could not delete")
@@ -782,6 +799,7 @@ function PaymentPanel({
   payments: { id: string; amount: number; method: string; reference: string | null; paid_at: string }[]
 }) {
   const [pending, start] = React.useTransition()
+  const [payErr, setPayErr] = React.useState<string | null>(null)
   const balance = invoice.total - invoice.amount_paid
   const paid = invoice.payment_status === "paid"
   const onAccount = invoice.payment_status === "credit"
@@ -794,7 +812,13 @@ function PaymentPanel({
           <button
             type="button"
             disabled={pending}
-            onClick={() => start(async () => { await setSupplierInvoiceOnAccount(invoice.id, !onAccount) })}
+            onClick={() =>
+              start(async () => {
+                setPayErr(null)
+                const res = await setSupplierInvoiceOnAccount(invoice.id, !onAccount)
+                if (!res.ok) setPayErr(res.error)
+              })
+            }
             className="text-xs text-sky-300 hover:underline disabled:opacity-50"
           >
             {onAccount ? "Clear on-account" : "Mark on account (credit)"}
@@ -804,6 +828,12 @@ function PaymentPanel({
       {onAccount && (
         <p className="mb-3 rounded-lg bg-sky-500/10 px-3 py-2 text-center text-xs text-sky-300">
           On account — outstanding on supplier credit terms.
+        </p>
+      )}
+      {payErr && (
+        <p className="mb-3 flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{payErr}</span>
         </p>
       )}
       {payments.length > 0 && (
@@ -824,7 +854,9 @@ function PaymentPanel({
         <form
           action={(fd) =>
             start(async () => {
-              await recordSupplierInvoicePayment(invoice.id, fd)
+              setPayErr(null)
+              const res = await recordSupplierInvoicePayment(invoice.id, fd)
+              if (!res.ok) setPayErr(res.error)
             })
           }
           className="space-y-2"

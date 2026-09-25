@@ -318,7 +318,7 @@ export type DraftLine = {
   markup_pct: number
 }
 
-export async function saveInvoiceDraft(payload: {
+export type SaveDraftPayload = {
   id: string
   supplierId: string | null
   invoiceNumber: string | null
@@ -326,10 +326,17 @@ export async function saveInvoiceDraft(payload: {
   discountAmount: number
   notes: string | null
   lines: DraftLine[]
-}): Promise<InvoiceActionResult> {
-  try {
-  const { supabase } = await guard()
+}
 
+/**
+ * Core draft-save DB logic. Takes an already-guarded client and does NOT
+ * revalidate — the exported wrappers own guarding and cache revalidation so
+ * this can be reused by the combined save+confirm action. Throws on failure.
+ */
+async function applyDraft(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  payload: SaveDraftPayload,
+): Promise<void> {
   const clean = payload.lines.filter((l) => (l.description || "").trim())
   const subtotal = clean.reduce((t, l) => t + n(l.quantity) * n(l.unit_cost), 0)
   const vat = clean.reduce((t, l) => t + (n(l.quantity) * n(l.unit_cost) * n(l.vat_rate)) / 100, 0)

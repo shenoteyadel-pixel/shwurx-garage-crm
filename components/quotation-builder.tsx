@@ -703,9 +703,9 @@ function LabourRow({
         </button>
       </div>
 
-      {/* Selectable labour type — sets name + fixed flat rate */}
+      {/* Selectable labour type — sets name + hourly rate */}
       <div className="mb-3">
-        <Label>Labour type (fixed rate)</Label>
+        <Label>Labour type (rate / hour)</Label>
         <div className="flex flex-wrap gap-2">
           {LABOUR_PRESETS.map((p) => {
             const active = activePreset?.name === p.name
@@ -717,7 +717,7 @@ function LabourRow({
                   onChange({
                     name: p.name,
                     labour_rate: p.rate,
-                    labour_hours: 0,
+                    labour_hours: it.labour_hours && it.labour_hours > 0 ? it.labour_hours : 1,
                     category: it.category?.trim() ? it.category : p.category,
                   })
                 }
@@ -728,13 +728,13 @@ function LabourRow({
                 }`}
               >
                 {p.name}
-                <span className="tabular-nums opacity-70">{formatCurrency(p.rate)}</span>
+                <span className="tabular-nums opacity-70">{formatCurrency(p.rate)}/hr</span>
               </button>
             )
           })}
         </div>
         <p className="mt-1.5 text-[11px] text-muted-foreground">
-          Pick a labour type to auto-fill the name and fixed rate, or type a custom name and rate below.
+          Pick a labour type to auto-fill the name and hourly rate, then set how many hours the job takes below.
         </p>
       </div>
 
@@ -758,7 +758,7 @@ function LabourRow({
           onChange={(v) => onChange({ labour_hours: v })}
         />
         <NumField
-          label={`Labour rate${inclusive ? " (incl.)" : ""}`}
+          label={`Rate / hour${inclusive ? " (incl.)" : ""}`}
           value={it.labour_rate}
           step="0.01"
           onChange={(v) => onChange({ labour_rate: v })}
@@ -766,7 +766,7 @@ function LabourRow({
         <NumField label="Discount" value={it.discount} step="0.01" onChange={(v) => onChange({ discount: v })} />
       </div>
       <p className="mt-1.5 text-[11px] text-muted-foreground">
-        If hours are set, the line = hours × rate. Leave hours at 0 to use the rate as a flat labour charge.
+        Line total = hours × rate/hour − discount. Set the number of hours the job takes for the selected labour type.
       </p>
 
       <LineFooter vat={vat} lineVat={lineVat} total={total} inclusive={inclusive} />

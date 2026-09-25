@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { upload } from "@vercel/blob/client"
 import { Button } from "@/components/ui"
 import { extractAndCreateInvoice } from "@/lib/actions-invoices"
 import { UploadCloud, Camera, Loader2, FileWarning } from "lucide-react"
@@ -20,12 +21,29 @@ export function InvoiceUpload() {
 
   async function handleFile(file: File | undefined) {
     if (!file || busy) return
+    if (file.size > 20 * 1024 * 1024) {
+      setError("File is larger than 20MB")
+      return
+    }
     setError(null)
     setBusy(true)
     try {
-      const fd = new FormData()
-      fd.set("file", file)
-      const res = await extractAndCreateInvoice(fd)
+      // Upload the original scan/PDF DIRECTLY to Vercel Blob from the browser.
+      // Server Actions run as serverless functions capped at ~4.5MB of request
+      // body, so sending a multi-MB phone photo through the action failed before
+      // it ran (opaque "React error #441"). Direct-to-Blob avoids that limit; the
+      // action then only receives the small blob pathname.
+      const ext = file.name.split(".").pop()?.toLowerCase() || "bin"
+      const blob = await upload(`supplier-invoices/${crypto.randomUUID()}.${ext}`, file, {
+        access: "private",
+        contentType: file.type || undefined,
+        handleUploadUrl: "/api/invoices/blob-upload",
+      })
+      const res = await extractAndCreateInvoice({
+        pathname: blob.pathname,
+        contentType: file.type || null,
+        fileName: file.name,
+      })
       if (res.ok) router.push(`/purchasing/invoices/${res.id}`)
       else setError(res.error)
     } catch (e) {

@@ -1,7 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { put, del } from "@vercel/blob"
+import { get, del } from "@vercel/blob"
 import { revalidatePath } from "next/cache"
 import { requireAnyPermission, logAction, ForbiddenError, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
@@ -113,13 +113,19 @@ function suggestPartsRequest(
    ============================================================ */
 export type ExtractResult = { ok: true; id: string } | { ok: false; error: string }
 
-export async function extractAndCreateInvoice(formData: FormData): Promise<ExtractResult> {
+export type UploadedInvoiceInput = {
+  pathname: string
+  contentType?: string | null
+  fileName?: string | null
+}
+
+export async function extractAndCreateInvoice(input: UploadedInvoiceInput): Promise<ExtractResult> {
   // A server action that THROWS is surfaced to the browser as an opaque
   // "Minified React error #441" with no detail. Catch everything here and
   // return a readable message so the upload UI can show the real reason
   // instead of a cryptic React error.
   try {
-    return await runExtractAndCreateInvoice(formData)
+    return await runExtractAndCreateInvoice(input)
   } catch (e) {
     console.error("[v0] extractAndCreateInvoice failed:", e)
     const message =
@@ -132,28 +138,28 @@ export async function extractAndCreateInvoice(formData: FormData): Promise<Extra
   }
 }
 
-async function runExtractAndCreateInvoice(formData: FormData): Promise<ExtractResult> {
+async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<ExtractResult> {
   const { supabase, ctx, userId } = await guard()
 
-  const file = formData.get("file")
-  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "No file provided" }
-  if (file.size > 20 * 1024 * 1024) return { ok: false, error: "File is larger than 20MB" }
+  // The browser already uploaded the original scan/PDF DIRECTLY to Vercel Blob
+  // (private) and passes us only its pathname. This bypasses the ~4.5MB request
+  // body limit on serverless Server Actions — a phone photo of an invoice is
+  // usually several MB and was rejected before the action even ran, surfacing
+  // as an opaque "React error #441".
+  const blobPathname = input?.pathname
+  if (!blobPathname) return { ok: false, error: "No file provided" }
 
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  const ext = file.name.split(".").pop() || "bin"
-  const pathname = `supplier-invoices/${crypto.randomUUID()}.${ext}`
-
-  // Store the original permanently (private) so it's always viewable/auditable.
-  let blobPathname: string
+  // Read the uploaded file back for OCR.
+  let bytes: Uint8Array
+  let contentType = input.contentType || "image/jpeg"
   try {
-    const blob = await put(pathname, file, {
-      access: "private",
-      contentType: file.type || "application/octet-stream",
-    })
-    blobPathname = blob.pathname
+    const stored = await get(blobPathname, { access: "private" })
+    if (!stored) return { ok: false, error: "Uploaded file could not be found" }
+    contentType = stored.blob.contentType || contentType
+    bytes = new Uint8Array(await new Response(stored.stream).arrayBuffer())
   } catch (e) {
-    console.error("[v0] invoice blob upload failed:", e)
-    return { ok: false, error: "Could not store the uploaded file" }
+    console.error("[v0] reading uploaded invoice blob failed:", e)
+    return { ok: false, error: "Could not read the uploaded file" }
   }
 
   const settings = await getSettings()
@@ -161,7 +167,7 @@ async function runExtractAndCreateInvoice(formData: FormData): Promise<ExtractRe
   // OCR is best-effort: a failure still yields an editable draft with the file.
   let extracted: Awaited<ReturnType<typeof extractInvoice>> | null = null
   try {
-    extracted = await extractInvoice(bytes, file.type || "image/jpeg")
+    extracted = await extractInvoice(bytes, contentType)
   } catch (e) {
     console.error("[v0] invoice OCR failed:", e)
   }
@@ -193,7 +199,7 @@ async function runExtractAndCreateInvoice(formData: FormData): Promise<ExtractRe
       total: n(extracted?.total),
       status: "draft",
       blob_pathname: blobPathname,
-      file_type: file.type || null,
+      file_type: contentType || null,
       ocr_confidence: extracted?.confidence ?? null,
       ocr_raw: extracted ? (extracted as unknown as Record<string, unknown>) : null,
       created_by: userId,

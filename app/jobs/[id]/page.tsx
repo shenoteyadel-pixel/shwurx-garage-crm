@@ -14,7 +14,6 @@ import { JobPhotos } from "@/components/job-photos"
 import { StaffAssign } from "@/components/staff-assign"
 import { CarExpensesManager, type CarExpense } from "@/components/car-expenses-manager"
 import { EditJobVehicle } from "@/components/edit-job-vehicle"
-import { DeleteJobButton } from "@/components/delete-job-button"
 import { getSessionContext } from "@/lib/rbac/context"
 import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
@@ -433,7 +432,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Vehicle details
                 </span>
-                {canEditVehicle && <EditJobVehicle job={job as any} />}
+                {canEditVehicle && (
+                  <EditJobVehicle job={job as any} canDelete={isOwner} jobNumber={job.job_number} />
+                )}
               </div>
               <div className="space-y-2 text-sm">
                 <Detail icon={Car} label="Make / Model" value={[job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "—"} />
@@ -443,11 +444,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 <Detail icon={Hash} label="Mileage" value={job.mileage ? `${job.mileage.toLocaleString()} km` : "—"} />
                 <Detail icon={Fingerprint} label="VIN" value={job.vin || "—"} mono />
               </div>
-              {isOwner && (
-                <div className="mt-4">
-                  <DeleteJobButton jobId={job.id} jobNumber={job.job_number} />
-                </div>
-              )}
+
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm">
               <span className="text-muted-foreground">QC</span>

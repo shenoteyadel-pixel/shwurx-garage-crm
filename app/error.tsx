@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Card, Button } from "@/components/ui"
 import { AlertTriangle, RotateCw, Home } from "lucide-react"
 
@@ -18,6 +18,8 @@ export default function AppError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  const router = useRouter()
+
   React.useEffect(() => {
     console.error("[v0] app render error:", error)
   }, [error])
@@ -42,11 +44,9 @@ export default function AppError({
             <RotateCw className="mr-2 h-4 w-4" aria-hidden="true" />
             Try again
           </Button>
-          <Button asChild variant="outline">
-            <Link href="/">
-              <Home className="mr-2 h-4 w-4" aria-hidden="true" />
-              Go home
-            </Link>
+          <Button variant="outline" onClick={() => router.push("/")}>
+            <Home className="mr-2 h-4 w-4" aria-hidden="true" />
+            Go home
           </Button>
         </div>
       </Card>

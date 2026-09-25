@@ -45,11 +45,9 @@ export default function InvoiceReviewError({
             <RotateCw className="mr-2 h-4 w-4" aria-hidden="true" />
             Try again
           </Button>
-          <Button asChild variant="outline">
-            <Link href="/purchasing/invoices">
-              <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
-              Back to invoices
-            </Link>
+          <Button variant="outline" onClick={() => router.push("/purchasing/invoices")}>
+            <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
+            Back to invoices
           </Button>
         </div>
       </Card>

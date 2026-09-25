@@ -29,6 +29,15 @@ export const RECOMMENDATIONS: { value: Recommendation; label: string; chip: stri
   { value: "optional", label: "Optional", chip: "border-sky-500/30 bg-sky-500/10 text-sky-300" },
 ]
 
+// Fixed per-labour-type rates. Selecting a type fills the line name + rate
+// as a flat labour charge (hours left at 0). Rates stay editable afterwards.
+export const LABOUR_PRESETS: { name: string; rate: number; category: string }[] = [
+  { name: "Mechanic Labour", rate: 170, category: "Engine" },
+  { name: "Electric Labour", rate: 270, category: "Electrical" },
+  { name: "Paint", rate: 150, category: "Body & Paint" },
+  { name: "Dent", rate: 180, category: "Body & Paint" },
+]
+
 export const CATEGORY_SUGGESTIONS = [
   "Engine",
   "Brakes",

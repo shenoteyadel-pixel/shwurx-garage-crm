@@ -660,6 +660,13 @@ function PartRow({
 }
 
 /* ---------------- Labour row ---------------- */
+const LABOUR_PRESETS: { name: string; rate: number; category: string }[] = [
+  { name: "Mechanic labour", rate: 170, category: "Mechanical" },
+  { name: "Electric labour", rate: 270, category: "Electrical" },
+  { name: "Paint", rate: 150, category: "Bodywork" },
+  { name: "Dent", rate: 180, category: "Bodywork" },
+]
+
 function LabourRow({
   it,
   vat,
@@ -674,6 +681,7 @@ function LabourRow({
   onRemove: () => void
 }) {
   const { vat: lineVat, total } = lineParts(it, vat, inclusive)
+  const activePreset = LABOUR_PRESETS.find((p) => p.name === it.name && p.rate === it.labour_rate)
   return (
     <div className="rounded-xl border border-border bg-card/60 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -691,6 +699,41 @@ function LabourRow({
         >
           <Trash2 className="h-4 w-4" />
         </button>
+      </div>
+
+      {/* Selectable labour type — sets name + hourly rate */}
+      <div className="mb-3">
+        <Label>Labour type (rate / hour)</Label>
+        <div className="flex flex-wrap gap-2">
+          {LABOUR_PRESETS.map((p) => {
+            const active = activePreset?.name === p.name
+            return (
+              <button
+                key={p.name}
+                type="button"
+                onClick={() =>
+                  onChange({
+                    name: p.name,
+                    labour_rate: p.rate,
+                    labour_hours: it.labour_hours && it.labour_hours > 0 ? it.labour_hours : 1,
+                    category: it.category?.trim() ? it.category : p.category,
+                  })
+                }
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  active
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                {p.name}
+                <span className="tabular-nums opacity-70">{formatCurrency(p.rate)}/hr</span>
+              </button>
+            )
+          })}
+        </div>
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          Pick a labour type to auto-fill the name and hourly rate, then set how many hours the job takes below.
+        </p>
       </div>
 
       <CategoryRecoRow it={it} onChange={onChange} />
@@ -713,7 +756,7 @@ function LabourRow({
           onChange={(v) => onChange({ labour_hours: v })}
         />
         <NumField
-          label={`Labour rate${inclusive ? " (incl.)" : ""}`}
+          label={`Rate / hour${inclusive ? " (incl.)" : ""}`}
           value={it.labour_rate}
           step="0.01"
           onChange={(v) => onChange({ labour_rate: v })}
@@ -721,7 +764,7 @@ function LabourRow({
         <NumField label="Discount" value={it.discount} step="0.01" onChange={(v) => onChange({ discount: v })} />
       </div>
       <p className="mt-1.5 text-[11px] text-muted-foreground">
-        If hours are set, the line = hours × rate. Leave hours at 0 to use the rate as a flat labour charge.
+        Line total = hours × rate/hour − discount. Set the number of hours the job takes for the selected labour type.
       </p>
 
       <LineFooter vat={vat} lineVat={lineVat} total={total} inclusive={inclusive} />

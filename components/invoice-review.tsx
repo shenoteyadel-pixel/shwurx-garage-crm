@@ -7,7 +7,7 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 import { suggestSalePrice, marginPct, type PricingMethod } from "@/lib/pricing"
 import {
   saveInvoiceDraft,
-  confirmSupplierInvoice,
+  saveAndConfirmSupplierInvoice,
   recordSupplierInvoicePayment,
   setSupplierInvoiceOnAccount,
   deleteInvoiceDraft,
@@ -230,8 +230,13 @@ export function InvoiceReview({
     setAction("confirm")
     start(async () => {
       try {
-        // Persist current edits first, then post to stock + ledger.
-        const saved = await saveInvoiceDraft({
+        // Persist the current edits AND post to stock + ledger in a SINGLE
+        // server action. Splitting this into saveInvoiceDraft() followed by
+        // confirmSupplierInvoice() ran a cache revalidation re-render between
+        // the two calls; when that re-render failed it rejected the save with
+        // an opaque "#441" and the confirm never ran, leaving the invoice
+        // stuck as a draft. One action = one trailing revalidation.
+        const confirmed = await saveAndConfirmSupplierInvoice({
           id: invoice.id,
           supplierId,
           invoiceNumber: invoiceNumber || null,
@@ -240,11 +245,6 @@ export function InvoiceReview({
           notes: notes || null,
           lines: toDraftLines(),
         })
-        if (!saved.ok) {
-          setErr(saved.error)
-          return
-        }
-        const confirmed = await confirmSupplierInvoice(invoice.id)
         if (!confirmed.ok) {
           setErr(confirmed.error)
           return

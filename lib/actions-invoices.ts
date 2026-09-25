@@ -318,7 +318,7 @@ export type DraftLine = {
   markup_pct: number
 }
 
-export async function saveInvoiceDraft(payload: {
+export type SaveDraftPayload = {
   id: string
   supplierId: string | null
   invoiceNumber: string | null
@@ -326,10 +326,17 @@ export async function saveInvoiceDraft(payload: {
   discountAmount: number
   notes: string | null
   lines: DraftLine[]
-}): Promise<InvoiceActionResult> {
-  try {
-  const { supabase } = await guard()
+}
 
+/**
+ * Core draft-save DB logic. Takes an already-guarded client and does NOT
+ * revalidate — the exported wrappers own guarding and cache revalidation so
+ * this can be reused by the combined save+confirm action. Throws on failure.
+ */
+async function applyDraft(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  payload: SaveDraftPayload,
+): Promise<void> {
   const clean = payload.lines.filter((l) => (l.description || "").trim())
   const subtotal = clean.reduce((t, l) => t + n(l.quantity) * n(l.unit_cost), 0)
   const vat = clean.reduce((t, l) => t + (n(l.quantity) * n(l.unit_cost) * n(l.vat_rate)) / 100, 0)
@@ -382,8 +389,19 @@ export async function saveInvoiceDraft(payload: {
     )
     if (itemErr) throw new Error(itemErr.message)
   }
-  revalidatePath(`/purchasing/invoices/${payload.id}`)
-  return { ok: true }
+}
+
+/**
+ * Save edits to a draft (exported wrapper: guard + apply + single revalidate).
+ * Used by the standalone "Save draft" button.
+ */
+export async function saveInvoiceDraft(payload: SaveDraftPayload): Promise<InvoiceActionResult> {
+  try {
+    const { supabase } = await guard()
+    await applyDraft(supabase, payload)
+    revalidatePath(`/purchasing/invoices/${payload.id}`)
+    revalidatePath("/purchasing/invoices")
+    return { ok: true }
   } catch (e) {
     return toActionError(e, "Could not save the invoice draft.")
   }
@@ -392,10 +410,17 @@ export async function saveInvoiceDraft(payload: {
 /* ============================================================
    3. Confirm -> post to inventory, stock movements, ledger
    ============================================================ */
-export async function confirmSupplierInvoice(id: string): Promise<InvoiceActionResult> {
-  try {
-  const { supabase, ctx, userId } = await guard()
-
+/**
+ * Core confirm DB logic. Takes an already-guarded client and does NOT
+ * revalidate — the exported wrappers own guarding and cache revalidation so
+ * this can be reused by the combined save+confirm action. Throws on failure.
+ */
+async function applyConfirm(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ctx: SessionContext,
+  userId: string,
+  id: string,
+): Promise<void> {
   const { data: invoice, error: invErr } = await supabase
     .from("supplier_invoices")
     .select("id, status, supplier_id, supplier_name_raw, invoice_number, total, ocr_raw")
@@ -546,12 +571,47 @@ export async function confirmSupplierInvoice(id: string): Promise<InvoiceActionR
   if (updErr) throw new Error(updErr.message)
 
   await logAction(ctx, "supplier_invoice_confirmed", "supplier_invoice", id)
+}
+
+/** Revalidate every surface a confirmed invoice touches. */
+function revalidateConfirm(id: string): void {
   revalidatePath(`/purchasing/invoices/${id}`)
   revalidatePath("/purchasing/invoices")
   revalidatePath("/inventory")
   revalidatePath("/suppliers")
   revalidatePath("/parts")
-  return { ok: true }
+}
+
+/** Confirm an already-saved draft (standalone confirm button). */
+export async function confirmSupplierInvoice(id: string): Promise<InvoiceActionResult> {
+  try {
+    const { supabase, ctx, userId } = await guard()
+    await applyConfirm(supabase, ctx, userId, id)
+    revalidateConfirm(id)
+    return { ok: true }
+  } catch (e) {
+    return toActionError(e, "Could not confirm the invoice.")
+  }
+}
+
+/**
+ * Save the user's latest edits AND confirm in ONE server action. The review UI
+ * calls this instead of awaiting saveInvoiceDraft() and then
+ * confirmSupplierInvoice() as two separate actions. The two-call approach ran a
+ * revalidatePath() re-render BETWEEN the save and the confirm; if that mid-flow
+ * re-render threw, Next.js rejected the save action with an opaque
+ * "Server Components render" error (the minified #441) and the confirm step
+ * never ran — leaving the draft half-saved and never confirmed. Doing both
+ * inside one action means a single trailing revalidation, so confirm always
+ * runs on the freshly-saved data and any real failure returns a readable error.
+ */
+export async function saveAndConfirmSupplierInvoice(payload: SaveDraftPayload): Promise<InvoiceActionResult> {
+  try {
+    const { supabase, ctx, userId } = await guard()
+    await applyDraft(supabase, payload)
+    await applyConfirm(supabase, ctx, userId, payload.id)
+    revalidateConfirm(payload.id)
+    return { ok: true }
   } catch (e) {
     return toActionError(e, "Could not confirm the invoice.")
   }

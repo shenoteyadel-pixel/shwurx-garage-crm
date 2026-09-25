@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { getShellUser } from "@/lib/shell-user"
 import { getSettings } from "@/lib/settings"
 import { AppShell } from "@/components/app-shell"
@@ -15,6 +15,14 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
   const { id } = await params
   const user = await getShellUser()
   const supabase = await createClient()
+  // Parts staff capture invoices but lack row-level visibility on the `jobs`
+  // table (jobs RLS only exposes rows to staff assigned to the job or with
+  // full job visibility). Reading the car list with the user's client would
+  // return an empty "Related to" dropdown for them, so they could never link a
+  // scanned part to the vehicle that needs it. Load the picker list with the
+  // service-role client so every invoice-capturer sees the same cars. This is
+  // a read-only lookup of non-sensitive job identifiers for a dropdown.
+  const serviceDb = createServiceClient()
 
   const [{ data: invoice }, { data: items }, { data: suppliers }, { data: inventory }, { data: jobRows }, settings] =
     await Promise.all([
@@ -26,7 +34,7 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
         .select("id, name, sku, cost_price, crm_part_id, oem_part_number, supplier_part_number")
         .is("deleted_at", null)
         .order("name"),
-      supabase
+      serviceDb
         .from("jobs")
         .select("id, job_number, vehicle_make, vehicle_model, plate_number, customer_name")
         .order("created_at", { ascending: false })

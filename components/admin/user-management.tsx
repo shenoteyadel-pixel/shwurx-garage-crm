@@ -730,6 +730,7 @@ function CreateUserDialog({
       </p>
       <form
         ref={formRef}
+        autoComplete="off"
         action={(fd) =>
           start(async () => {
             setError(null)
@@ -752,7 +753,15 @@ function CreateUserDialog({
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="full_name">Full name *</Label>
-            <Input id="full_name" name="full_name" required placeholder="e.g. Ahmed Khan" />
+            <Input
+              id="full_name"
+              name="full_name"
+              required
+              placeholder="e.g. Ahmed Khan"
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+            />
           </div>
           <div>
             <Label htmlFor="role">Role (access level) *</Label>
@@ -777,11 +786,29 @@ function CreateUserDialog({
           </div>
           <div>
             <Label htmlFor="email">Email *</Label>
-            <Input id="email" name="email" type="email" required placeholder="staff@shwurx.com" onBlur={runDuplicateCheck} />
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              required
+              placeholder="staff@shwurx.com"
+              onBlur={runDuplicateCheck}
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+            />
           </div>
           <div>
             <Label htmlFor="mobile">Mobile (for WhatsApp share)</Label>
-            <Input id="mobile" name="mobile" placeholder="+971 50 000 0000" onBlur={runDuplicateCheck} />
+            <Input
+              id="mobile"
+              name="mobile"
+              placeholder="+971 50 000 0000"
+              onBlur={runDuplicateCheck}
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+            />
           </div>
           <div>
             <Label htmlFor="department">Department</Label>
@@ -940,6 +967,7 @@ function EditProfileDialog({
         Update HR details. Role and permissions are managed separately from the row actions.
       </p>
       <form
+        autoComplete="off"
         action={(fd) =>
           start(async () => {
             setError(null)

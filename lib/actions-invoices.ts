@@ -392,15 +392,19 @@ async function applyDraft(
 }
 
 /**
- * Save edits to a draft (exported wrapper: guard + apply + single revalidate).
- * Used by the standalone "Save draft" button.
+ * Save edits to a draft (exported wrapper: guard + apply). Used by the
+ * standalone "Save draft" button.
+ *
+ * Like saveAndConfirmSupplierInvoice, this intentionally does NOT call
+ * revalidatePath(): that would stream an inline RSC re-render with the action
+ * response, which can reject the whole POST with the opaque #441 (e.g. on
+ * deploy/version skew) and hide a save that actually succeeded. The client
+ * calls router.refresh() after { ok: true } to re-sync instead.
  */
 export async function saveInvoiceDraft(payload: SaveDraftPayload): Promise<InvoiceActionResult> {
   try {
     const { supabase } = await guard()
     await applyDraft(supabase, payload)
-    revalidatePath(`/purchasing/invoices/${payload.id}`)
-    revalidatePath("/purchasing/invoices")
     return { ok: true }
   } catch (e) {
     return toActionError(e, "Could not save the invoice draft.")
@@ -573,21 +577,11 @@ async function applyConfirm(
   await logAction(ctx, "supplier_invoice_confirmed", "supplier_invoice", id)
 }
 
-/** Revalidate every surface a confirmed invoice touches. */
-function revalidateConfirm(id: string): void {
-  revalidatePath(`/purchasing/invoices/${id}`)
-  revalidatePath("/purchasing/invoices")
-  revalidatePath("/inventory")
-  revalidatePath("/suppliers")
-  revalidatePath("/parts")
-}
-
 /** Confirm an already-saved draft (standalone confirm button). */
 export async function confirmSupplierInvoice(id: string): Promise<InvoiceActionResult> {
   try {
     const { supabase, ctx, userId } = await guard()
     await applyConfirm(supabase, ctx, userId, id)
-    revalidateConfirm(id)
     return { ok: true }
   } catch (e) {
     return toActionError(e, "Could not confirm the invoice.")
@@ -595,22 +589,31 @@ export async function confirmSupplierInvoice(id: string): Promise<InvoiceActionR
 }
 
 /**
- * Save the user's latest edits AND confirm in ONE server action. The review UI
- * calls this instead of awaiting saveInvoiceDraft() and then
- * confirmSupplierInvoice() as two separate actions. The two-call approach ran a
- * revalidatePath() re-render BETWEEN the save and the confirm; if that mid-flow
- * re-render threw, Next.js rejected the save action with an opaque
- * "Server Components render" error (the minified #441) and the confirm step
- * never ran — leaving the draft half-saved and never confirmed. Doing both
- * inside one action means a single trailing revalidation, so confirm always
- * runs on the freshly-saved data and any real failure returns a readable error.
+ * Save the user's latest edits AND confirm in ONE server action.
+ *
+ * IMPORTANT: this action deliberately does NOT call revalidatePath(). Calling
+ * revalidatePath() inside a Server Action makes Next.js stream an inline RSC
+ * re-render of the current route back as part of the action response. If that
+ * streamed re-render throws for ANY reason — a transient render error, or (most
+ * commonly in production) deployment/version skew between the browser's cached
+ * client bundle and a freshly deployed server — Next.js rejects the whole POST
+ * with the opaque "Server Components render" error (minified React #441) and
+ * DISCARDS this action's already-committed { ok: true } result. The write
+ * succeeded on the server, but the user sees only #441 and the invoice looks
+ * stuck as a draft.
+ *
+ * Because every invoice route renders dynamically (it reads the session via
+ * cookies(), so there is no full-route cache to invalidate), revalidatePath()
+ * buys us nothing here except that fragile inline re-render. Instead the client
+ * calls router.refresh() after it receives { ok: true } — a fresh, independent
+ * server round-trip that re-syncs the UI to the confirmed state and cannot take
+ * the action's result down with it if it fails.
  */
 export async function saveAndConfirmSupplierInvoice(payload: SaveDraftPayload): Promise<InvoiceActionResult> {
   try {
     const { supabase, ctx, userId } = await guard()
     await applyDraft(supabase, payload)
     await applyConfirm(supabase, ctx, userId, payload.id)
-    revalidateConfirm(payload.id)
     return { ok: true }
   } catch (e) {
     return toActionError(e, "Could not confirm the invoice.")

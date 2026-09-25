@@ -29,6 +29,15 @@ export const RECOMMENDATIONS: { value: Recommendation; label: string; chip: stri
   { value: "optional", label: "Optional", chip: "border-sky-500/30 bg-sky-500/10 text-sky-300" },
 ]
 
+// Fixed per-labour-type rates. Selecting a type fills the line name + rate
+// as a flat labour charge (hours left at 0). Rates stay editable afterwards.
+export const LABOUR_PRESETS: { name: string; rate: number; category: string }[] = [
+  { name: "Mechanic Labour", rate: 170, category: "Engine" },
+  { name: "Electric Labour", rate: 270, category: "Electrical" },
+  { name: "Paint", rate: 150, category: "Body & Paint" },
+  { name: "Dent", rate: 180, category: "Body & Paint" },
+]
+
 export const CATEGORY_SUGGESTIONS = [
   "Engine",
   "Brakes",
@@ -674,6 +683,7 @@ function LabourRow({
   onRemove: () => void
 }) {
   const { vat: lineVat, total } = lineParts(it, vat, inclusive)
+  const activePreset = LABOUR_PRESETS.find((p) => p.name === it.name && p.rate === it.labour_rate)
   return (
     <div className="rounded-xl border border-border bg-card/60 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -691,6 +701,41 @@ function LabourRow({
         >
           <Trash2 className="h-4 w-4" />
         </button>
+      </div>
+
+      {/* Selectable labour type — sets name + fixed flat rate */}
+      <div className="mb-3">
+        <Label>Labour type (fixed rate)</Label>
+        <div className="flex flex-wrap gap-2">
+          {LABOUR_PRESETS.map((p) => {
+            const active = activePreset?.name === p.name
+            return (
+              <button
+                key={p.name}
+                type="button"
+                onClick={() =>
+                  onChange({
+                    name: p.name,
+                    labour_rate: p.rate,
+                    labour_hours: 0,
+                    category: it.category?.trim() ? it.category : p.category,
+                  })
+                }
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  active
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                {p.name}
+                <span className="tabular-nums opacity-70">{formatCurrency(p.rate)}</span>
+              </button>
+            )
+          })}
+        </div>
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          Pick a labour type to auto-fill the name and fixed rate, or type a custom name and rate below.
+        </p>
       </div>
 
       <CategoryRecoRow it={it} onChange={onChange} />

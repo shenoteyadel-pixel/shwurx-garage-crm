@@ -54,6 +54,16 @@ const s = (v: FormDataEntryValue | null) => (v ? String(v) : "") || null
 const normPartNumber = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "")
 
 /**
+ * Coerce empty strings to null for UUID columns. A form <select> whose
+ * "unset" option has value="" sends "" rather than null, and Postgres rejects
+ * "" for a uuid column with `invalid input syntax for type uuid: ""`.
+ */
+const uuidOrNull = (v: string | null | undefined) => {
+  const t = (v ?? "").trim()
+  return t === "" ? null : t
+}
+
+/**
  * Build an OEM-number -> inventory-item-id index for auto-matching. An OEM
  * number that maps to more than one part is treated as ambiguous and dropped,
  * so it falls back to manual review rather than linking to the wrong part.
@@ -346,7 +356,7 @@ async function applyDraft(
   const { error: headErr } = await supabase
     .from("supplier_invoices")
     .update({
-      supplier_id: payload.supplierId,
+      supplier_id: uuidOrNull(payload.supplierId),
       invoice_number: payload.invoiceNumber,
       invoice_date: payload.invoiceDate || null,
       discount_amount: discount,
@@ -378,10 +388,10 @@ async function applyDraft(
           unit_cost: n(l.unit_cost),
           line_total: n(l.quantity, 1) * n(l.unit_cost),
           vat_rate: n(l.vat_rate, 5),
-          inventory_item_id: l.inventory_item_id,
+          inventory_item_id: uuidOrNull(l.inventory_item_id),
           match_status: l.match_status,
-          job_id: l.job_id,
-          parts_request_id: l.parts_request_id,
+          job_id: uuidOrNull(l.job_id),
+          parts_request_id: uuidOrNull(l.parts_request_id),
           suggested_sale_price: n(l.suggested_sale_price),
           markup_pct: n(l.markup_pct),
         }

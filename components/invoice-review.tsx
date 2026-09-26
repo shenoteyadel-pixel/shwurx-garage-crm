@@ -238,7 +238,10 @@ export function InvoiceReview({
         // stuck as a draft. One action = one trailing revalidation.
         const confirmed = await saveAndConfirmSupplierInvoice({
           id: invoice.id,
-          supplierId,
+          // Empty string here means "no supplier picked" — send null so the
+          // server auto-creates the scanned supplier. A "" would be rejected by
+          // Postgres as an invalid uuid ("").
+          supplierId: supplierId || null,
           invoiceNumber: invoiceNumber || null,
           invoiceDate: invoiceDate || null,
           discountAmount: Number(discountAmount || 0),

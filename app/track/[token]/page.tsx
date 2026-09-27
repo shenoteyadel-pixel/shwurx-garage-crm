@@ -1,8 +1,8 @@
 import { headers } from "next/headers"
-import { Wrench } from "lucide-react"
 import { resolveTrackingToken, recordTrackingOpen } from "@/lib/portal-data"
 import { loadTrackingDetail } from "@/lib/tracking-data"
 import { TrackExperience } from "@/components/track-experience"
+import { BrandLogo } from "@/components/brand-logo"
 
 export const metadata = { title: "Track Your Vehicle · SHWURX Auto Service Center" }
 
@@ -39,10 +39,7 @@ function TrackingNotice({ variant }: { variant: "invalid" | "expired" }) {
   const expired = variant === "expired"
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-4 text-center">
-      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary">
-        <Wrench className="h-7 w-7 text-primary-foreground" />
-      </div>
-      <div className="text-xs font-bold uppercase tracking-[0.2em] text-primary">SHWURX Auto Service Center</div>
+        <BrandLogo className="h-16" />
       <h1 className="mt-3 text-balance text-2xl font-bold">
         {expired ? "This tracking link has expired" : "Tracking link invalid"}
       </h1>

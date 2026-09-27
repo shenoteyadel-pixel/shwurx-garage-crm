@@ -11,7 +11,6 @@ import {
   LayoutDashboard,
   Package,
   Plus,
-  Wrench,
   LogOut,
   Menu,
   X,
@@ -220,7 +219,18 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-8">{children}</main>
+        <main className="relative isolate flex-1 p-4 lg:p-8">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center overflow-hidden lg:left-64"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/wurx-logo.png" alt="" className="hidden w-3/5 max-w-2xl -rotate-12 opacity-[0.03] dark:block" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/wurx-logo-ink.png" alt="" className="block w-3/5 max-w-2xl -rotate-12 opacity-[0.04] dark:hidden" />
+          </div>
+          {children}
+        </main>
       </div>
     </div>
   )
@@ -228,17 +238,21 @@ export function AppShell({
 
 function Brand({ compact }: { compact?: boolean }) {
   return (
-    <Link href="/crm" className="flex items-center gap-2.5">
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
-        <Wrench className="h-5 w-5 text-primary-foreground" />
-      </div>
+    <Link href="/crm" className="flex flex-col items-start gap-1" aria-label="WURX Auto Service Center — CRM home">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/brand/wurx-logo.png"
+        alt="WURX Auto Service Center"
+        className={cn("hidden w-auto object-contain dark:block", compact ? "h-8" : "h-12")}
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/brand/wurx-logo-ink.png"
+        alt="WURX Auto Service Center"
+        className={cn("block w-auto object-contain dark:hidden", compact ? "h-8" : "h-12")}
+      />
       {!compact && (
-        <div className="leading-tight">
-          <div className="text-sm font-bold tracking-tight">
-            SHWURX <span className="text-primary">Auto Service Center</span>
-          </div>
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Workshop CRM</div>
-        </div>
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Workshop CRM</div>
       )}
     </Link>
   )

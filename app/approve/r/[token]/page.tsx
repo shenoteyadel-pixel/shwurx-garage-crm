@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation"
 import { createPublicClient } from "@/lib/supabase/public"
 import { ApprovalRequestView } from "@/components/approval-request-view"
-import { Wrench } from "lucide-react"
+import { BrandLogo } from "@/components/brand-logo"
 
 export const dynamic = "force-dynamic"
 
@@ -16,13 +16,8 @@ export default async function ApproveRequestPage({ params }: { params: Promise<{
     <div className="min-h-svh bg-background">
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-2xl items-center gap-2.5 px-4 py-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
-            <Wrench className="h-5 w-5 text-primary-foreground" />
-          </div>
+          <BrandLogo className="h-10" />
           <div className="leading-tight">
-            <div className="text-sm font-bold tracking-tight">
-              SHWURX <span className="text-primary">Auto Service Center</span>
-            </div>
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Repair Approval</div>
           </div>
         </div>

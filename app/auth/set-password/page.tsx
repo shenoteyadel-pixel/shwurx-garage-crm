@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { markPasswordSet } from "@/lib/actions-users"
 import { Button, Input, Label } from "@/components/ui"
-import { Wrench, CheckCircle2 } from "lucide-react"
+import { CheckCircle2 } from "lucide-react"
+import { BrandLogo } from "@/components/brand-logo"
 
 export default function SetPasswordPage() {
   const router = useRouter()
@@ -95,10 +96,7 @@ export default function SetPasswordPage() {
     <div className="flex min-h-svh items-center justify-center bg-background p-6">
       <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-lg">
         <div className="mb-6 flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Wrench className="h-5 w-5" />
-          </span>
-          <span className="text-lg font-semibold text-foreground">SHWURX Auto Service Center</span>
+          <BrandLogo className="h-12" />
         </div>
 
         {checking ? (

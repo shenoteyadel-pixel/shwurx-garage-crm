@@ -1,7 +1,8 @@
 import type { Settings } from "@/lib/settings"
 
-// Default luxury emblem shipped with the app; overridden by a configured logo_url.
-const DEFAULT_LOGO = "/brand/shwurx-emblem.png"
+// WURX logo recoloured for white paper (dark letters, green engine mark);
+// overridden by a configured logo_url.
+const DEFAULT_LOGO = "/brand/wurx-logo-ink.png"
 
 function logoSrc(settings: Settings) {
   return settings.logo_url || DEFAULT_LOGO
@@ -39,20 +40,20 @@ export function DocHeader({
   date?: string | null
 }) {
   return (
-    <div className="flex items-start justify-between border-b-2 border-[#e51f2b] pb-5">
+    <div className="flex items-start justify-between border-b-2 border-[#3f8f12] pb-5">
       <div className="flex items-start gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={logoSrc(settings) || "/placeholder.svg"}
           alt={`${settings.company_name || settings.legal_name || "Company"} logo`}
-          className="h-16 w-16 shrink-0 object-contain"
+          className="h-16 w-auto max-w-[180px] shrink-0 object-contain"
         />
         <div>
           <div className="text-xl font-extrabold uppercase leading-tight tracking-tight text-neutral-900">
             {settings.legal_name || settings.company_name}
           </div>
           {settings.company_name && settings.company_name !== settings.legal_name && (
-            <p className="mt-0.5 text-xs font-medium text-[#e51f2b]">
+            <p className="mt-0.5 text-xs font-medium text-[#3f8f12]">
               {settings.company_name?.toUpperCase().includes("SHWURX")
                 ? "SHWURX Auto Service Center"
                 : settings.company_name}
@@ -93,7 +94,7 @@ export function DocWatermark({ settings }: { settings: Settings }) {
         src={logoSrc(settings) || "/placeholder.svg"}
         alt=""
         aria-hidden="true"
-        className="w-2/3 max-w-md object-contain opacity-[0.04]"
+        className="w-4/5 max-w-xl -rotate-12 object-contain opacity-[0.06]"
       />
     </div>
   )

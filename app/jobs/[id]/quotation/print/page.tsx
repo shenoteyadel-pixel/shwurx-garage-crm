@@ -152,7 +152,7 @@ function TotalRow({ label, value }: { label: string; value: string }) {
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-2 mt-6 text-[11px] font-bold uppercase tracking-wider text-[#e51f2b]">{children}</div>
+    <div className="mb-2 mt-6 text-[11px] font-bold uppercase tracking-wider text-[#3f9a0c]">{children}</div>
   )
 }
 

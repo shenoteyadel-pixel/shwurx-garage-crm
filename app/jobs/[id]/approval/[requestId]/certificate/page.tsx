@@ -167,10 +167,10 @@ export default async function ApprovalCertificatePage({
 
       <div className="mx-auto max-w-[820px] bg-white px-10 py-10 text-neutral-900 shadow-lg print:max-w-none print:px-8 print:shadow-none">
         {/* Header — legal entity is primary */}
-        <div className="flex items-start justify-between border-b-2 border-[#e51f2b] pb-5">
+        <div className="flex items-start justify-between border-b-2 border-[#3f9a0c] pb-5">
           <div>
             <div className="text-xl font-extrabold uppercase leading-tight tracking-tight">{legalName}</div>
-            {brand && <p className="mt-0.5 text-xs font-medium text-[#e51f2b]">{brand}</p>}
+            {brand && <p className="mt-0.5 text-xs font-medium text-[#3f9a0c]">{brand}</p>}
             <div className="mt-1.5 space-y-0.5 text-[11px] text-neutral-500">
               {settings.address && <div>{settings.address}</div>}
               <div className="flex flex-wrap gap-x-3">

@@ -381,7 +381,7 @@ export function CertificateDownloadButton({ data }: { data: CertificateData }) {
       type="button"
       onClick={handleDownload}
       disabled={busy}
-      className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#e51f2b] px-4 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-60 print:hidden"
+      className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-60 print:hidden"
     >
       <Download className="h-4 w-4" /> {busy ? "Preparing…" : "Download PDF"}
     </button>

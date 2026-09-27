@@ -1,9 +1,10 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Wrench, Radar, ArrowLeft } from "lucide-react"
+import { Radar, ArrowLeft } from "lucide-react"
 import { TrackEntry } from "@/components/site/track-entry"
 import { getServerI18n } from "@/lib/i18n/server"
 import { dirFor } from "@/lib/i18n/config"
+import { BrandLogo } from "@/components/brand-logo"
 
 export const metadata: Metadata = {
   title: "Track Your Vehicle — SHWURX Auto Service Center",
@@ -23,12 +24,7 @@ export default async function TrackEntryPage() {
         </Link>
 
         <div className="flex items-center gap-2.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
-            <Wrench className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <span className="text-base font-bold tracking-tight">
-            SHWURX <span className="text-primary">{t.brand.tagline}</span>
-          </span>
+          <BrandLogo className="h-12" />
         </div>
 
         <div className="mt-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">

@@ -9,6 +9,15 @@ import { Plus, Trash2, Save, Pencil, Printer, FileText, X, Lock, Wrench, Package
 
 export type Recommendation = "required" | "recommended" | "optional"
 
+export type CatalogPart = {
+  name: string
+  part_number: string
+  unit_price: number
+  detail: string
+  category: string
+  source: "stock" | "quote"
+}
+
 export type Item = {
   kind: "part" | "labor"
   name: string
@@ -122,6 +131,7 @@ export function QuotationBuilder({
   hasQuotation,
   printHref,
   locked,
+  partCatalog = [],
 }: {
   jobId: string
   initialItems: Item[]
@@ -132,6 +142,7 @@ export function QuotationBuilder({
   hasQuotation: boolean
   printHref: string
   locked: boolean
+  partCatalog?: CatalogPart[]
 }) {
   const [open, setOpen] = React.useState(false)
   const vat = initialVat || VAT_RATE
@@ -240,6 +251,7 @@ export function QuotationBuilder({
           initialVatInclusive={inclusive}
           initialDescription={initialDescription}
           initialInternalNotes={initialInternalNotes}
+          partCatalog={partCatalog}
           onClose={() => setOpen(false)}
         />
       )}
@@ -328,6 +340,7 @@ function QuotationEditor({
   initialVatInclusive,
   initialDescription,
   initialInternalNotes,
+  partCatalog,
   onClose,
 }: {
   jobId: string
@@ -336,6 +349,7 @@ function QuotationEditor({
   initialVatInclusive: boolean
   initialDescription: string
   initialInternalNotes: string
+  partCatalog: CatalogPart[]
   onClose: () => void
 }) {
   const [description, setDescription] = React.useState(initialDescription)
@@ -458,6 +472,7 @@ function QuotationEditor({
                   <PartRow
                     key={index}
                     it={it}
+                    catalog={partCatalog}
                     vat={vat}
                     inclusive={inclusive}
                     onChange={(patch) => update(index, patch)}
@@ -595,14 +610,130 @@ function QuotationEditor({
 }
 
 /* ---------------- Part row ---------------- */
+function matchCatalog(catalog: CatalogPart[], query: string): CatalogPart[] {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!terms.length) return []
+  const scored: { p: CatalogPart; score: number }[] = []
+  for (const p of catalog) {
+    const hay = `${p.name} ${p.part_number}`.toLowerCase()
+    if (!terms.every((t) => hay.includes(t))) continue
+    const name = p.name.toLowerCase()
+    let score = name.startsWith(terms[0]) ? 0 : 1
+    if (p.source === "stock") score -= 0.5
+    scored.push({ p, score })
+  }
+  return scored.sort((a, b) => a.score - b.score || a.p.name.localeCompare(b.p.name)).slice(0, 8).map((s) => s.p)
+}
+
+function PartNameInput({
+  it,
+  catalog,
+  onChange,
+}: {
+  it: Item
+  catalog: CatalogPart[]
+  onChange: (patch: Partial<Item>) => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [active, setActive] = React.useState(0)
+  const listId = React.useId()
+  const matches = open ? matchCatalog(catalog, it.name) : []
+
+  function pick(p: CatalogPart) {
+    onChange({
+      name: p.name,
+      part_number: p.part_number || it.part_number,
+      unit_price: p.unit_price || it.unit_price,
+      detail: it.detail || p.detail,
+      category: it.category || p.category,
+    })
+    setOpen(false)
+  }
+
+  return (
+    <div className="relative flex-1">
+      <Input
+        value={it.name}
+        role="combobox"
+        aria-expanded={matches.length > 0}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        autoComplete="off"
+        onChange={(e) => {
+          onChange({ name: e.target.value })
+          setOpen(true)
+          setActive(0)
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        onKeyDown={(e) => {
+          if (!matches.length) return
+          if (e.key === "ArrowDown") {
+            e.preventDefault()
+            setActive((a) => (a + 1) % matches.length)
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault()
+            setActive((a) => (a - 1 + matches.length) % matches.length)
+          } else if (e.key === "Enter") {
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return
+            e.preventDefault()
+            pick(matches[active])
+          } else if (e.key === "Escape") {
+            e.stopPropagation()
+            setOpen(false)
+          }
+        }}
+        placeholder={catalog.length ? "Part name — start typing to search saved parts" : "Part name"}
+        className="h-9 w-full"
+      />
+      {matches.length > 0 && (
+        <ul
+          id={listId}
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
+        >
+          {matches.map((p, i) => (
+            <li
+              key={`${p.name}|${p.part_number}|${i}`}
+              role="option"
+              aria-selected={i === active}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                pick(p)
+              }}
+              onMouseEnter={() => setActive(i)}
+              className={`flex cursor-pointer items-center justify-between gap-3 rounded-md px-2.5 py-2 text-sm ${
+                i === active ? "bg-accent text-accent-foreground" : "text-popover-foreground"
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="truncate font-medium">{p.name}</div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {p.part_number && <span className="font-mono">#{p.part_number}</span>}
+                  <span>{p.source === "stock" ? "In stock" : "Quoted before"}</span>
+                </div>
+              </div>
+              {p.unit_price > 0 && (
+                <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{formatCurrency(p.unit_price)}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function PartRow({
   it,
+  catalog,
   vat,
   inclusive,
   onChange,
   onRemove,
 }: {
   it: Item
+  catalog: CatalogPart[]
   vat: number
   inclusive: boolean
   onChange: (patch: Partial<Item>) => void
@@ -612,12 +743,7 @@ function PartRow({
   return (
     <div className="rounded-xl border border-border bg-card/60 p-4">
       <div className="mb-3 flex items-center gap-2">
-        <Input
-          value={it.name}
-          onChange={(e) => onChange({ name: e.target.value })}
-          placeholder="Part name"
-          className="h-9 flex-1"
-        />
+        <PartNameInput it={it} catalog={catalog} onChange={onChange} />
         <button
           type="button"
           onClick={onRemove}

@@ -238,7 +238,7 @@ export function InvoiceReview({
         // stuck as a draft. One action = one trailing revalidation.
         const confirmed = await saveAndConfirmSupplierInvoice({
           id: invoice.id,
-          supplierId,
+          supplierId: supplierId || null,
           invoiceNumber: invoiceNumber || null,
           invoiceDate: invoiceDate || null,
           discountAmount: Number(discountAmount || 0),

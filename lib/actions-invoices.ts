@@ -49,6 +49,7 @@ const n = (v: unknown, d = 0) => {
   return Number.isFinite(x) ? x : d
 }
 const s = (v: FormDataEntryValue | null) => (v ? String(v) : "") || null
+const uuidOrNull = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null)
 
 /** Normalize a part number for matching: case- and separator-insensitive. */
 const normPartNumber = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "")
@@ -100,7 +101,7 @@ async function loadOpenPartsRequests(
     .from("parts_requests")
     .select("id, job_id, part_name, status, jobs(job_number, vehicle_make, vehicle_model, plate_number)")
     .is("deleted_at", null)
-    .not("status", "in", "(received,cancelled)")
+    .neq("status", "received")
   return (data ?? []).map((r) => {
     const job = (Array.isArray(r.jobs) ? r.jobs[0] : r.jobs) as
       | { job_number?: string; vehicle_make?: string; vehicle_model?: string; plate_number?: string }
@@ -346,7 +347,9 @@ async function applyDraft(
   const { error: headErr } = await supabase
     .from("supplier_invoices")
     .update({
-      supplier_id: payload.supplierId,
+      // An unselected <select> sends "" — Postgres rejects "" for a uuid column
+      // ("invalid input syntax for type uuid"), which silently blocked confirms.
+      supplier_id: uuidOrNull(payload.supplierId),
       invoice_number: payload.invoiceNumber,
       invoice_date: payload.invoiceDate || null,
       discount_amount: discount,
@@ -378,10 +381,10 @@ async function applyDraft(
           unit_cost: n(l.unit_cost),
           line_total: n(l.quantity, 1) * n(l.unit_cost),
           vat_rate: n(l.vat_rate, 5),
-          inventory_item_id: l.inventory_item_id,
+          inventory_item_id: uuidOrNull(l.inventory_item_id),
           match_status: l.match_status,
-          job_id: l.job_id,
-          parts_request_id: l.parts_request_id,
+          job_id: uuidOrNull(l.job_id),
+          parts_request_id: uuidOrNull(l.parts_request_id),
           suggested_sale_price: n(l.suggested_sale_price),
           markup_pct: n(l.markup_pct),
         }

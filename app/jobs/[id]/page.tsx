@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { AppShell } from "@/components/app-shell"
 import { Badge, Card, UAEPlate } from "@/components/ui"
 import { StageStepper } from "@/components/stage-stepper"
-import { QuotationBuilder } from "@/components/quotation-builder"
+import { QuotationBuilder, type CatalogPart } from "@/components/quotation-builder"
 import { PartsManager } from "@/components/parts-manager"
 import { AddonServices } from "@/components/addon-services"
 import { getJobAddons } from "@/lib/actions-addons"
@@ -72,6 +72,50 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .maybeSingle()
 
   const addons = await getJobAddons(id)
+
+  const [{ data: inventoryParts }, { data: pastQuoteParts }] = await Promise.all([
+    supabase
+      .from("inventory_items")
+      .select("name, sku, oem_part_number, sale_price, category, brand")
+      .is("deleted_at", null)
+      .order("name")
+      .limit(1000),
+    supabase
+      .from("quotation_items")
+      .select("name, part_number, unit_price, detail, category")
+      .eq("kind", "part")
+      .not("name", "is", null)
+      .limit(2000),
+  ])
+  const catalogMap = new Map<string, CatalogPart>()
+  for (const r of pastQuoteParts ?? []) {
+    const name = String(r.name ?? "").trim()
+    if (!name) continue
+    const part_number = String(r.part_number ?? "").trim()
+    catalogMap.set(`${name.toLowerCase()}|${part_number.toLowerCase()}`, {
+      name,
+      part_number,
+      unit_price: Number(r.unit_price) || 0,
+      detail: String(r.detail ?? ""),
+      category: String(r.category ?? ""),
+      source: "quote",
+    })
+  }
+  // Inventory wins over past quotes: it carries the current sale price.
+  for (const r of inventoryParts ?? []) {
+    const name = String(r.name ?? "").trim()
+    if (!name) continue
+    const part_number = String(r.oem_part_number || r.sku || "").trim()
+    catalogMap.set(`${name.toLowerCase()}|${part_number.toLowerCase()}`, {
+      name,
+      part_number,
+      unit_price: Number(r.sale_price) || 0,
+      detail: r.brand ? String(r.brand) : "",
+      category: String(r.category ?? ""),
+      source: "stock",
+    })
+  }
+  const partCatalog = [...catalogMap.values()]
 
   const approvals = await getJobApprovals(id)
 
@@ -367,9 +411,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 initialDescription={quotation?.description ?? ""}
                 initialInternalNotes={quotation?.internal_notes ?? ""}
                 hasQuotation={!!quotation}
-                printHref={`/jobs/${job.id}/quotation/print`}
-                locked={locked}
-              />
+              printHref={`/jobs/${job.id}/quotation/print`}
+              locked={locked}
+              partCatalog={partCatalog}
+            />
               <AddonServices jobId={job.id} addons={addons} locked={locked} />
               <PartsManager jobId={job.id} parts={(parts ?? []) as any} locked={locked} />
             </>

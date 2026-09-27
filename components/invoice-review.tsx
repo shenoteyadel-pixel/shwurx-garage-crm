@@ -12,7 +12,9 @@ import {
   setSupplierInvoiceOnAccount,
   deleteInvoiceDraft,
   type DraftLine,
+  type ConfirmSummary,
 } from "@/lib/actions-invoices"
+import Link from "next/link"
 import { Loader2, Save, CheckCircle2, Trash2, AlertTriangle, Plus, FileText } from "lucide-react"
 
 type SupplierOpt = { id: string; name: string }
@@ -127,6 +129,20 @@ export function InvoiceReview({
   const [pending, start] = React.useTransition()
   const [action, setAction] = React.useState<"save" | "confirm" | "delete" | null>(null)
   const [err, setErr] = React.useState<string | null>(null)
+  const [summary, setSummary] = React.useState<ConfirmSummary | null>(null)
+
+  const activeJobIds = Array.from(new Set(lines.filter((l) => l.match_status !== "ignore").map((l) => l.job_id ?? "")))
+  const invoiceJob = activeJobIds.length === 1 ? activeJobIds[0] || "__stock" : "__mixed"
+
+  function applyJobToAll(value: string) {
+    if (value === "__mixed") return
+    const jobId = value === "__stock" ? null : value
+    setLines((prev) =>
+      prev.map((l) =>
+        l.match_status === "ignore" ? l : { ...l, job_id: jobId, parts_request_id: jobId === l.job_id ? l.parts_request_id : null },
+      ),
+    )
+  }
 
   function patchLine(key: string, patch: Partial<Line>) {
     setLines((prev) =>
@@ -249,6 +265,8 @@ export function InvoiceReview({
           setErr(confirmed.error)
           return
         }
+        setSummary(confirmed.summary)
+        window.scrollTo({ top: 0, behavior: "smooth" })
         router.refresh()
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Could not confirm")
@@ -316,6 +334,7 @@ export function InvoiceReview({
             <AlertTriangle className="h-4 w-4 shrink-0" /> {err}
           </div>
         )}
+        {summary && <ConfirmReceipt summary={summary} jobs={jobs} />}
 
         {/* Invoice details */}
         <Card className="p-5">
@@ -350,6 +369,28 @@ export function InvoiceReview({
                 onChange={(e) => setDiscountAmount(Number(e.target.value))}
                 className="tabular-nums"
               />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="invoice-job">Job card / car for this invoice</Label>
+              <Select
+                id="invoice-job"
+                value={invoiceJob}
+                disabled={readOnly}
+                onChange={(e) => applyJobToAll(e.target.value)}
+              >
+                <option value="__stock">General Stock (not for a specific car)</option>
+                {invoiceJob === "__mixed" && <option value="__mixed">Mixed — set per line below</option>}
+                <optgroup label="Job Card / Vehicle">
+                  {jobs.map((j) => (
+                    <option key={j.id} value={j.id}>
+                      {j.label}
+                    </option>
+                  ))}
+                </optgroup>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Applies to every line. You can still change the job for a single line below.
+              </p>
             </div>
             <div className="sm:col-span-2">
               <Label htmlFor="notes">Notes</Label>
@@ -480,6 +521,64 @@ export function InvoiceReview({
         )}
       </div>
     </div>
+  )
+}
+
+/** Proof of what the confirm actually wrote, with links to each record. */
+function ConfirmReceipt({ summary, jobs }: { summary: ConfirmSummary; jobs: JobOpt[] }) {
+  const jobLabel = (id: string | null) => (id ? jobs.find((j) => j.id === id)?.label ?? "Job card" : null)
+  return (
+    <Card className="border-emerald-500/30 bg-emerald-500/5 p-5" role="status">
+      <div className="flex items-center gap-2 text-emerald-300">
+        <CheckCircle2 className="h-5 w-5" />
+        <h2 className="text-sm font-semibold">Invoice confirmed — everything below was saved</h2>
+      </div>
+      <dl className="mt-3 flex flex-col gap-3 text-sm">
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">Supplier</dt>
+          <dd className="mt-0.5">
+            <Link href={`/suppliers/${summary.supplierId}`} className="font-medium text-primary hover:underline">
+              {summary.supplierName || "Supplier"}
+            </Link>
+            <span className="ml-2 text-xs text-muted-foreground">
+              {summary.supplierCreated ? "new supplier registered" : "existing supplier updated"}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+            Parts ({summary.parts.length})
+          </dt>
+          <dd className="mt-1">
+            {summary.parts.length === 0 ? (
+              <span className="text-muted-foreground">No parts were stocked (all lines ignored).</span>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {summary.parts.map((p) => (
+                  <li key={`${p.inventoryItemId}-${p.name}`} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <Link href="/inventory" className="font-medium hover:underline">
+                      {p.name}
+                    </Link>
+                    <span className="text-xs tabular-nums text-muted-foreground">+{p.quantity}</span>
+                    <Badge className="border-border bg-muted/60 text-muted-foreground">
+                      {p.created ? "new part" : "stock added"}
+                    </Badge>
+                    {p.jobId ? (
+                      <Link href={`/jobs/${p.jobId}`} className="text-xs text-primary hover:underline">
+                        {"→ "}
+                        {jobLabel(p.jobId)}
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{"→ General Stock"}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </dd>
+        </div>
+      </dl>
+    </Card>
   )
 }
 

@@ -22,6 +22,22 @@ const INVOICE_PERMS: Permission[] = ["purchase_orders.manage", "parts.view"]
  */
 export type InvoiceActionResult = { ok: true } | { ok: false; error: string }
 
+/** What a confirm actually wrote — shown to the user as a receipt. */
+export type ConfirmSummary = {
+  supplierId: string
+  supplierName: string
+  supplierCreated: boolean
+  parts: {
+    inventoryItemId: string
+    name: string
+    quantity: number
+    created: boolean
+    jobId: string | null
+  }[]
+}
+
+export type ConfirmResult = { ok: true; summary: ConfirmSummary } | { ok: false; error: string }
+
 /** Turn any caught value into a human-readable message (never leaks #441). */
 function toActionError(e: unknown, fallback: string): { ok: false; error: string } {
   const msg =
@@ -427,7 +443,7 @@ async function applyConfirm(
   ctx: SessionContext,
   userId: string,
   id: string,
-): Promise<void> {
+): Promise<ConfirmSummary> {
   const { data: invoice, error: invErr } = await supabase
     .from("supplier_invoices")
     .select("id, status, supplier_id, supplier_name_raw, invoice_number, total, ocr_raw")
@@ -445,8 +461,25 @@ async function applyConfirm(
     return typeof v === "string" && v.trim() ? v.trim() : null
   }
   let supplierId = invoice.supplier_id as string | null
+  let supplierName = ""
+  let supplierCreated = false
   if (!supplierId) {
     const name = (invoice.supplier_name_raw as string | null)?.trim() || rawStr("supplier_name") || "Unknown supplier"
+    // Reuse an existing supplier with the same name instead of creating a
+    // duplicate every time the same vendor's invoice is scanned.
+    const { data: existing } = await supabase
+      .from("suppliers")
+      .select("id")
+      .is("deleted_at", null)
+      .ilike("name", name)
+      .limit(1)
+      .maybeSingle()
+    if (existing?.id) supplierId = existing.id as string
+  }
+  if (!supplierId) {
+    const name = (invoice.supplier_name_raw as string | null)?.trim() || rawStr("supplier_name") || "Unknown supplier"
+    supplierName = name
+    supplierCreated = true
     const { data: created, error: supErr } = await supabase
       .from("suppliers")
       .insert({
@@ -461,13 +494,13 @@ async function applyConfirm(
       .single()
     if (supErr) throw new Error(supErr.message)
     supplierId = created.id
-    await supabase.from("supplier_invoices").update({ supplier_id: supplierId }).eq("id", id)
   } else {
     const { data: sup } = await supabase
       .from("suppliers")
-      .select("trn, mobile, email, address")
+      .select("name, trn, mobile, email, address")
       .eq("id", supplierId)
       .single()
+    supplierName = (sup?.name as string | undefined) ?? ""
     const backfill: Record<string, string> = {}
     if (!sup?.trn && rawStr("supplier_trn")) backfill.trn = rawStr("supplier_trn")!
     if (!sup?.mobile && rawStr("supplier_phone")) backfill.mobile = rawStr("supplier_phone")!
@@ -476,12 +509,17 @@ async function applyConfirm(
     if (Object.keys(backfill).length) await supabase.from("suppliers").update(backfill).eq("id", supplierId)
   }
   invoice.supplier_id = supplierId
+  const { error: linkErr } = await supabase.from("supplier_invoices").update({ supplier_id: supplierId }).eq("id", id)
+  if (linkErr) throw new Error(`Could not link the supplier: ${linkErr.message}`)
 
-  const { data: items } = await supabase
+  const { data: items, error: itemsErr } = await supabase
     .from("supplier_invoice_items")
     .select("*")
     .eq("invoice_id", id)
     .order("line_no")
+  if (itemsErr) throw new Error(itemsErr.message)
+
+  const parts: ConfirmSummary["parts"] = []
 
   const reference = invoice.invoice_number ? `Bill ${invoice.invoice_number}` : "Supplier invoice"
 
@@ -493,6 +531,8 @@ async function applyConfirm(
     const sale = n(it.suggested_sale_price)
 
     let itemId = it.inventory_item_id as string | null
+    const created = !itemId
+    const jobId = (it.job_id as string | null) ?? null
 
     if (itemId) {
       // Existing part: top up stock, refresh cost and (if provided) sale price.
@@ -504,7 +544,7 @@ async function applyConfirm(
         .eq("id", itemId)
         .single()
       const nextQty = (n(cur?.quantity) || 0) + qty
-      await supabase
+      const { error: updItemErr } = await supabase
         .from("inventory_items")
         .update({
           quantity: nextQty,
@@ -517,10 +557,11 @@ async function applyConfirm(
           updated_at: new Date().toISOString(),
         })
         .eq("id", itemId)
+      if (updItemErr) throw new Error(`Could not update part "${it.description}": ${updItemErr.message}`)
     } else {
       // New part: create the inventory record with opening quantity. The CRM
       // Part ID is assigned automatically by a DB trigger (SHW-P-######).
-      const { data: created, error: createErr } = await supabase
+      const { data: newItem, error: createErr } = await supabase
         .from("inventory_items")
         .insert({
           sku: it.oem_part_number ?? it.supplier_part_number ?? it.sku,
@@ -535,30 +576,58 @@ async function applyConfirm(
         })
         .select("id")
         .single()
-      if (createErr) throw new Error(createErr.message)
-      itemId = created.id
-      await supabase.from("supplier_invoice_items").update({ inventory_item_id: itemId, match_status: "matched" }).eq("id", it.id)
+      if (createErr) throw new Error(`Could not create part "${it.description}": ${createErr.message}`)
+      itemId = newItem.id as string
     }
 
-    await supabase.from("stock_movements").insert({
+    const { error: lineErr } = await supabase
+      .from("supplier_invoice_items")
+      .update({ inventory_item_id: itemId, match_status: "matched" })
+      .eq("id", it.id)
+    if (lineErr) throw new Error(lineErr.message)
+
+    const { error: mvErr } = await supabase.from("stock_movements").insert({
       item_id: itemId,
       kind: "in",
       quantity: qty,
       unit_cost: cost,
       reference,
-      job_id: it.job_id ?? null,
+      job_id: jobId,
       supplier_id: invoice.supplier_id,
       created_by: userId,
     })
+    if (mvErr) throw new Error(`Could not record stock for "${it.description}": ${mvErr.message}`)
 
-    // Close the loop on the job card: mark the originating parts request as
-    // received and record what it actually cost.
-    if (it.parts_request_id) {
-      await supabase
-        .from("parts_requests")
-        .update({ status: "received", cost, updated_at: new Date().toISOString() })
-        .eq("id", it.parts_request_id)
+    // Link the part to the chosen job card / car so it shows on that job's
+    // parts list with its real cost. Reuse the originating parts request when
+    // there is one, otherwise record a new "received" request on the job.
+    if (jobId) {
+      if (it.parts_request_id) {
+        const { error: prErr } = await supabase
+          .from("parts_requests")
+          .update({ status: "received", cost, supplier: supplierName || null, updated_at: new Date().toISOString() })
+          .eq("id", it.parts_request_id)
+        if (prErr) throw new Error(prErr.message)
+      } else {
+        const { data: pr, error: prErr } = await supabase
+          .from("parts_requests")
+          .insert({
+            job_id: jobId,
+            part_name: it.description || "Part",
+            quantity: qty,
+            status: "received",
+            supplier: supplierName || null,
+            cost,
+            notes: reference,
+          })
+          .select("id")
+          .single()
+        if (prErr) throw new Error(`Could not link "${it.description}" to the job card: ${prErr.message}`)
+        await supabase.from("supplier_invoice_items").update({ parts_request_id: pr.id }).eq("id", it.id)
+      }
     }
+
+    parts.push({ inventoryItemId: itemId, name: it.description || "Part", quantity: qty, created, jobId })
   }
 
   const { data: docNum } = await supabase.rpc("next_doc_number", { p_type: "sinv", p_prefix: "SINV" })
@@ -578,14 +647,15 @@ async function applyConfirm(
   if (updErr) throw new Error(updErr.message)
 
   await logAction(ctx, "supplier_invoice_confirmed", "supplier_invoice", id)
+  return { supplierId: supplierId as string, supplierName, supplierCreated, parts }
 }
 
 /** Confirm an already-saved draft (standalone confirm button). */
-export async function confirmSupplierInvoice(id: string): Promise<InvoiceActionResult> {
+export async function confirmSupplierInvoice(id: string): Promise<ConfirmResult> {
   try {
     const { supabase, ctx, userId } = await guard()
-    await applyConfirm(supabase, ctx, userId, id)
-    return { ok: true }
+    const summary = await applyConfirm(supabase, ctx, userId, id)
+    return { ok: true, summary }
   } catch (e) {
     return toActionError(e, "Could not confirm the invoice.")
   }
@@ -612,12 +682,12 @@ export async function confirmSupplierInvoice(id: string): Promise<InvoiceActionR
  * server round-trip that re-syncs the UI to the confirmed state and cannot take
  * the action's result down with it if it fails.
  */
-export async function saveAndConfirmSupplierInvoice(payload: SaveDraftPayload): Promise<InvoiceActionResult> {
+export async function saveAndConfirmSupplierInvoice(payload: SaveDraftPayload): Promise<ConfirmResult> {
   try {
     const { supabase, ctx, userId } = await guard()
     await applyDraft(supabase, payload)
-    await applyConfirm(supabase, ctx, userId, payload.id)
-    return { ok: true }
+    const summary = await applyConfirm(supabase, ctx, userId, payload.id)
+    return { ok: true, summary }
   } catch (e) {
     return toActionError(e, "Could not confirm the invoice.")
   }

@@ -13,7 +13,7 @@ import {
   CartesianGrid,
 } from "recharts"
 
-const RED = "oklch(0.58 0.22 26)"
+const RED = "var(--primary)"
 
 export function StageBarChart({ data }: { data: { label: string; value: number; color: string }[] }) {
   return (

@@ -63,7 +63,7 @@ export function CustomerForm({
               className={
                 "flex-1 rounded-lg border px-4 py-3 text-sm font-semibold transition " +
                 (customerType === opt.value
-                  ? "border-[#e51f2b] bg-[#e51f2b]/10 text-foreground"
+                  ? "border-primary bg-primary/10 text-foreground"
                   : "border-border bg-transparent text-muted-foreground hover:border-foreground/30")
               }
             >

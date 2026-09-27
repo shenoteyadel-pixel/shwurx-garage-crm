@@ -40,7 +40,7 @@ function isPublicPath(path: string): boolean {
     "/contact",
     "/blog",
   ]
-  if (path === "/") return true
+  if (path === "/" || path === "/sw.js" || path === "/manifest.webmanifest") return true
   for (const prefix of publicSitePrefixes) {
     if (path === prefix || path.startsWith(prefix + "/")) return true
   }

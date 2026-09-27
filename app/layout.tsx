@@ -22,7 +22,9 @@ export const metadata: Metadata = {
   description:
     "Professional automotive workshop management — job cards, workflow, quotations, customer approvals and parts tracking.",
   generator: "v0.app",
-}
+  appleWebApp: { capable: true, title: "WURX CRM", statusBarStyle: "black" },
+  icons: { apple: "/brand/apple-icon.png" },
+  }
 
 export const viewport: Viewport = {
   themeColor: "#0f0f11",

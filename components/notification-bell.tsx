@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Bell, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { markNotificationRead, markAllNotificationsRead } from "@/lib/actions-notifications"
+import { PushToggle } from "@/components/push-toggle"
 
 interface Notif {
   id: string
@@ -65,6 +66,7 @@ export function NotificationBell() {
                 </button>
               )}
             </div>
+            <PushToggle />
             <div className="max-h-96 overflow-y-auto">
               {notifications.length === 0 ? (
                 <p className="px-4 py-8 text-center text-sm text-muted-foreground">You&apos;re all caught up.</p>

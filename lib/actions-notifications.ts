@@ -2,6 +2,7 @@
 
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import type { Permission } from "@/lib/rbac/roles"
+import { sendPushToUsers } from "@/lib/push"
 
 // Mark a single notification read (RLS ensures ownership).
 export async function markNotificationRead(id: string) {
@@ -55,6 +56,10 @@ export async function notifyByPermission(
       link: payload.link ?? null,
     })),
   )
+  await sendPushToUsers(
+    users.map((u) => u.id),
+    payload,
+  )
 }
 
 // Notify every active owner / general manager (management alerts).
@@ -75,6 +80,10 @@ export async function notifyOwners(payload: { title: string; body?: string; type
       link: payload.link ?? null,
     })),
   )
+  await sendPushToUsers(
+    users.map((u) => u.id),
+    payload,
+  )
 }
 
 // Notify one specific user.
@@ -90,4 +99,5 @@ export async function notifyUser(
     type: payload.type ?? "info",
     link: payload.link ?? null,
   })
+  await sendPushToUsers([userId], payload)
 }

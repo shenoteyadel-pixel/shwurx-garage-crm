@@ -48,6 +48,33 @@ async function startTrackingExpiryForDeliveredJob(
   }
 }
 
+/**
+ * A delivered car has had its parts fitted, so any request still marked
+ * required/ordered/backordered is stale. Mark them received so they stop
+ * showing as pending. Best-effort — never blocks delivery.
+ */
+async function closeOpenPartsForDeliveredJob(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  jobId: string,
+) {
+  try {
+    await supabase
+      .from("parts_requests")
+      .update({ status: "received", updated_at: new Date().toISOString() })
+      .eq("job_id", jobId)
+      .in("status", ["required", "ordered", "backordered"])
+      .is("deleted_at", null)
+  } catch {
+    // best-effort
+  }
+  revalidatePath("/parts")
+}
+
+async function onJobDelivered(supabase: Awaited<ReturnType<typeof createClient>>, jobId: string) {
+  await startTrackingExpiryForDeliveredJob(supabase, jobId)
+  await closeOpenPartsForDeliveredJob(supabase, jobId)
+}
+
 async function requireUser() {
   const supabase = await createClient()
   const {
@@ -139,7 +166,7 @@ export async function updateStage(jobId: string, stage: Stage) {
     .update({ stage, updated_at: new Date().toISOString() })
     .eq("id", jobId)
   if (error) throw new Error(error.message)
-  if (stage === "delivered") await startTrackingExpiryForDeliveredJob(supabase, jobId)
+  if (stage === "delivered") await onJobDelivered(supabase, jobId)
   await logAction(ctx, "job.update_stage", "job", jobId, { stage })
   revalidatePath("/crm")
   revalidatePath(`/jobs/${jobId}`)
@@ -153,7 +180,7 @@ export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: str
   patch.lift_bay = stage === "repair" ? liftBay || null : null
   const { error } = await supabase.from("jobs").update(patch).eq("id", jobId)
   if (error) throw new Error(error.message)
-  if (stage === "delivered") await startTrackingExpiryForDeliveredJob(supabase, jobId)
+  if (stage === "delivered") await onJobDelivered(supabase, jobId)
   revalidatePath("/crm")
   revalidatePath("/flow")
   revalidatePath(`/jobs/${jobId}`)
@@ -184,6 +211,7 @@ export async function markJobPaid(
     })
     .eq("id", jobId)
   if (error) throw new Error(error.message)
+  await closeOpenPartsForDeliveredJob(supabase, jobId)
 
   // Keep the invoice in sync: if this job has an open invoice, settle it too so
   // the invoice list / detail page don't keep showing "unpaid" after cash was

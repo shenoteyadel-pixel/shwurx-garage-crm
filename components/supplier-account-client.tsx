@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Card, Button, Input, Label, Badge } from "@/components/ui"
 import { Modal } from "@/components/modal"
 import { recordSupplierInvoicePayment } from "@/lib/actions-invoices"
+import { PaymentReceiptField, methodNeedsProof } from "@/components/payment-receipt-field"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { Wallet, FileText, Plus } from "lucide-react"
 
@@ -154,6 +155,8 @@ export function SupplierAccountClient({
 function PaymentForm({ invoice, onDone }: { invoice: AccountInvoice; onDone: () => void }) {
   const [pending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [method, setMethod] = useState("bank")
+  const [uploading, setUploading] = useState(false)
   const balance = Math.max(0, (Number(invoice.total) || 0) - (Number(invoice.amount_paid) || 0))
 
   return (
@@ -161,12 +164,13 @@ function PaymentForm({ invoice, onDone }: { invoice: AccountInvoice; onDone: () 
       action={(fd) =>
         start(async () => {
           setError(null)
-          try {
-            await recordSupplierInvoicePayment(invoice.id, fd)
-            onDone()
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Could not record payment")
+          if (methodNeedsProof(method) && !fd.get("receipt_path")) {
+            setError(`Upload the ${method === "card" ? "card" : "bank transfer"} receipt as proof.`)
+            return
           }
+          const res = await recordSupplierInvoicePayment(invoice.id, fd)
+          if (res.ok) onDone()
+          else setError(res.error)
         })
       }
       className="space-y-4"
@@ -191,7 +195,8 @@ function PaymentForm({ invoice, onDone }: { invoice: AccountInvoice; onDone: () 
           <select
             id="method"
             name="method"
-            defaultValue="bank"
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
             className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="bank">Bank transfer</option>
@@ -209,12 +214,13 @@ function PaymentForm({ invoice, onDone }: { invoice: AccountInvoice; onDone: () 
           <Input id="reference" name="reference" placeholder="Txn / cheque no." />
         </div>
       </div>
+      <PaymentReceiptField method={method} onUploadingChange={setUploading} />
       {error && <p className="text-sm text-red-400">{error}</p>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || uploading}>
           {pending ? "Saving…" : "Record payment"}
         </Button>
       </div>

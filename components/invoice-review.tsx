@@ -15,6 +15,7 @@ import {
   type ConfirmSummary,
 } from "@/lib/actions-invoices"
 import Link from "next/link"
+import { PaymentReceiptField, methodNeedsProof } from "@/components/payment-receipt-field"
 import { Loader2, Save, CheckCircle2, Trash2, AlertTriangle, Plus, FileText } from "lucide-react"
 
 type SupplierOpt = { id: string; name: string }
@@ -96,7 +97,7 @@ export function InvoiceReview({
   inventory: InventoryOpt[]
   jobs: JobOpt[]
   pricing: { method: PricingMethod; markup: number; vat: number }
-  payments: { id: string; amount: number; method: string; reference: string | null; paid_at: string }[]
+  payments: { id: string; amount: number; method: string; reference: string | null; paid_at: string; receipt_path?: string | null }[]
 }) {
   const router = useRouter()
   const readOnly = invoice.status !== "draft"
@@ -895,10 +896,13 @@ function PaymentPanel({
   payments,
 }: {
   invoice: InvoiceHeader
-  payments: { id: string; amount: number; method: string; reference: string | null; paid_at: string }[]
+  payments: { id: string; amount: number; method: string; reference: string | null; paid_at: string; receipt_path?: string | null }[]
 }) {
   const [pending, start] = React.useTransition()
   const [payErr, setPayErr] = React.useState<string | null>(null)
+  const [method, setMethod] = React.useState("bank_transfer")
+  const [uploading, setUploading] = React.useState(false)
+  const [formKey, setFormKey] = React.useState(0)
   const balance = invoice.total - invoice.amount_paid
   const paid = invoice.payment_status === "paid"
   const onAccount = invoice.payment_status === "credit"
@@ -942,7 +946,19 @@ function PaymentPanel({
               <span className="text-muted-foreground">
                 {formatDate(p.paid_at)} · {p.method}
               </span>
-              <span className="tabular-nums">{formatCurrency(p.amount)}</span>
+              <span className="flex items-center gap-2">
+                {p.receipt_path && (
+                  <a
+                    href={`/api/file?pathname=${encodeURIComponent(p.receipt_path)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    <FileText className="h-3.5 w-3.5" /> Receipt
+                  </a>
+                )}
+                <span className="tabular-nums">{formatCurrency(p.amount)}</span>
+              </span>
             </li>
           ))}
         </ul>
@@ -954,10 +970,16 @@ function PaymentPanel({
           action={(fd) =>
             start(async () => {
               setPayErr(null)
+              if (methodNeedsProof(method) && !fd.get("receipt_path")) {
+                setPayErr(`Upload the ${method === "card" ? "card" : "bank transfer"} receipt as proof.`)
+                return
+              }
               const res = await recordSupplierInvoicePayment(invoice.id, fd)
               if (!res.ok) setPayErr(res.error)
+              else setFormKey((k) => k + 1)
             })
           }
+          key={formKey}
           className="space-y-2"
         >
           <div className="grid grid-cols-2 gap-2">
@@ -967,7 +989,7 @@ function PaymentPanel({
             </div>
             <div>
               <Label htmlFor="method">Method</Label>
-              <Select id="method" name="method" defaultValue="bank_transfer">
+              <Select id="method" name="method" value={method} onChange={(e) => setMethod(e.target.value)}>
                 <option value="cash">Cash</option>
                 <option value="bank_transfer">Bank transfer</option>
                 <option value="cheque">Cheque</option>
@@ -985,7 +1007,8 @@ function PaymentPanel({
               <Input id="reference" name="reference" placeholder="Txn / cheque #" />
             </div>
           </div>
-          <Button type="submit" className="w-full" disabled={pending}>
+          <PaymentReceiptField key={formKey} method={method} onUploadingChange={setUploading} />
+          <Button type="submit" className="w-full" disabled={pending || uploading}>
             {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Record payment
           </Button>

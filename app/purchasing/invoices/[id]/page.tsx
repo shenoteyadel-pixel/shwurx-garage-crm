@@ -64,7 +64,7 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
 
   const { data: payments } = await supabase
     .from("payments")
-    .select("id, amount, method, reference, paid_at")
+    .select("id, amount, method, reference, paid_at, receipt_path")
     .eq("supplier_invoice_id", id)
     .order("paid_at", { ascending: false })
 

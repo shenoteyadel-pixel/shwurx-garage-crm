@@ -7,6 +7,7 @@ import { AlertTriangle, Download, FileText } from "lucide-react"
 import { formatCurrency as money } from "@/lib/utils"
 import { PrimaryButton, GhostButton } from "@/components/ui"
 import type { VatReport, VatBox } from "@/lib/vat-report"
+import { VatPdfButton } from "@/components/vat-pdf-button"
 
 type Company = { name: string; trn: string | null; address: string | null }
 
@@ -26,7 +27,15 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
   URL.revokeObjectURL(url)
 }
 
-export function VatReportView({ report, company }: { report: VatReport; company: Company }) {
+export function VatReportView({
+  report,
+  company,
+  autoPdf = false,
+}: {
+  report: VatReport
+  company: Company
+  autoPdf?: boolean
+}) {
   const router = useRouter()
   const [f, setF] = useState(report.from)
   const [t, setT] = useState(report.to)
@@ -172,13 +181,14 @@ export function VatReportView({ report, company }: { report: VatReport; company:
           </div>
           <div className="mt-2 text-3xl font-bold tracking-tight text-primary tabular-nums">{money(Math.abs(report.box14))}</div>
           <div className="mt-3 flex flex-wrap gap-2">
+            <VatPdfButton report={report} company={company} autoStart={autoPdf} />
             <a
               href={`/reports/vat/print?${qs}`}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent"
             >
-              <FileText className="h-4 w-4" aria-hidden /> Download PDF
+              <FileText className="h-4 w-4" aria-hidden /> Print
             </a>
             <button
               type="button"

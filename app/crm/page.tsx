@@ -8,7 +8,7 @@ import { StageBarChart, RevenueAreaChart } from "@/components/dashboard-charts"
 import { CarFlow } from "@/components/car-flow"
 import { STAGES, STAGE_MAP, type Stage } from "@/lib/constants"
 import { formatCurrency, relativeHours } from "@/lib/utils"
-import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardCheck, ThumbsUp, ScanLine, ShoppingCart, Landmark } from "lucide-react"
+import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardCheck, ThumbsUp, ScanLine, ShoppingCart, Landmark, FileDown } from "lucide-react"
 import { currentQuarter } from "@/lib/vat-report"
 import { Button } from "@/components/ui"
 import type { JobCardData } from "@/components/job-card"
@@ -182,6 +182,50 @@ export default async function DashboardPage() {
         )}
       </div>
 
+      {canSeeMoney && (
+        <section
+          aria-labelledby="finance-heading"
+          className="mb-4 rounded-xl border border-primary/40 bg-primary/5 p-4"
+        >
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 id="finance-heading" className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide">
+              <Landmark className="h-4 w-4 text-primary" aria-hidden /> Purchases &amp; VAT
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/reports/vat">
+                <Button variant="ghost">
+                  <Landmark className="h-4 w-4" /> VAT Dashboard
+                </Button>
+              </Link>
+              <Link href={`/reports/vat?from=${quarter.from}&to=${quarter.to}&pdf=1`}>
+                <Button>
+                  <FileDown className="h-4 w-4" /> Download VAT PDF
+                </Button>
+              </Link>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Link href="/purchasing/invoices" className="rounded-xl focus-visible:outline-2 focus-visible:outline-primary">
+              <StatCard
+                label="Total Purchased"
+                value={formatCurrency(totalPurchased)}
+                icon={ShoppingCart}
+                hint="All confirmed purchase invoices"
+              />
+            </Link>
+            <StatCard label="Purchased This Month" value={formatCurrency(purchasedThisMonth)} icon={ShoppingCart} />
+            <Link href="/reports/vat" className="rounded-xl focus-visible:outline-2 focus-visible:outline-primary">
+              <StatCard
+                label={netVatQuarter >= 0 ? "VAT Payable (this quarter)" : "VAT Refundable (this quarter)"}
+                value={formatCurrency(Math.abs(netVatQuarter))}
+                icon={Landmark}
+                hint={`${quarter.from} to ${quarter.to}`}
+              />
+            </Link>
+          </div>
+        </section>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label={canViewAll ? "Cars in Workshop" : "My Active Jobs"} value={carsInWorkshop} icon={Car} />
@@ -216,26 +260,6 @@ export default async function DashboardPage() {
             accent="text-emerald-400"
             bg="bg-emerald-500/10"
           />
-        )}
-        {canSeeMoney && (
-          <Link href="/purchasing/invoices" className="rounded-xl focus-visible:outline-2 focus-visible:outline-primary">
-            <StatCard
-              label="Total Purchased"
-              value={formatCurrency(totalPurchased)}
-              icon={ShoppingCart}
-              hint={`This month: ${formatCurrency(purchasedThisMonth)}`}
-            />
-          </Link>
-        )}
-        {canSeeMoney && (
-          <Link href="/reports/vat" className="rounded-xl focus-visible:outline-2 focus-visible:outline-primary">
-            <StatCard
-              label={netVatQuarter >= 0 ? "VAT Payable (quarter)" : "VAT Refundable (quarter)"}
-              value={formatCurrency(Math.abs(netVatQuarter))}
-              icon={Landmark}
-              hint="Output − input VAT · open VAT return"
-            />
-          </Link>
         )}
         <StatCard label="Jobs Completed" value={jobsCompleted} icon={ClipboardCheck} />
         <StatCard label="Avg Repair Time" value={avgRepairLabel} icon={Clock} accent="text-sky-400" bg="bg-sky-500/10" />

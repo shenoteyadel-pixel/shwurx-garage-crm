@@ -10,7 +10,7 @@ export const metadata = { title: "VAT Return · SHWURX Auto Service Center" }
 export default async function VatReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>
+  searchParams: Promise<{ from?: string; to?: string; pdf?: string }>
 }) {
   const sp = await searchParams
   const shellUser = await getShellUser()
@@ -26,6 +26,7 @@ export default async function VatReportPage({
       <div className="mx-auto max-w-6xl">
         <VatReportView
           report={report}
+          autoPdf={sp.pdf === "1"}
           company={{ name: settings.legal_name || settings.company_name, trn: settings.trn, address: settings.address }}
         />
       </div>

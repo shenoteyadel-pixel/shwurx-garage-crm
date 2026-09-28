@@ -703,19 +703,32 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
   const amount = n(formData.get("amount"))
   if (amount <= 0) throw new Error("Enter a positive amount")
 
+  const method = s(formData.get("method")) || "cash"
+  const receiptPath = s(formData.get("receipt_path"))
+  if (receiptPath && !receiptPath.startsWith("payment-receipts/")) throw new Error("Invalid receipt file")
+  if (["card", "bank", "bank_transfer"].includes(method) && !receiptPath) {
+    throw new Error(
+      method === "card"
+        ? "Upload the card payment receipt as proof."
+        : "Upload the bank transfer receipt as proof.",
+    )
+  }
+
   const { data: invoice } = await supabase.from("supplier_invoices").select("total, status").eq("id", id).single()
   if (!invoice || invoice.status !== "confirmed") throw new Error("Invoice is not confirmed")
 
-  await supabase.from("payments").insert({
+  const { error: insertError } = await supabase.from("payments").insert({
     direction: "out",
     supplier_invoice_id: id,
     amount,
-    method: s(formData.get("method")) || "cash",
+    method,
+    receipt_path: receiptPath,
     reference: s(formData.get("reference")),
     paid_at: s(formData.get("paid_at")) || new Date().toISOString().slice(0, 10),
     note: s(formData.get("note")),
     created_by: userId,
   })
+  if (insertError) throw new Error(insertError.message)
 
   const { data: paidRows } = await supabase.from("payments").select("amount").eq("supplier_invoice_id", id)
   const paid = (paidRows ?? []).reduce((t, p) => t + n(p.amount), 0)

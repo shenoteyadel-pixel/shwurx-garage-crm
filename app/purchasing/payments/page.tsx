@@ -22,7 +22,7 @@ export default async function SupplierPaymentsPage() {
   const { data: payments } = await supabase
     .from("payments")
     .select(
-      "id, amount, method, reference, paid_at, note, created_at, supplier_invoice_id, supplier_invoices(doc_number, invoice_number, supplier_name_raw, suppliers(name))",
+      "id, amount, method, reference, receipt_path, paid_at, note, created_at, supplier_invoice_id, supplier_invoices(doc_number, invoice_number, supplier_name_raw, suppliers(name))",
     )
     .eq("direction", "out")
     .order("paid_at", { ascending: false })
@@ -93,7 +93,19 @@ export default async function SupplierPaymentsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 capitalize text-muted-foreground">{r.method ?? "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{r.reference ?? "—"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {r.reference ?? "—"}
+                        {r.receipt_path && (
+                          <a
+                            href={`/api/file?pathname=${encodeURIComponent(r.receipt_path)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-2 text-xs text-primary hover:underline"
+                          >
+                            Receipt
+                          </a>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right font-medium tabular-nums">{formatCurrency(r.amount)}</td>
                     </tr>
                   ))}

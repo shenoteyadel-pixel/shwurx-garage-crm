@@ -5,6 +5,7 @@ import { Card, Button, Input, Label, Select, Textarea } from "@/components/ui"
 import { Modal } from "@/components/modal"
 import { receivePurchaseOrder, payPurchaseOrder } from "@/lib/actions-crm"
 import { PackageCheck, CreditCard } from "lucide-react"
+import { PaymentReceiptField } from "@/components/payment-receipt-field"
 
 export function POActions({
   poId,
@@ -21,6 +22,17 @@ export function POActions({
   const [payOpen, setPayOpen] = useState(false)
   const [recPending, startRec] = useTransition()
   const [payPending, startPay] = useTransition()
+  const [method, setMethod] = useState("bank")
+  const [uploading, setUploading] = useState(false)
+  const [payError, setPayError] = useState<string | null>(null)
+  const [formKey, setFormKey] = useState(0)
+
+  function closePay() {
+    setPayOpen(false)
+    setPayError(null)
+    setMethod("bank")
+    setFormKey((k) => k + 1)
+  }
 
   return (
     <>
@@ -66,12 +78,18 @@ export function POActions({
         </form>
       </Modal>
 
-      <Modal open={payOpen} onClose={() => setPayOpen(false)} size="sm" title="Record Supplier Payment">
+      <Modal open={payOpen} onClose={closePay} size="sm" title="Record Supplier Payment">
         <form
+          key={formKey}
           action={(fd) =>
             startPay(async () => {
-              await payPurchaseOrder(poId, fd)
-              setPayOpen(false)
+              setPayError(null)
+              const res = await payPurchaseOrder(poId, fd)
+              if (!res.ok) {
+                setPayError(res.error)
+                return
+              }
+              closePay()
             })
           }
           className="space-y-4"
@@ -82,7 +100,7 @@ export function POActions({
           </div>
           <div>
             <Label htmlFor="method">Method</Label>
-            <Select id="method" name="method" defaultValue="bank">
+            <Select id="method" name="method" value={method} onChange={(e) => setMethod(e.target.value)}>
               <option value="cash">Cash</option>
               <option value="card">Card</option>
               <option value="bank">Bank transfer</option>
@@ -98,11 +116,17 @@ export function POActions({
             <Label htmlFor="note">Note</Label>
             <Textarea id="note" name="note" className="min-h-14" />
           </div>
+          <PaymentReceiptField method={method} onUploadingChange={setUploading} />
+          {payError && (
+            <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {payError}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setPayOpen(false)}>
+            <Button type="button" variant="outline" onClick={closePay}>
               Cancel
             </Button>
-            <Button type="submit" disabled={payPending}>
+            <Button type="submit" disabled={payPending || uploading}>
               {payPending ? "Saving…" : "Record Payment"}
             </Button>
           </div>

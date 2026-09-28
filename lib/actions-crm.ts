@@ -324,19 +324,35 @@ export async function receivePurchaseOrder(poId: string, formData: FormData) {
   revalidatePath(`/purchasing/${poId}`)
 }
 
-export async function payPurchaseOrder(poId: string, formData: FormData) {
+export async function payPurchaseOrder(
+  poId: string,
+  formData: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { supabase, user } = await guard("payments.record")
   const amount = num(formData.get("amount"))
-  if (amount <= 0) throw new Error("Amount must be positive")
-  await supabase.from("payments").insert({
+  if (amount <= 0) return { ok: false, error: "Amount must be positive" }
+  const method = String(formData.get("method") || "bank")
+  const receiptPath = str(formData.get("receipt_path"))
+  if (receiptPath && !receiptPath.startsWith("payment-receipts/")) {
+    return { ok: false, error: "Invalid receipt file" }
+  }
+  if (["card", "bank", "bank_transfer"].includes(method) && !receiptPath) {
+    return {
+      ok: false,
+      error: method === "card" ? "Upload the card payment receipt as proof." : "Upload the bank transfer receipt as proof.",
+    }
+  }
+  const { error: insertError } = await supabase.from("payments").insert({
     direction: "out",
     po_id: poId,
     amount,
-    method: String(formData.get("method") || "bank"),
+    method,
+    receipt_path: receiptPath,
     reference: str(formData.get("reference")),
     note: str(formData.get("note")),
     created_by: user.id,
   })
+  if (insertError) return { ok: false, error: insertError.message }
   const { data: po } = await supabase.from("purchase_orders").select("amount_paid").eq("id", poId).single()
   await supabase
     .from("purchase_orders")
@@ -345,6 +361,7 @@ export async function payPurchaseOrder(poId: string, formData: FormData) {
   await notifyActivity({ title: "Supplier payment recorded", body: `AED ${amount}`, link: `/purchasing/${poId}` })
   revalidatePath(`/purchasing/${poId}`)
   revalidatePath("/purchasing")
+  return { ok: true }
 }
 
 /* ============================ Invoices ============================ */

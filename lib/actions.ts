@@ -12,6 +12,7 @@ import { sanitizeMileage } from "@/lib/utils"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
 import { notifyUser, notifyByPermission } from "@/lib/actions-notifications"
+import { notifyActivity } from "@/lib/activity"
 import { syncPendingApproval } from "@/lib/actions-approvals"
 import { resyncQuotationAddons } from "@/lib/addons"
 import { getSettings } from "@/lib/settings"
@@ -401,6 +402,11 @@ export async function addPhotos(jobId: string, urls: string[], kind: PhotoKind) 
     .from("vehicle_photos")
     .insert(urls.map((url) => ({ job_id: jobId, url, kind: safeKind })))
   if (error) throw new Error(error.message)
+  await notifyActivity({
+    title: "Photos uploaded",
+    body: `${urls.length} ${safeKind} photo(s)`,
+    link: `/jobs/${jobId}`,
+  })
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/flow")
   revalidatePath("/crm")
@@ -597,6 +603,7 @@ export async function saveQuotation(
     // ignore
   }
 
+  await notifyActivity({ title: "Quotation saved", body: `${items.length} line item(s)`, link: `/jobs/${jobId}` })
   revalidatePath(`/jobs/${jobId}`)
 }
 
@@ -699,6 +706,7 @@ export async function sendApproval(jobId: string) {
     .update({ stage: "customer_approval", approval_status: "pending", updated_at: new Date().toISOString() })
     .eq("id", jobId)
   if (error) throw new Error(error.message)
+  await notifyActivity({ title: "Sent for customer approval", link: `/jobs/${jobId}` })
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/crm")
 }

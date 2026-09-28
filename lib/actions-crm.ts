@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import { notifyActivity } from "@/lib/activity"
 import type { Permission } from "@/lib/rbac/roles"
 
 async function requireUser() {
@@ -279,6 +280,7 @@ export async function createPurchaseOrder(payload: {
     )
     if (itemErr) throw new Error(itemErr.message)
   }
+  await notifyActivity({ title: "Purchase order created", link: `/purchasing/${po.id}` })
   revalidatePath("/purchasing")
   redirect(`/purchasing/${po.id}`)
 }
@@ -313,6 +315,11 @@ export async function receivePurchaseOrder(poId: string, formData: FormData) {
     .from("purchase_orders")
     .update({ status: "received", supplier_invoice_no: supplierInvoiceNo, updated_at: new Date().toISOString() })
     .eq("id", poId)
+  await notifyActivity({
+    title: "Goods received",
+    body: supplierInvoiceNo ? `Supplier invoice ${supplierInvoiceNo}` : undefined,
+    link: `/purchasing/${poId}`,
+  })
   revalidatePath("/purchasing")
   revalidatePath(`/purchasing/${poId}`)
 }
@@ -335,6 +342,7 @@ export async function payPurchaseOrder(poId: string, formData: FormData) {
     .from("purchase_orders")
     .update({ amount_paid: (Number(po?.amount_paid) || 0) + amount })
     .eq("id", poId)
+  await notifyActivity({ title: "Supplier payment recorded", body: `AED ${amount}`, link: `/purchasing/${poId}` })
   revalidatePath(`/purchasing/${poId}`)
   revalidatePath("/purchasing")
 }
@@ -491,6 +499,7 @@ export async function recordInvoicePayment(invoiceId: string, formData: FormData
 export async function cancelInvoice(invoiceId: string) {
   const { supabase } = await guard("invoices.edit")
   await supabase.from("invoices").update({ status: "cancelled" }).eq("id", invoiceId)
+  await notifyActivity({ title: "Invoice cancelled", link: `/invoices/${invoiceId}` })
   revalidatePath(`/invoices/${invoiceId}`)
   revalidatePath("/invoices")
 }

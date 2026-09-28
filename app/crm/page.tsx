@@ -8,7 +8,8 @@ import { StageBarChart, RevenueAreaChart } from "@/components/dashboard-charts"
 import { CarFlow } from "@/components/car-flow"
 import { STAGES, STAGE_MAP, type Stage } from "@/lib/constants"
 import { formatCurrency, relativeHours } from "@/lib/utils"
-import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardCheck, ThumbsUp, ScanLine } from "lucide-react"
+import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardCheck, ThumbsUp, ScanLine, ShoppingCart, Landmark } from "lucide-react"
+import { currentQuarter } from "@/lib/vat-report"
 import { Button } from "@/components/ui"
 import type { JobCardData } from "@/components/job-card"
 import { buildJobCoverMap } from "@/lib/job-covers"
@@ -97,6 +98,42 @@ export default async function DashboardPage() {
     if (approvedJobIds.has(jobId)) revenue += total
   }
 
+  // Total purchased (confirmed supplier invoices + purchase orders) and this quarter's net VAT.
+  let totalPurchased = 0
+  let purchasedThisMonth = 0
+  let netVatQuarter = 0
+  const quarter = currentQuarter()
+  if (canSeeMoney) {
+    const monthStart = `${quarter.from.slice(0, 4)}-${String(new Date().getMonth() + 1).padStart(2, "0")}-01`
+    const [{ data: bills }, { data: pos }, { data: qInvoices }] = await Promise.all([
+      supabase
+        .from("supplier_invoices")
+        .select("total, vat_amount, invoice_date")
+        .eq("status", "confirmed")
+        .is("deleted_at", null),
+      supabase.from("purchase_orders").select("total, vat_amount, order_date").neq("status", "cancelled"),
+      supabase
+        .from("invoices")
+        .select("vat_amount")
+        .neq("status", "cancelled")
+        .gte("issue_date", quarter.from)
+        .lte("issue_date", quarter.to),
+    ])
+    const purchaseRows = [
+      ...(bills ?? []).map((b) => ({ total: b.total, vat: b.vat_amount, date: b.invoice_date as string | null })),
+      ...(pos ?? []).map((p) => ({ total: p.total, vat: p.vat_amount, date: p.order_date as string | null })),
+    ]
+    let inputVatQuarter = 0
+    for (const p of purchaseRows) {
+      const total = Number(p.total) || 0
+      totalPurchased += total
+      if (p.date && p.date >= monthStart) purchasedThisMonth += total
+      if (p.date && p.date >= quarter.from && p.date <= quarter.to) inputVatQuarter += Number(p.vat) || 0
+    }
+    const outputVatQuarter = (qInvoices ?? []).reduce((s, i) => s + (Number(i.vat_amount) || 0), 0)
+    netVatQuarter = outputVatQuarter - inputVatQuarter
+  }
+
   // avg repair time (check-in -> delivered) in hours
   const repairTimes = delivered
     .filter((j) => j.approved_at || j.updated_at)
@@ -179,6 +216,26 @@ export default async function DashboardPage() {
             accent="text-emerald-400"
             bg="bg-emerald-500/10"
           />
+        )}
+        {canSeeMoney && (
+          <Link href="/purchasing/invoices" className="rounded-xl focus-visible:outline-2 focus-visible:outline-primary">
+            <StatCard
+              label="Total Purchased"
+              value={formatCurrency(totalPurchased)}
+              icon={ShoppingCart}
+              hint={`This month: ${formatCurrency(purchasedThisMonth)}`}
+            />
+          </Link>
+        )}
+        {canSeeMoney && (
+          <Link href="/reports/vat" className="rounded-xl focus-visible:outline-2 focus-visible:outline-primary">
+            <StatCard
+              label={netVatQuarter >= 0 ? "VAT Payable (quarter)" : "VAT Refundable (quarter)"}
+              value={formatCurrency(Math.abs(netVatQuarter))}
+              icon={Landmark}
+              hint="Output − input VAT · open VAT return"
+            />
+          </Link>
         )}
         <StatCard label="Jobs Completed" value={jobsCompleted} icon={ClipboardCheck} />
         <StatCard label="Avg Repair Time" value={avgRepairLabel} icon={Clock} accent="text-sky-400" bg="bg-sky-500/10" />

@@ -31,6 +31,7 @@ import {
   ScanLine,
   Sparkles,
   Clock,
+  Landmark,
   Megaphone,
 } from "lucide-react"
 
@@ -81,6 +82,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/reports", label: "Reports", icon: BarChart3, anyOf: ["reports.view"] },
       { href: "/reports/labour", label: "Labour Report", icon: Clock, anyOf: ["reports.view"] },
+      { href: "/reports/vat", label: "VAT Return", icon: Landmark, anyOf: ["reports.view"] },
     ],
   },
   {

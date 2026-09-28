@@ -4,6 +4,7 @@ import { cache } from "react"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import type { Permission, Role } from "@/lib/rbac/roles"
 import { ALL_PERMISSIONS } from "@/lib/rbac/roles"
+import { notifyFromAudit } from "@/lib/activity"
 
 export interface SessionContext {
   userId: string
@@ -238,4 +239,5 @@ export async function logAction(
     detail,
     status: "ok",
   })
+  await notifyFromAudit({ id: ctx.userId, name: ctx.name }, action, resourceType, resourceId, detail)
 }

@@ -6,6 +6,7 @@ import { stripe } from "@/lib/stripe"
 import { appBaseUrl } from "@/lib/account-links"
 import { sendEmail, invoiceLinkEmail } from "@/lib/email"
 import { waMeLink } from "@/lib/whatsapp"
+import { notifyActivity } from "@/lib/activity"
 
 function money(n: number) {
   return `AED ${Number(n).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -191,6 +192,13 @@ export async function confirmInvoiceCheckout(token: string, sessionId: string): 
     .from("invoices")
     .update({ amount_paid: paid, status, stripe_session_id: session.id, updated_at: new Date().toISOString() })
     .eq("id", inv.id)
+  await notifyActivity({
+    title: "Customer paid online",
+    body: `${money(amount)} by card · ${status}`,
+    link: `/invoices/${inv.id}`,
+    actor: null,
+    permission: "invoices.view",
+  })
 
   revalidatePath(`/invoices/${inv.id}`)
   revalidatePath("/invoices")

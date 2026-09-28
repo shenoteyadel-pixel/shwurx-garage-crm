@@ -165,6 +165,12 @@ export function ReportsClient({
         >
           Labour Hours
         </Link>
+        <Link
+          href={`/reports/vat?from=${from}&to=${to}`}
+          className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+        >
+          VAT Return
+        </Link>
         <div className="ml-auto flex flex-wrap gap-2">
           <GhostButton onClick={() => preset("month")}>This Month</GhostButton>
           <GhostButton onClick={() => preset("quarter")}>This Quarter</GhostButton>

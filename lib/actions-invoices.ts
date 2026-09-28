@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { requireAnyPermission, logAction, ForbiddenError, type SessionContext } from "@/lib/rbac/context"
 import type { Permission } from "@/lib/rbac/roles"
 import { getSettings } from "@/lib/settings"
+import { notifyActivity } from "@/lib/activity"
 import { extractInvoice } from "@/lib/invoice-ocr"
 import { suggestSalePrice } from "@/lib/pricing"
 
@@ -725,6 +726,11 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
     .from("supplier_invoices")
     .update({ amount_paid: paid, payment_status: status, updated_at: new Date().toISOString() })
     .eq("id", id)
+  await notifyActivity({
+    title: "Supplier invoice payment",
+    body: `AED ${amount} (${status})`,
+    link: `/purchasing/invoices/${id}`,
+  })
 
   revalidatePath(`/purchasing/invoices/${id}`)
   revalidatePath("/suppliers")

@@ -6,6 +6,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { Button, Input, Label } from "@/components/ui"
 import { BrandLogo } from "@/components/brand-logo"
+import { recordStaffLogin } from "@/lib/actions-activity"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -25,6 +26,7 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
+    await recordStaffLogin().catch(() => {})
     router.push("/crm")
     router.refresh()
   }

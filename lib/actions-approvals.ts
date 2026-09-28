@@ -6,6 +6,7 @@ import { VAT_RATE } from "@/lib/constants"
 import { appBaseUrl } from "@/lib/account-links"
 import { sendEmail, approvalRequestEmail } from "@/lib/email"
 import { notifyByPermission } from "@/lib/actions-notifications"
+import { notifyActivity } from "@/lib/activity"
 import { buildApprovalMessage, waMeLink } from "@/lib/whatsapp"
 import { revalidatePath } from "next/cache"
 
@@ -263,6 +264,11 @@ export async function createApprovalRequest(
     emailed = await emailApprovalLink(svc, jobId, token, snap.total, snap.items.length, false)
   }
 
+  await notifyActivity({
+    title: "Approval request sent",
+    body: `${snap.items.length} item(s) · AED ${Number(snap.total).toLocaleString("en-AE")}`,
+    link: `/jobs/${jobId}`,
+  })
   revalidatePath(`/jobs/${jobId}`)
   return { ok: true, token, url, emailed }
 }
@@ -467,6 +473,11 @@ export async function createAdditionalWorkRequest(
 
   const url = `${appBaseUrl()}/approve/r/${inserted.token}`
   const emailed = await emailApprovalLink(svc, jobId, inserted.token as string, total, items.length, true)
+  await notifyActivity({
+    title: "Additional work sent for approval",
+    body: `${items.length} item(s) · AED ${Number(total).toLocaleString("en-AE")}`,
+    link: `/jobs/${jobId}`,
+  })
 
   revalidatePath(`/jobs/${jobId}`)
   return { ok: true, token: inserted.token as string, url, emailed }

@@ -38,7 +38,11 @@ export default async function DashboardPage() {
   // actual car (kind = 'vehicle'); only then the AI studio render as fallback.
   const coverByJob = await buildJobCoverMap(supabase, jobs)
 
-  const { data: parts } = await supabase.from("parts_requests").select("status").is("deleted_at", null)
+  const { data: parts } = await supabase
+    .from("parts_requests")
+    .select("status, jobs!inner(stage)")
+    .is("deleted_at", null)
+    .neq("jobs.stage", "delivered")
   const { data: quotes } = await supabase.from("quotations").select("total, job_id, created_at")
 
   // Latest invoice per job drives the payment badge on the board.

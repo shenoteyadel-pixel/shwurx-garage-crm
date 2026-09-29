@@ -15,6 +15,8 @@ type Job = {
   vehicle_year: number | null
   vehicle_make: string | null
   vehicle_model: string | null
+  plate_emirate: string | null
+  plate_code: string | null
   plate_number: string | null
 }
 type Line = { key: string; kind: "part" | "labour" | "fee"; description: string; quantity: number; unit_price: number }
@@ -71,7 +73,7 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
       setCustomerName(j.customer_name ?? "")
       setCustomerMobile(j.customer_mobile ?? "")
       setVehicleDesc([j.vehicle_year, j.vehicle_make, j.vehicle_model].filter(Boolean).join(" "))
-      setPlate(j.plate_number ?? "")
+      setPlate([j.plate_emirate, j.plate_code, j.plate_number].filter(Boolean).join(" "))
     }
   }
 

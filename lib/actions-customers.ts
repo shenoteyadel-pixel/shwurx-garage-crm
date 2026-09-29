@@ -164,6 +164,8 @@ export async function updateCustomer(id: string, fd: FormData) {
   revalidatePath("/customers")
   revalidatePath("/jobs")
   revalidatePath("/flow")
+  const redirectTo = String(fd.get("redirect_to") || "")
+  if (redirectTo.startsWith("/")) redirect(redirectTo)
 }
 
 // Inline create used by the intake wizard — returns the row instead of redirecting.

@@ -8,7 +8,7 @@ import { StageBarChart, RevenueAreaChart } from "@/components/dashboard-charts"
 import { CarFlow } from "@/components/car-flow"
 import { STAGES, STAGE_MAP, type Stage } from "@/lib/constants"
 import { formatCurrency, relativeHours } from "@/lib/utils"
-import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardCheck, ThumbsUp, ScanLine, ShoppingCart, Landmark, FileDown } from "lucide-react"
+import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardCheck, ThumbsUp, ScanLine, ShoppingCart, Landmark, FileDown, Wallet } from "lucide-react"
 import { currentQuarter } from "@/lib/vat-report"
 import { Button } from "@/components/ui"
 import type { JobCardData } from "@/components/job-card"
@@ -193,9 +193,14 @@ export default async function DashboardPage() {
         >
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 id="finance-heading" className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide">
-              <Landmark className="h-4 w-4 text-primary" aria-hidden /> Purchases &amp; VAT
+              <Landmark className="h-4 w-4 text-primary" aria-hidden /> Finance, Purchases &amp; VAT
             </h2>
             <div className="flex flex-wrap gap-2">
+              <Link href="/finance">
+                <Button>
+                  <Wallet className="h-4 w-4" /> Finance &amp; Audit Report
+                </Button>
+              </Link>
               <Link href="/reports/vat">
                 <Button variant="ghost">
                   <Landmark className="h-4 w-4" /> VAT Dashboard

@@ -51,6 +51,13 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: "Finance",
+    items: [
+      { href: "/finance", label: "Finance & Audit", icon: Wallet, anyOf: ["reports.financial", "payments.view"] },
+      { href: "/reports/vat", label: "VAT Return", icon: Landmark, anyOf: ["reports.view"] },
+    ],
+  },
+  {
     label: "Workshop",
     items: [
       { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all"] },
@@ -81,10 +88,8 @@ const NAV_GROUPS = [
   {
     label: "Insights",
     items: [
-      { href: "/finance", label: "Finance & Audit", icon: Wallet, anyOf: ["reports.financial", "payments.view"] },
       { href: "/reports", label: "Reports", icon: BarChart3, anyOf: ["reports.view"] },
       { href: "/reports/labour", label: "Labour Report", icon: Clock, anyOf: ["reports.view"] },
-      { href: "/reports/vat", label: "VAT Return", icon: Landmark, anyOf: ["reports.view"] },
     ],
   },
   {

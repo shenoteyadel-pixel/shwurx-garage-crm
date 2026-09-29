@@ -17,7 +17,7 @@ export default async function NewInvoicePage({
 
   const { data: jobs } = await supabase
     .from("jobs")
-    .select("id, job_number, customer_name, customer_mobile, vehicle_year, vehicle_make, vehicle_model, plate_number")
+    .select("id, job_number, customer_name, customer_mobile, vehicle_year, vehicle_make, vehicle_model, plate_emirate, plate_code, plate_number")
     .order("created_at", { ascending: false })
     .limit(200)
 
@@ -26,7 +26,7 @@ export default async function NewInvoicePage({
   if (job) {
     const { data: j } = await supabase
       .from("jobs")
-      .select("id, job_number, customer_name, customer_mobile, vehicle_year, vehicle_make, vehicle_model, plate_number")
+      .select("id, job_number, customer_name, customer_mobile, vehicle_year, vehicle_make, vehicle_model, plate_emirate, plate_code, plate_number")
       .eq("id", job)
       .maybeSingle()
     const { data: quote } = await supabase
@@ -101,7 +101,7 @@ export default async function NewInvoicePage({
         customerName: j.customer_name ?? "",
         customerMobile: j.customer_mobile ?? "",
         vehicleDesc: [j.vehicle_year, j.vehicle_make, j.vehicle_model].filter(Boolean).join(" "),
-        plate: j.plate_number ?? "",
+        plate: [j.plate_emirate, j.plate_code, j.plate_number].filter(Boolean).join(" "),
         discount: Number(quote?.discount_total) || 0,
         vatRate: Number(quote?.vat_rate) || VAT_RATE,
         items,

@@ -81,6 +81,7 @@ export type Permission =
   | "leads.view" | "leads.manage"
   | "marketing.view" | "marketing.manage"
   | "website.manage"
+  | "attendance.view_all" | "attendance.manage"
   | "users.manage" | "permissions.manage" | "settings.manage" | "audit.view"
 
 export interface PermGroup {
@@ -174,6 +175,13 @@ export const PERMISSION_CATALOG: PermGroup[] = [
       { key: "marketing.view", label: "View website analytics" },
       { key: "marketing.manage", label: "Manage website tracking & integrations" },
       { key: "website.manage", label: "Edit website content, images & blog" },
+    ],
+  },
+  {
+    group: "Attendance",
+    perms: [
+      { key: "attendance.view_all", label: "View all staff attendance & reports" },
+      { key: "attendance.manage", label: "Edit attendance records & shift settings" },
     ],
   },
   {

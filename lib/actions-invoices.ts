@@ -147,10 +147,80 @@ function suggestPartsRequest(
   return null
 }
 
+type DuplicateInvoice = { id: string; label: string; status: string }
+
+const normName = (v: string | null | undefined) => (v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")
+
+/**
+ * Find an existing (non-deleted) supplier invoice that is the same document:
+ * an identical file, or the same invoice number from the same supplier (or
+ * with the same total when the supplier is unknown on either side).
+ */
+async function findDuplicateInvoice(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  opts: {
+    excludeId?: string
+    fileHash?: string | null
+    invoiceNumber?: string | null
+    supplierId?: string | null
+    supplierName?: string | null
+    total?: number | null
+    onlyConfirmed?: boolean
+  },
+): Promise<DuplicateInvoice | null> {
+  const toDup = (r: { id: string; doc_number: string | null; invoice_number: string | null; status: string }) => ({
+    id: r.id,
+    label: r.doc_number || r.invoice_number || "an earlier upload",
+    status: r.status,
+  })
+
+  if (opts.fileHash) {
+    let q = supabase
+      .from("supplier_invoices")
+      .select("id, doc_number, invoice_number, status")
+      .is("deleted_at", null)
+      .eq("file_hash", opts.fileHash)
+      .limit(1)
+    if (opts.excludeId) q = q.neq("id", opts.excludeId)
+    const { data } = await q
+    if (data?.[0]) return toDup(data[0])
+  }
+
+  const num = normPartNumber(opts.invoiceNumber ?? "")
+  if (!num) return null
+
+  let q = supabase
+    .from("supplier_invoices")
+    .select("id, doc_number, invoice_number, status, supplier_id, supplier_name_raw, total")
+    .is("deleted_at", null)
+    .not("invoice_number", "is", null)
+  if (opts.excludeId) q = q.neq("id", opts.excludeId)
+  if (opts.onlyConfirmed) q = q.neq("status", "draft")
+  const { data } = await q
+  const supName = normName(opts.supplierName)
+  const match = (data ?? []).find((r) => {
+    if (normPartNumber(String(r.invoice_number ?? "")) !== num) return false
+    if (opts.supplierId && r.supplier_id) return r.supplier_id === opts.supplierId
+    if (supName && r.supplier_name_raw && normName(r.supplier_name_raw as string) === supName) return true
+    const t = Number(opts.total ?? 0)
+    return t > 0 && Math.abs(Number(r.total ?? 0) - t) < 0.01
+  })
+  return match ? toDup(match as never) : null
+}
+
+function duplicateMessage(d: DuplicateInvoice): string {
+  return `This invoice was already uploaded as ${d.label} (${d.status}). Open the existing one instead of uploading it again.`
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer)
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("")
+}
+
 /* ============================================================
    1. Upload + OCR -> create a DRAFT supplier invoice
    ============================================================ */
-export type ExtractResult = { ok: true; id: string } | { ok: false; error: string }
+export type ExtractResult = { ok: true; id: string } | { ok: false; error: string; duplicateId?: string }
 
 export type UploadedInvoiceInput = {
   pathname: string
@@ -201,6 +271,22 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
     return { ok: false, error: "Could not read the uploaded file" }
   }
 
+  const discardUpload = async () => {
+    try {
+      await del(blobPathname)
+    } catch (e) {
+      console.error("[v0] failed to clean up duplicate invoice blob:", e)
+    }
+  }
+
+  // Same exact file uploaded before? Stop before spending time on OCR.
+  const fileHash = await sha256Hex(bytes)
+  const sameFile = await findDuplicateInvoice(supabase, { fileHash })
+  if (sameFile) {
+    await discardUpload()
+    return { ok: false, error: duplicateMessage(sameFile), duplicateId: sameFile.id }
+  }
+
   const settings = await getSettings()
 
   // OCR is best-effort: a failure still yields an editable draft with the file.
@@ -224,6 +310,18 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
     supplierId = match?.id ?? null
   }
 
+  // Same invoice photographed/scanned again (different file, same document).
+  const sameInvoice = await findDuplicateInvoice(supabase, {
+    invoiceNumber: extracted?.invoice_number,
+    supplierId,
+    supplierName: extracted?.supplier_name,
+    total: n(extracted?.total),
+  })
+  if (sameInvoice) {
+    await discardUpload()
+    return { ok: false, error: duplicateMessage(sameInvoice), duplicateId: sameInvoice.id }
+  }
+
   const { data: inv, error } = await supabase
     .from("supplier_invoices")
     .insert({
@@ -238,6 +336,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
       total: n(extracted?.total),
       status: "draft",
       blob_pathname: blobPathname,
+      file_hash: fileHash,
       file_type: contentType || null,
       ocr_confidence: extracted?.confidence ?? null,
       ocr_raw: extracted ? (extracted as unknown as Record<string, unknown>) : null,
@@ -452,6 +551,22 @@ async function applyConfirm(
     .single()
   if (invErr) throw new Error(invErr.message)
   if (invoice.status !== "draft") throw new Error("Only draft invoices can be confirmed")
+
+  // Final guard: the number may have been typed/edited during review, so
+  // re-check against invoices already posted to stock and the supplier ledger.
+  const dup = await findDuplicateInvoice(supabase, {
+    excludeId: id,
+    invoiceNumber: invoice.invoice_number as string | null,
+    supplierId: invoice.supplier_id as string | null,
+    supplierName: invoice.supplier_name_raw as string | null,
+    total: Number(invoice.total ?? 0),
+    onlyConfirmed: true,
+  })
+  if (dup) {
+    throw new Error(
+      `Duplicate invoice: supplier invoice ${invoice.invoice_number} is already confirmed as ${dup.label}. Delete this draft instead of confirming it twice.`,
+    )
+  }
 
   // Auto-fill the Suppliers module: create a supplier from the scanned details
   // when none was matched, or backfill any missing contact fields on the matched

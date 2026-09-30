@@ -48,6 +48,7 @@ const NAV_GROUPS = [
     label: null,
     items: [
       { href: "/crm", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/attendance", label: "Check In / Out", icon: Fingerprint },
       { href: "/control-center", label: "AI Control Center", icon: Sparkles, ownerOnly: true },
     ],
   },
@@ -64,7 +65,6 @@ const NAV_GROUPS = [
       { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all"] },
       { href: "/jobs", label: "Job Cards", icon: Car, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
       { href: "/appointments", label: "Appointments", icon: CalendarClock, anyOf: ["appointments.view"] },
-      { href: "/attendance", label: "Attendance", icon: Fingerprint },
       { href: "/history", label: "History", icon: History, anyOf: ["jobs.view_all"] },
     ],
   },

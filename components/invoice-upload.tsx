@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { upload } from "@vercel/blob/client"
 import { Button } from "@/components/ui"
 import { extractAndCreateInvoice } from "@/lib/actions-invoices"
@@ -15,6 +16,7 @@ export function InvoiceUpload() {
   const router = useRouter()
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [duplicateId, setDuplicateId] = React.useState<string | null>(null)
   const [dragging, setDragging] = React.useState(false)
   const fileInput = React.useRef<HTMLInputElement>(null)
   const cameraInput = React.useRef<HTMLInputElement>(null)
@@ -26,6 +28,7 @@ export function InvoiceUpload() {
       return
     }
     setError(null)
+    setDuplicateId(null)
     setBusy(true)
     try {
       // Upload the original scan/PDF DIRECTLY to Vercel Blob from the browser.
@@ -45,7 +48,10 @@ export function InvoiceUpload() {
         fileName: file.name,
       })
       if (res.ok) router.push(`/purchasing/invoices/${res.id}`)
-      else setError(res.error)
+      else {
+        setError(res.error)
+        setDuplicateId(res.duplicateId ?? null)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong")
     } finally {
@@ -135,7 +141,16 @@ export function InvoiceUpload() {
       </div>
       {error && (
         <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-          <FileWarning className="h-4 w-4 shrink-0" /> {error}
+          <FileWarning className="h-4 w-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          {duplicateId && (
+            <Link
+              href={`/purchasing/invoices/${duplicateId}`}
+              className="shrink-0 font-semibold text-foreground underline underline-offset-2"
+            >
+              Open existing
+            </Link>
+          )}
         </div>
       )}
     </div>

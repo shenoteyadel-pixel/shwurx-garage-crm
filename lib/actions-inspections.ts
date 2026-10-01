@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
-import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import { logAction } from "@/lib/rbac/context"
+import { requireJobWork } from "@/lib/rbac/job-access"
 import type { Permission } from "@/lib/rbac/roles"
 
 /**
@@ -14,12 +15,8 @@ import type { Permission } from "@/lib/rbac/roles"
  * and audited. The AI never touches this data — it is human-recorded condition.
  */
 
-async function guard(
-  perm: Permission,
-): Promise<{ supabase: Awaited<ReturnType<typeof createClient>>; ctx: SessionContext }> {
-  const ctx = await requirePermission(perm)
-  const supabase = await createClient()
-  return { supabase, ctx }
+async function guard(jobId?: string | null) {
+  return requireJobWork(["jobs.edit", "inspection.manage"], jobId)
 }
 
 export type MarkerView = "top" | "front" | "rear" | "left" | "right"
@@ -51,15 +48,15 @@ async function getOrCreateInspection(
 
 /** Ensure an inspection row exists for the job and return its id. */
 export async function ensureInspection(jobId: string): Promise<string> {
-  const { supabase, ctx } = await guard("jobs.edit")
+  const { supabase, ctx } = await guard(jobId)
   const inspection = await getOrCreateInspection(supabase, jobId, ctx.userId)
   return inspection.id as string
 }
 
 /** Persist the inspection header fields (odometer / fuel / notes). */
 export async function saveInspectionDetails(formData: FormData) {
-  const { supabase, ctx } = await guard("jobs.edit")
   const jobId = String(formData.get("job_id") || "")
+  const { supabase, ctx } = await guard(jobId)
   if (!jobId) throw new Error("Missing job_id")
 
   const inspection = await getOrCreateInspection(supabase, jobId, ctx.userId)
@@ -90,7 +87,7 @@ export async function addInspectionMarker(input: {
   locationLabel?: string | null
   note?: string | null
 }) {
-  const { supabase, ctx } = await guard("jobs.edit")
+  const { supabase, ctx } = await guard(input.jobId)
   if (!input.jobId) throw new Error("Missing job_id")
   const inspection = await getOrCreateInspection(supabase, input.jobId, ctx.userId)
 
@@ -134,7 +131,7 @@ export async function updateInspectionMarker(input: {
   locationLabel?: string | null
   note?: string | null
 }) {
-  const { supabase, ctx } = await guard("jobs.edit")
+  const { supabase, ctx } = await guard(input.jobId)
   if (!input.jobId || !input.markerId) throw new Error("Missing marker")
 
   const patch: Record<string, unknown> = {}
@@ -152,7 +149,7 @@ export async function updateInspectionMarker(input: {
 
 /** Delete a marker (its photos cascade). */
 export async function deleteInspectionMarker(jobId: string, markerId: string) {
-  const { supabase, ctx } = await guard("jobs.edit")
+  const { supabase, ctx } = await guard(jobId)
   if (!jobId || !markerId) throw new Error("Missing marker")
   // Soft delete: archive so it can be restored from the Recycle Bin.
   const { error } = await supabase
@@ -166,7 +163,7 @@ export async function deleteInspectionMarker(jobId: string, markerId: string) {
 
 /** Remove every marker on this job's inspection (scoped clear, not a bulk wipe). */
 export async function clearInspectionMarkers(jobId: string) {
-  const { supabase, ctx } = await guard("jobs.edit")
+  const { supabase, ctx } = await guard(jobId)
   if (!jobId) throw new Error("Missing job_id")
   const { data: inspection } = await supabase
     .from("vehicle_inspections")
@@ -188,7 +185,7 @@ export async function clearInspectionMarkers(jobId: string) {
 
 /** Set the vehicle body type used to draw the brand-neutral inspection diagram. */
 export async function setJobBodyType(jobId: string, bodyType: string) {
-  const { supabase, ctx } = await guard("jobs.edit")
+  const { supabase, ctx } = await guard(jobId)
   if (!jobId) return
   const { error } = await supabase.from("jobs").update({ body_type: bodyType }).eq("id", jobId)
   if (error) throw new Error(error.message)
@@ -198,7 +195,7 @@ export async function setJobBodyType(jobId: string, bodyType: string) {
 
 /** Attach already-uploaded photo URLs to a marker. */
 export async function addMarkerPhotos(jobId: string, markerId: string, urls: string[]) {
-  const { supabase, ctx } = await guard("jobs.edit")
+  const { supabase, ctx } = await guard(jobId)
   if (!markerId || !urls.length) return
   const { error } = await supabase
     .from("inspection_marker_photos")
@@ -210,7 +207,7 @@ export async function addMarkerPhotos(jobId: string, markerId: string, urls: str
 
 /** Remove a single marker photo. */
 export async function deleteMarkerPhoto(jobId: string, photoId: string) {
-  const { supabase } = await guard("jobs.edit")
+  const { supabase } = await guard(jobId)
   if (!photoId) return
   const { error } = await supabase.from("inspection_marker_photos").delete().eq("id", photoId)
   if (error) throw new Error(error.message)
@@ -223,7 +220,7 @@ export async function completeInspection(input: {
   signatureDataUrl?: string | null
   signedByName?: string | null
 }) {
-  const { supabase, ctx } = await guard("jobs.edit")
+  const { supabase, ctx } = await guard(input.jobId)
   if (!input.jobId) throw new Error("Missing job_id")
   const inspection = await getOrCreateInspection(supabase, input.jobId, ctx.userId)
 

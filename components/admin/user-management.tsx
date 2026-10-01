@@ -6,11 +6,14 @@ import { Card, Button, Input, Label, Select, Badge, Combo } from "@/components/u
 import { cn } from "@/lib/utils"
 import {
   ROLE_LIST,
+  ROLE_MAP,
+  ROLE_TEAMS,
   PERMISSION_CATALOG,
   roleLabel,
   inviteStatusMeta,
   type Permission,
   type Role,
+  type RoleTeam,
 } from "@/lib/rbac/roles"
 import {
   DEPARTMENTS,
@@ -56,6 +59,7 @@ import {
   MessageCircle,
   Link2,
   ShieldAlert,
+  Search,
 } from "lucide-react"
 
 interface UserRow {
@@ -94,6 +98,24 @@ const TONE_CLASS: Record<string, string> = {
   destructive: "bg-destructive/10 text-destructive",
   sky: "bg-sky-500/10 text-sky-400",
   emerald: "bg-emerald-500/10 text-emerald-400",
+}
+
+type StatusFilter = "all" | "active" | "pending" | "disabled"
+
+function userStatusKey(u: UserRow): Exclude<StatusFilter, "all"> {
+  if (!u.is_active) return "disabled"
+  if (u.must_set_password || u.invite_status === "invited" || u.invite_status === "email_failed" || u.invite_status === "not_sent")
+    return "pending"
+  return "active"
+}
+
+function teamOf(role: string): RoleTeam {
+  return ROLE_MAP[role]?.team ?? "support"
+}
+
+const ROLE_ORDER = new Map(ROLE_LIST.map((r, i) => [r.value as string, i]))
+function roleRank(role: string) {
+  return ROLE_ORDER.get(role) ?? 999
 }
 
 function fmtDate(v?: string | null) {
@@ -135,20 +157,113 @@ export function UserManagement({
   // Everyone the bulk delete would remove: all staff except the current Owner.
   const otherUserCount = users.filter((u) => u.id !== currentUserId).length
 
+  const [query, setQuery] = useState("")
+  const [teamFilter, setTeamFilter] = useState<RoleTeam | "all">("all")
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+
+  const counts = {
+    total: users.length,
+    active: users.filter((u) => userStatusKey(u) === "active").length,
+    pending: users.filter((u) => userStatusKey(u) === "pending").length,
+    disabled: users.filter((u) => userStatusKey(u) === "disabled").length,
+  }
+
+  const q = query.trim().toLowerCase()
+  const visible = users.filter((u) => {
+    if (teamFilter !== "all" && teamOf(u.role) !== teamFilter) return false
+    if (statusFilter !== "all" && userStatusKey(u) !== statusFilter) return false
+    if (!q) return true
+    return [u.full_name, u.email, u.employee_id, u.job_title, roleLabel(u.role), u.mobile, u.phone]
+      .filter(Boolean)
+      .some((v) => String(v).toLowerCase().includes(q))
+  })
+
+  const groups = ROLE_TEAMS.map((t) => ({
+    team: t,
+    members: visible
+      .filter((u) => teamOf(u.role) === t.value)
+      .sort((a, b) => roleRank(a.role) - roleRank(b.role) || (a.full_name || "").localeCompare(b.full_name || "")),
+  })).filter((g) => g.members.length > 0)
+
+  const teamCount = (team: RoleTeam) => users.filter((u) => teamOf(u.role) === team).length
+
   return (
     <div className="flex flex-col gap-4">
-      {canManageUsers && (
-        <div className="flex flex-wrap justify-end gap-2">
-          {isOwner && otherUserCount > 0 && (
-            <Button variant="danger" onClick={() => setBulkDeleting(true)}>
-              <ShieldAlert className="h-4 w-4" /> Delete all users
-            </Button>
-          )}
-          <Button onClick={() => setShowCreate(true)}>
-            <UserPlus className="h-4 w-4" /> Add staff user
-          </Button>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {(
+          [
+            { key: "all", label: "Total staff", value: counts.total },
+            { key: "active", label: "Active", value: counts.active },
+            { key: "pending", label: "Awaiting setup", value: counts.pending },
+            { key: "disabled", label: "Disabled", value: counts.disabled },
+          ] as { key: StatusFilter; label: string; value: number }[]
+        ).map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => setStatusFilter(s.key)}
+            aria-pressed={statusFilter === s.key}
+            className={cn(
+              "flex flex-col gap-1 rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:border-primary/50",
+              statusFilter === s.key ? "border-primary" : "border-border",
+            )}
+          >
+            <span className="text-xs text-muted-foreground">{s.label}</span>
+            <span className="text-2xl font-semibold tabular-nums">{s.value}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="relative md:w-80">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name, email, ID, role…"
+            aria-label="Search users"
+            className="pl-9"
+          />
         </div>
-      )}
+        {canManageUsers && (
+          <div className="flex flex-wrap gap-2">
+            {isOwner && otherUserCount > 0 && (
+              <Button variant="danger" onClick={() => setBulkDeleting(true)}>
+                <ShieldAlert className="h-4 w-4" /> Delete all users
+              </Button>
+            )}
+            <Button onClick={() => setShowCreate(true)}>
+              <UserPlus className="h-4 w-4" /> Add staff user
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div role="tablist" aria-label="Filter by team" className="flex flex-wrap gap-2">
+        {[{ value: "all" as const, label: "All teams" }, ...ROLE_TEAMS].map((t) => {
+          const n = t.value === "all" ? users.length : teamCount(t.value)
+          if (t.value !== "all" && n === 0) return null
+          const active = teamFilter === t.value
+          return (
+            <button
+              key={t.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setTeamFilter(t.value)}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                active
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t.label}
+              <span className={cn("tabular-nums", active ? "opacity-80" : "opacity-60")}>{n}</span>
+            </button>
+          )
+        })}
+      </div>
 
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
@@ -160,34 +275,53 @@ export function UserManagement({
                 <th className="px-4 py-3 font-medium">Account status</th>
                 <th className="px-4 py-3 font-medium">Last login</th>
                 <th className="px-4 py-3 font-medium">Overrides</th>
-                <th className="px-4 py-3" />
+                <th className="px-4 py-3">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
-            <tbody>
-              {users.map((u) => (
-                <UserRowItem
-                  key={u.id}
-                  user={u}
-                  isSelf={u.id === currentUserId}
-                  isOwner={isOwner}
-                  overrideCount={overrideCount(u.id)}
-                  canManageUsers={canManageUsers}
-                  canManagePerms={canManagePerms}
-                  onEditPerms={() => setEditing(u)}
-                  onEditProfile={() => setProfileEditing(u)}
-                  onDelete={() => setDeleting(u)}
-                  onCredential={(result, purpose, phone) => setCred({ result, purpose, phone })}
-                  onToast={showToast}
-                />
-              ))}
-              {users.length === 0 && (
+            {groups.map((g) => (
+              <tbody key={g.team.value}>
+                <tr className="border-b border-border bg-secondary/50">
+                  <th colSpan={6} scope="colgroup" className="px-4 py-2 text-left">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                        {g.team.label}
+                      </span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {g.members.length} {g.members.length === 1 ? "member" : "members"}
+                      </span>
+                      <span className="text-xs font-normal text-muted-foreground">{g.team.description}</span>
+                    </div>
+                  </th>
+                </tr>
+                {g.members.map((u) => (
+                  <UserRowItem
+                    key={u.id}
+                    user={u}
+                    isSelf={u.id === currentUserId}
+                    isOwner={isOwner}
+                    overrideCount={overrideCount(u.id)}
+                    canManageUsers={canManageUsers}
+                    canManagePerms={canManagePerms}
+                    onEditPerms={() => setEditing(u)}
+                    onEditProfile={() => setProfileEditing(u)}
+                    onDelete={() => setDeleting(u)}
+                    onCredential={(result, purpose, phone) => setCred({ result, purpose, phone })}
+                    onToast={showToast}
+                  />
+                ))}
+              </tbody>
+            ))}
+            {groups.length === 0 && (
+              <tbody>
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                    No staff users yet.
+                    {users.length === 0 ? "No staff users yet." : "No users match these filters."}
                   </td>
                 </tr>
-              )}
-            </tbody>
+              </tbody>
+            )}
           </table>
         </div>
       </Card>

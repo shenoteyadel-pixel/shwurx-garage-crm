@@ -4,7 +4,8 @@ import { z } from "zod"
 import { generateObject } from "ai"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
-import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import { logAction } from "@/lib/rbac/context"
+import { requireJobWork } from "@/lib/rbac/job-access"
 import type { Permission } from "@/lib/rbac/roles"
 
 /**
@@ -18,10 +19,8 @@ import type { Permission } from "@/lib/rbac/roles"
 
 const DIAGNOSTIC_MODEL = "anthropic/claude-sonnet-5"
 
-async function guard(perm: Permission): Promise<{ supabase: Awaited<ReturnType<typeof createClient>>; ctx: SessionContext }> {
-  const ctx = await requirePermission(perm)
-  const supabase = await createClient()
-  return { supabase, ctx }
+async function guard(jobId?: string | null) {
+  return requireJobWork(["jobs.edit", "diagnostics.manage"], jobId)
 }
 
 /* ---------------- Structured AI schema ---------------- */
@@ -79,8 +78,8 @@ async function getOrCreateSession(
 
 /** Persist the technician's structured inputs (symptoms/observations/error codes). */
 export async function saveDiagnosticInputs(formData: FormData) {
-  const { supabase, ctx } = await guard("jobs.edit")
   const jobId = String(formData.get("job_id") || "")
+  const { supabase, ctx } = await guard(jobId)
   if (!jobId) throw new Error("Missing job_id")
 
   const session = await getOrCreateSession(supabase, jobId, ctx.userId)
@@ -155,7 +154,7 @@ export async function runAiDiagnostic(
   jobId: string,
   inputs?: { symptoms?: string; observations?: string; error_codes?: string },
 ) {
-  const { supabase, ctx } = await guard("jobs.edit")
+  const { supabase, ctx } = await guard(jobId)
 
   const { data: job, error: jobErr } = await supabase
     .from("jobs")
@@ -266,8 +265,8 @@ export async function runAiDiagnostic(
 /* ---------------- Test workflow ---------------- */
 
 export async function addDiagnosticTest(formData: FormData) {
-  const { supabase, ctx } = await guard("jobs.edit")
   const jobId = String(formData.get("job_id") || "")
+  const { supabase, ctx } = await guard(jobId)
   const description = String(formData.get("description") || "").trim()
   if (!jobId || !description) throw new Error("Missing job or description")
 
@@ -291,8 +290,8 @@ export async function addDiagnosticTest(formData: FormData) {
 }
 
 export async function updateDiagnosticTest(formData: FormData) {
-  const { supabase, ctx } = await guard("jobs.edit")
   const jobId = String(formData.get("job_id") || "")
+  const { supabase, ctx } = await guard(jobId)
   const testId = String(formData.get("test_id") || "")
   const status = String(formData.get("status") || "")
   const allowed = ["not_tested", "testing", "pass", "fail", "confirmed"]
@@ -314,8 +313,8 @@ export async function updateDiagnosticTest(formData: FormData) {
 }
 
 export async function deleteDiagnosticTest(formData: FormData) {
-  const { supabase, ctx } = await guard("jobs.edit")
   const jobId = String(formData.get("job_id") || "")
+  const { supabase, ctx } = await guard(jobId)
   const testId = String(formData.get("test_id") || "")
   if (!jobId || !testId) throw new Error("Missing test")
   // Soft delete: archive so it can be restored from the Recycle Bin.
@@ -330,8 +329,8 @@ export async function deleteDiagnosticTest(formData: FormData) {
 
 /** The human confirmation step — the AI can never write this field. */
 export async function confirmDiagnosis(formData: FormData) {
-  const { supabase, ctx } = await guard("jobs.edit")
   const jobId = String(formData.get("job_id") || "")
+  const { supabase, ctx } = await guard(jobId)
   const diagnosis = String(formData.get("confirmed_diagnosis") || "").trim()
   if (!jobId || !diagnosis) throw new Error("A confirmed diagnosis is required")
 

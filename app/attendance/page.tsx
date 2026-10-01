@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell"
 import { AttendanceView } from "@/components/attendance-view"
 import {
   RECORD_COLUMNS,
+  buildPayroll,
   buildSummaries,
   loadAttendanceSettings,
   localDate,
@@ -28,13 +29,18 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const canEditSettings = ctxCanAny(ctx, ["attendance.manage", "settings.manage"])
 
   const supabase = await createClient()
-  const [shellUser, company, settings, staffRes, recordsRes, todayRes] = await Promise.all([
+  const [shellUser, company, settings, staffRes, recordsRes, todayRes, salaryRes] = await Promise.all([
     getShellUser(),
     getSettings(),
     loadAttendanceSettings(supabase),
     canViewAll
-      ? supabase.from("profiles").select("id, full_name, role").eq("is_active", true).neq("role", "customer").order("full_name")
-      : Promise.resolve({ data: [{ id: ctx.userId, full_name: ctx.name, role: ctx.role }] }),
+      ? supabase
+          .from("profiles")
+          .select("id, full_name, role, created_at")
+          .eq("is_active", true)
+          .neq("role", "customer")
+          .order("full_name")
+      : supabase.from("profiles").select("id, full_name, role, created_at").eq("id", ctx.userId),
     (() => {
       const q = supabase.from("attendance").select(RECORD_COLUMNS).gte("work_date", from).lte("work_date", to)
       return (canViewAll ? q : q.eq("user_id", ctx.userId)).order("work_date", { ascending: false })
@@ -43,12 +49,18 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       const q = supabase.from("attendance").select(RECORD_COLUMNS).eq("work_date", today)
       return canViewAll ? q : q.eq("user_id", ctx.userId)
     })(),
+    (() => {
+      const q = supabase.from("employee_salaries").select("user_id, monthly_salary")
+      return canManage ? q : q.eq("user_id", ctx.userId)
+    })(),
   ])
 
-  const staff = (staffRes.data ?? []) as StaffMember[]
+  const staff = (staffRes.data?.length ? staffRes.data : [{ id: ctx.userId, full_name: ctx.name, role: ctx.role }]) as StaffMember[]
   const records = (recordsRes.data ?? []) as AttendanceRecord[]
   const todayRecords = (todayRes.data ?? []) as AttendanceRecord[]
   const summaries = buildSummaries(staff, records, settings, days, today)
+  const salaries = new Map((salaryRes.data ?? []).map((s) => [s.user_id as string, Number(s.monthly_salary)]))
+  const payroll = buildPayroll(summaries, salaries, settings, days)
 
   return (
     <AppShell user={shellUser}>
@@ -62,6 +74,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
           records={records}
           todayRecords={todayRecords}
           summaries={summaries}
+          payroll={payroll}
           canViewAll={canViewAll}
           canManage={canManage}
           canEditSettings={canEditSettings}

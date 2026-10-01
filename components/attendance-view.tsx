@@ -19,6 +19,7 @@ import {
   type AttendanceSettings,
   type AttendanceStatus,
   type EmployeeSummary,
+  type PayrollLine,
   type StaffMember,
 } from "@/lib/attendance"
 import {
@@ -26,12 +27,13 @@ import {
   checkOut,
   deleteAttendanceRecord,
   saveAttendanceSettings,
+  saveEmployeeSalary,
   saveManualRecord,
 } from "@/lib/actions-attendance"
-import { buildAttendancePdf, downloadAttendanceCsv } from "@/components/attendance-pdf"
+import { buildAttendancePdf, buildPayrollPdf, downloadAttendanceCsv, downloadPayrollCsv } from "@/components/attendance-pdf"
 
 type Company = { name: string; trn: string | null; address: string | null }
-type Tab = "me" | "today" | "report" | "records" | "settings"
+type Tab = "me" | "today" | "report" | "payroll" | "records" | "settings"
 
 const STATUS_STYLE: Record<AttendanceStatus, string> = {
   present: "border-primary/40 bg-primary/10 text-primary",
@@ -52,16 +54,18 @@ function StatusBadge({ status }: { status: AttendanceStatus | "in" | "out" | "no
   return <Badge className={cn("capitalize", m.cls)}>{m.label}</Badge>
 }
 
-function getPosition(): Promise<{ lat: number; lng: number } | null> {
+function getPosition(): Promise<{ lat: number; lng: number; accuracy: number } | null> {
   if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.resolve(null)
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     )
   })
 }
+
+const money = (n: number) => n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 function useNow(intervalMs = 1000) {
   const [now, setNow] = useState(() => new Date())
@@ -81,6 +85,7 @@ export function AttendanceView(props: {
   records: AttendanceRecord[]
   todayRecords: AttendanceRecord[]
   summaries: EmployeeSummary[]
+  payroll: PayrollLine[]
   canViewAll: boolean
   canManage: boolean
   canEditSettings: boolean
@@ -91,6 +96,7 @@ export function AttendanceView(props: {
     { key: "me", label: "My attendance", show: true },
     { key: "today", label: "Today", show: props.canViewAll },
     { key: "report", label: "Monthly report", show: props.canViewAll },
+    { key: "payroll", label: "Payroll deductions", show: props.canManage },
     { key: "records", label: "Records", show: props.canViewAll },
     { key: "settings", label: "Shift settings", show: props.canEditSettings },
   ]
@@ -129,6 +135,7 @@ export function AttendanceView(props: {
       {tab === "me" && <MyAttendance {...props} />}
       {tab === "today" && <TodayBoard {...props} />}
       {tab === "report" && <MonthlyReport {...props} />}
+      {tab === "payroll" && <PayrollTab {...props} />}
       {tab === "records" && <RecordsTable {...props} />}
       {tab === "settings" && <SettingsForm settings={props.settings} />}
     </div>
@@ -145,9 +152,11 @@ function MyAttendance({
   records,
   todayRecords,
   summaries,
+  payroll,
 }: Parameters<typeof AttendanceView>[0]) {
   const router = useRouter()
   const now = useNow()
+  const myPay = payroll.find((p) => p.userId === me.id)
   const [pending, start] = useTransition()
   const [note, setNote] = useState("")
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -234,9 +243,9 @@ function MyAttendance({
             </PrimaryButton>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <MapPin className="h-3.5 w-3.5" />
-              {settings.attendance_require_location
-                ? `Location required — you must be within ${settings.geofence_radius_m} m of the workshop.`
-                : "Your location is recorded with each check-in if you allow it."}
+              {settings.workshop_lat == null
+                ? "Workshop location not set yet — a manager must set it before anyone can check in."
+                : `GPS required — check-in and check-out only work within ${settings.geofence_radius_m} m of the workshop.`}
             </p>
           </div>
         )}
@@ -259,6 +268,7 @@ function MyAttendance({
             ["Leave / sick", String((mySummary?.leave ?? 0) + (mySummary?.sick ?? 0))],
             ["Hours worked", formatDuration(mySummary?.workedMinutes ?? 0)],
             ["Overtime", formatDuration(mySummary?.overtimeMinutes ?? 0)],
+            ...(myPay && myPay.salary > 0 ? [["Salary deduction", `AED ${money(myPay.totalDeduction)}`]] : []),
           ].map(([k, v]) => (
             <div key={k} className="flex flex-col gap-1">
               <dt className="text-xs text-muted-foreground">{k}</dt>
@@ -445,6 +455,141 @@ function MonthlyReport({ month, today, summaries, records, staff, settings, comp
         </table>
       </div>
     </Card>
+  )
+}
+
+/* ---------------- Payroll ---------------- */
+
+function PayrollTab({ month, today, payroll, settings, company }: Parameters<typeof AttendanceView>[0]) {
+  const [busy, setBusy] = useState(false)
+  const totals = payroll.reduce(
+    (a, p) => ({ salary: a.salary + p.salary, ded: a.ded + p.totalDeduction, net: a.net + p.net }),
+    { salary: 0, ded: 0, net: 0 },
+  )
+  const basisLabel =
+    settings.payroll_day_basis === "30" ? "30 days" : settings.payroll_day_basis === "calendar" ? "days in month" : "working days"
+
+  return (
+    <Card className="flex flex-col gap-4 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <MonthPicker month={month} today={today} />
+        <div className="flex gap-2">
+          <GhostButton type="button" onClick={() => downloadPayrollCsv(month, payroll)}>
+            <FileSpreadsheet className="h-4 w-4" />
+            CSV
+          </GhostButton>
+          <PrimaryButton
+            type="button"
+            size="sm"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true)
+              try {
+                await buildPayrollPdf({ company, month, settings, payroll })
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            Payroll PDF
+          </PrimaryButton>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        Daily rate = monthly salary ÷ {basisLabel}. Each absent day deducts {settings.absence_deduction_days} day(s)
+        {settings.late_deduction_enabled ? "; late minutes are deducted pro-rata" : ""}. Absences are counted from{" "}
+        {settings.attendance_start_date}. Enter each employee&apos;s salary below and press Enter to save.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] text-sm">
+          <thead>
+            <tr className="text-left text-xs text-muted-foreground">
+              <th className="py-2 font-medium">Employee</th>
+              <th className="py-2 font-medium">Monthly salary (AED)</th>
+              <th className="py-2 text-right font-medium">Daily rate</th>
+              <th className="py-2 text-right font-medium">Absent</th>
+              <th className="py-2 text-right font-medium">Absence ded.</th>
+              <th className="py-2 text-right font-medium">Late</th>
+              <th className="py-2 text-right font-medium">Late ded.</th>
+              <th className="py-2 text-right font-medium">Total ded.</th>
+              <th className="py-2 text-right font-medium">Net pay</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payroll.map((p) => (
+              <tr key={p.userId} className="border-t border-border">
+                <td className="py-2">
+                  <div className="font-medium">{p.name}</div>
+                  <div className="text-xs text-muted-foreground">{roleLabel(p.role)}</div>
+                </td>
+                <td className="py-2">
+                  <SalaryInput userId={p.userId} salary={p.salary} name={p.name} />
+                </td>
+                <td className="py-2 text-right tabular-nums">{money(p.dailyRate)}</td>
+                <td className={cn("py-2 text-right tabular-nums", p.absentDays > 0 && "text-destructive")}>{p.absentDays}</td>
+                <td className="py-2 text-right tabular-nums">{money(p.absenceDeduction)}</td>
+                <td className="py-2 text-right tabular-nums">{formatDuration(p.lateMinutes)}</td>
+                <td className="py-2 text-right tabular-nums">{money(p.lateDeduction)}</td>
+                <td className={cn("py-2 text-right font-medium tabular-nums", p.totalDeduction > 0 && "text-destructive")}>
+                  {money(p.totalDeduction)}
+                </td>
+                <td className="py-2 text-right font-semibold tabular-nums">{money(p.net)}</td>
+              </tr>
+            ))}
+            <tr className="border-t border-border font-semibold">
+              <td className="py-2">Total</td>
+              <td className="py-2 tabular-nums">{money(totals.salary)}</td>
+              <td colSpan={5} />
+              <td className="py-2 text-right tabular-nums text-destructive">{money(totals.ded)}</td>
+              <td className="py-2 text-right tabular-nums">{money(totals.net)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
+function SalaryInput({ userId, salary, name }: { userId: string; salary: number; name: string }) {
+  const router = useRouter()
+  const [value, setValue] = useState(String(salary || ""))
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle")
+
+  async function save() {
+    const n = Number(value || 0)
+    if (!Number.isFinite(n) || n < 0 || n === salary) return
+    setState("saving")
+    const res = await saveEmployeeSalary(userId, n)
+    setState(res.ok ? "saved" : "error")
+    if (res.ok) router.refresh()
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        aria-label={`Monthly salary for ${name}`}
+        type="number"
+        min={0}
+        step="0.01"
+        className="h-8 w-28 tabular-nums"
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value)
+          setState("idle")
+        }}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+            e.preventDefault()
+            save()
+          }
+        }}
+      />
+      {state === "saving" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+      {state === "saved" && <span className="text-xs text-primary">Saved</span>}
+      {state === "error" && <span className="text-xs text-destructive">Failed</span>}
+    </div>
   )
 }
 
@@ -747,7 +892,11 @@ function SettingsForm({ settings }: { settings: AttendanceSettings }) {
     workshopLat: settings.workshop_lat,
     workshopLng: settings.workshop_lng,
     radius: settings.geofence_radius_m,
-    requireLocation: settings.attendance_require_location,
+    maxAccuracy: settings.max_gps_accuracy_m,
+    startDate: settings.attendance_start_date,
+    dayBasis: settings.payroll_day_basis,
+    absenceDeductionDays: settings.absence_deduction_days,
+    lateDeduction: settings.late_deduction_enabled,
   })
   const [locating, setLocating] = useState(false)
 
@@ -814,9 +963,10 @@ function SettingsForm({ settings }: { settings: AttendanceSettings }) {
         <section className="flex flex-col gap-3 border-t border-border pt-5">
           <h2 className="text-base font-semibold">Workshop location</h2>
           <p className="text-xs text-muted-foreground">
-            Open this page at the workshop and press &quot;Use my location&quot;. Staff check-ins will record their distance from here.
+            Stand inside the workshop and press &quot;Use my location&quot;. Check-in and check-out are blocked for anyone
+            outside the radius, or whose GPS reading is too inaccurate to prove where they are.
           </p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <div>
               <Label htmlFor="s-lat">Latitude</Label>
               <Input
@@ -848,6 +998,17 @@ function SettingsForm({ settings }: { settings: AttendanceSettings }) {
                 onChange={(e) => setF({ ...f, radius: Number(e.target.value) })}
               />
             </div>
+            <div>
+              <Label htmlFor="s-acc">Max GPS error (m)</Label>
+              <Input
+                id="s-acc"
+                type="number"
+                min={20}
+                max={1000}
+                value={f.maxAccuracy}
+                onChange={(e) => setF({ ...f, maxAccuracy: Number(e.target.value) })}
+              />
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <GhostButton
@@ -864,16 +1025,71 @@ function SettingsForm({ settings }: { settings: AttendanceSettings }) {
               {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
               Use my location
             </GhostButton>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-primary"
-                checked={f.requireLocation}
-                onChange={(e) => setF({ ...f, requireLocation: e.target.checked })}
-              />
-              Only allow check-in inside the radius
-            </label>
+            {f.workshopLat != null && f.workshopLng != null && (
+              <a
+                className="text-sm text-primary underline-offset-4 hover:underline"
+                href={`https://www.google.com/maps?q=${f.workshopLat},${f.workshopLng}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Check on map
+              </a>
+            )}
           </div>
+        </section>
+
+        <section className="flex flex-col gap-3 border-t border-border pt-5">
+          <h2 className="text-base font-semibold">Absence &amp; salary deductions</h2>
+          <p className="text-xs text-muted-foreground">
+            A working day with no check-in (and no leave or sick record) counts as absent and is deducted from salary.
+            Days before the start date are never counted.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <Label htmlFor="s-startdate">Count absences from</Label>
+              <Input
+                id="s-startdate"
+                type="date"
+                value={f.startDate}
+                onChange={(e) => setF({ ...f, startDate: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="s-basis">Daily rate = salary ÷</Label>
+              <select
+                id="s-basis"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={f.dayBasis}
+                onChange={(e) => setF({ ...f, dayBasis: e.target.value as typeof f.dayBasis })}
+              >
+                <option value="30">30 days (UAE standard)</option>
+                <option value="calendar">Days in the month</option>
+                <option value="working">Working days in the month</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="s-absdays">Days deducted per absence</Label>
+              <Input
+                id="s-absdays"
+                type="number"
+                step="0.5"
+                min={0}
+                max={3}
+                value={f.absenceDeductionDays}
+                onChange={(e) => setF({ ...f, absenceDeductionDays: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-primary"
+              checked={f.lateDeduction}
+              onChange={(e) => setF({ ...f, lateDeduction: e.target.checked })}
+            />
+            Also deduct late time (pro-rated per minute of the shift)
+          </label>
         </section>
 
         {msg && <p className={cn("text-sm", msg.ok ? "text-primary" : "text-destructive")}>{msg.text}</p>}

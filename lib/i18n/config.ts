@@ -18,7 +18,7 @@ export function dirFor(locale: Locale): "ltr" | "rtl" {
 
 /**
  * Public marketing/tracking routes where the Arabic RTL layout should apply.
- * The internal CRM stays LTR/English regardless of the saved preference.
+ * (Kept for route checks; the language now applies to the CRM as well.)
  */
 export function isPublicPath(pathname: string): boolean {
   if (pathname === "/") return true

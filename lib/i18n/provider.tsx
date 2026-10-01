@@ -8,7 +8,6 @@ import {
   LOCALE_COOKIE_MAX_AGE,
   dirFor,
   isLocale,
-  isPublicPath,
   type Locale,
 } from "./config"
 import { getDictionary, mergeDict, interpolate, type Dict } from "./dictionaries"
@@ -68,13 +67,11 @@ export function LanguageProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Keep the document's lang/dir in sync. RTL is only applied on public routes
-  // so the internal CRM always stays LTR regardless of the saved language.
+  // Keep the document's lang/dir in sync across the website and the CRM.
   React.useEffect(() => {
     const el = document.documentElement
-    const publicRoute = isPublicPath(pathname ?? "/")
-    el.lang = publicRoute ? lang : "en"
-    el.dir = publicRoute ? dirFor(lang) : "ltr"
+    el.lang = lang
+    el.dir = dirFor(lang)
   }, [lang, pathname])
 
   const setLang = React.useCallback(

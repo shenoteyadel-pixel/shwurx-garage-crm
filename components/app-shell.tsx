@@ -7,6 +7,10 @@ import { cn } from "@/lib/utils"
 import { signOut } from "@/lib/actions"
 import { NotificationBell } from "@/components/notification-bell"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { LanguageToggle } from "@/components/site/site-controls"
+import { CrmAssist } from "@/components/crm/crm-assist"
+import { useI18n } from "@/lib/i18n/provider"
+import { getCrmDict, roleLabel } from "@/lib/i18n/crm"
 import {
   LayoutDashboard,
   Package,
@@ -113,6 +117,8 @@ export function AppShell({
 }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const { lang } = useI18n()
+  const t = getCrmDict(lang)
   const perms = new Set(user.permissions ?? [])
   const has = (anyOf?: readonly string[]) => !anyOf || anyOf.some((p) => perms.has(p))
   const isOwner = user.role === "owner"
@@ -140,7 +146,7 @@ export function AppShell({
         <div key={group.label ?? `group-${gi}`} className="flex flex-col gap-1">
           {group.label && (
             <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-              {group.label}
+              {t.groups[group.label] ?? group.label}
             </p>
           )}
           {group.items.map((item) => {
@@ -158,7 +164,7 @@ export function AppShell({
                 )}
               >
                 <item.icon className="h-4.5 w-4.5" />
-                {item.label}
+                {t.nav[item.href] ?? item.label}
               </Link>
             )
           })}
@@ -170,7 +176,7 @@ export function AppShell({
   return (
     <div className="flex min-h-svh bg-background">
       {/* Sidebar desktop */}
-      <aside className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r border-border bg-card/40 p-4 lg:flex">
+      <aside className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-e border-border bg-card/40 p-4 lg:flex">
         <Brand />
         <div className="mt-6 min-h-0 flex-1 overflow-y-auto">{nav}</div>
         <UserFooter user={user} />
@@ -180,10 +186,10 @@ export function AppShell({
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
-          <aside className="absolute left-0 top-0 flex h-full w-72 flex-col border-r border-border bg-card p-4">
+          <aside className="absolute start-0 top-0 flex h-full w-72 flex-col border-e border-border bg-card p-4">
             <div className="flex items-center justify-between">
               <Brand />
-              <button onClick={() => setOpen(false)} aria-label="Close menu" className="text-muted-foreground">
+              <button onClick={() => setOpen(false)} aria-label={t.header.closeMenu} className="text-muted-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -198,7 +204,7 @@ export function AppShell({
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur lg:px-8">
           <button
             onClick={() => setOpen(true)}
-            aria-label="Open menu"
+            aria-label={t.header.openMenu}
             className="text-muted-foreground lg:hidden"
           >
             <Menu className="h-5 w-5" />
@@ -206,25 +212,27 @@ export function AppShell({
           <div className="lg:hidden">
             <Brand compact />
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ms-auto flex items-center gap-2 sm:gap-3">
             {isOwner && (
               <Link
                 href="/control-center"
-                aria-label="AI Control Center"
+                aria-label={t.header.controlCenter}
                 className="inline-flex h-10 items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 text-sm font-medium text-primary hover:bg-primary/20"
               >
                 <Sparkles className="h-4 w-4" />
-                <span className="hidden sm:inline">AI Control Center</span>
+                <span className="hidden xl:inline">{t.header.controlCenter}</span>
               </Link>
             )}
+            <LanguageToggle />
             <ThemeToggle />
+            <CrmAssist />
             <NotificationBell />
             {canCreateJob && (
               <Link
                 href="/jobs/new"
                 className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
               >
-                <Plus className="h-4 w-4" /> New Job Card
+                <Plus className="h-4 w-4" /> <span className="hidden sm:inline">{t.header.newJob}</span>
               </Link>
             )}
           </div>
@@ -233,7 +241,7 @@ export function AppShell({
         <main className="relative isolate flex-1 p-4 lg:p-8">
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center overflow-hidden lg:left-64"
+            className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center overflow-hidden lg:start-64"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/brand/wurx-logo.png" alt="" className="hidden w-3/5 max-w-2xl -rotate-12 opacity-[0.03] dark:block" />
@@ -248,6 +256,7 @@ export function AppShell({
 }
 
 function Brand({ compact }: { compact?: boolean }) {
+  const { lang } = useI18n()
   return (
     <Link href="/crm" className="flex flex-col items-start gap-1" aria-label="WURX Auto Service Center — CRM home">
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -263,13 +272,15 @@ function Brand({ compact }: { compact?: boolean }) {
         className={cn("block w-auto object-contain dark:hidden", compact ? "h-8" : "h-12")}
       />
       {!compact && (
-        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Workshop CRM</div>
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{getCrmDict(lang).header.workshopCrm}</div>
       )}
     </Link>
   )
 }
 
 function UserFooter({ user }: { user: { name: string; role: string } }) {
+  const { lang } = useI18n()
+  const t = getCrmDict(lang)
   return (
     <div className="mt-4 flex items-center gap-3 rounded-lg border border-border p-3">
       <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-sm font-semibold">
@@ -277,10 +288,10 @@ function UserFooter({ user }: { user: { name: string; role: string } }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{user.name}</div>
-        <div className="truncate text-xs capitalize text-muted-foreground">{user.role}</div>
+        <div className="truncate text-xs text-muted-foreground">{roleLabel(lang, user.role)}</div>
       </div>
       <form action={signOut}>
-        <button aria-label="Sign out" className="text-muted-foreground hover:text-foreground" title="Sign out">
+        <button aria-label={t.header.signOut} className="text-muted-foreground hover:text-foreground" title={t.header.signOut}>
           <LogOut className="h-4 w-4" />
         </button>
       </form>

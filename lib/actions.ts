@@ -10,6 +10,7 @@ import { resolveVehicleImage } from "@/lib/vehicle-image"
 import { attachJobVehicleImage } from "@/lib/vehicle-image-attach"
 import { sanitizeMileage } from "@/lib/utils"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import { requireJobWork } from "@/lib/rbac/job-access"
 import type { Permission } from "@/lib/rbac/roles"
 import { notifyUser, notifyByPermission } from "@/lib/actions-notifications"
 import { notifyActivity } from "@/lib/activity"
@@ -419,8 +420,8 @@ export async function deleteJob(jobId: string) {
 
 // Photo categories. "vehicle" = exterior/general car shots; the cover photo is
 // chosen explicitly (see setCoverPhoto), never auto-derived from these.
-export type PhotoKind = "vehicle" | "damage" | "parts" | "document" | "other"
-const PHOTO_KINDS: PhotoKind[] = ["vehicle", "damage", "parts", "document", "other"]
+export type PhotoKind = "vehicle" | "problem" | "damage" | "parts" | "document" | "other"
+const PHOTO_KINDS: PhotoKind[] = ["vehicle", "problem", "damage", "parts", "document", "other"]
 
 export async function addPhotos(jobId: string, urls: string[], kind: PhotoKind) {
   const { supabase } = await guard("jobs.update_status")
@@ -741,14 +742,19 @@ export async function sendApproval(jobId: string) {
 
 /* ---------------- Parts ---------------- */
 export async function addPart(jobId: string, formData: FormData) {
-  const { supabase } = await guard("jobs.update_status")
+  const { supabase, ctx } = await requireJobWork(["jobs.update_status", "parts.request"], jobId)
+  const partName = String(formData.get("part_name") || "").trim().slice(0, 200)
+  if (!partName) throw new Error("Part name is required")
+  const quantity = Math.max(1, Math.min(999, Math.round(Number(formData.get("quantity") || 1)) || 1))
+  // Only users who may see costs can record supplier/cost; technicians' requests stay price-free.
+  const canCost = ctx.permissions.has("costs.view") || ctx.permissions.has("parts.manage")
   const { error } = await supabase.from("parts_requests").insert({
     job_id: jobId,
-    part_name: String(formData.get("part_name") || ""),
-    quantity: Number(formData.get("quantity") || 1),
-    supplier: String(formData.get("supplier") || "") || null,
-    cost: formData.get("cost") ? Number(formData.get("cost")) : null,
-    notes: String(formData.get("notes") || "") || null,
+    part_name: partName,
+    quantity,
+    supplier: canCost ? String(formData.get("supplier") || "") || null : null,
+    cost: canCost && formData.get("cost") ? Number(formData.get("cost")) : null,
+    notes: String(formData.get("notes") || "").slice(0, 1000) || null,
     status: "required",
   })
   if (error) throw new Error(error.message)

@@ -10,8 +10,9 @@ type Photo = { id: string; url: string; kind: string; caption: string | null }
 
 const CATEGORIES: { key: PhotoKind; label: string; hint: string; damage?: boolean }[] = [
   { key: "vehicle", label: "Vehicle", hint: "Exterior / general car shots" },
+  { key: "problem", label: "Problem / Fault", hint: "The fault found during diagnosis (leaks, wear, broken parts)", damage: true },
   { key: "damage", label: "Damage / Inspection", hint: "Damage and inspection photos", damage: true },
-  { key: "parts", label: "Parts", hint: "Parts, components, spare parts" },
+  { key: "parts", label: "Parts", hint: "Old and new parts, components, spare parts" },
   { key: "document", label: "Documents", hint: "Registration, insurance, paperwork" },
   { key: "other", label: "Other", hint: "Anything else" },
 ]

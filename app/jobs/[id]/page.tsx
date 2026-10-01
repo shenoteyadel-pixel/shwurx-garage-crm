@@ -20,6 +20,7 @@ import { RepairDetails } from "@/components/repair-details"
 import { DiagnosticsPanel, type DiagnosticTest } from "@/components/diagnostics-panel"
 import { InspectionPanel } from "@/components/inspection/inspection-panel"
 import { TechnicianJobCard } from "@/components/technician-job-card"
+import { TechPartsRequest } from "@/components/tech-parts-request"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { RefreshVehicleImageButton } from "@/components/refresh-vehicle-image"
 import { STAGE_MAP, QC_STATUSES, canViewPrices, type Stage } from "@/lib/constants"
@@ -441,6 +442,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 tests={diagnosticTests}
                 vehicleSummary={diagnosticVehicleSummary}
                 complaint={job.complaint}
+              />
+              <TechPartsRequest
+                jobId={job.id}
+                parts={(parts ?? []) as any}
+                catalog={partCatalog.map(({ name, part_number, source }) => ({ name, part_number, source }))}
               />
             </>
           )}

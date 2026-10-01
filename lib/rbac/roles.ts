@@ -21,10 +21,23 @@ export type Role =
   | "viewer"
   | "customer"
 
+export type RoleTeam = "management" | "front_office" | "workshop" | "parts" | "finance" | "support"
+
+export const ROLE_TEAMS: { value: RoleTeam; label: string; description: string }[] = [
+  { value: "management", label: "Management", description: "Owners and managers with full operational control." },
+  { value: "front_office", label: "Front Office", description: "Customer intake, job cards, quotations and invoicing." },
+  { value: "workshop", label: "Workshop Floor", description: "Technicians, supervisors, QC and detailing." },
+  { value: "parts", label: "Parts & Store", description: "Inventory, parts requests and purchasing." },
+  { value: "finance", label: "Finance", description: "Invoices, payments and financial reports." },
+  { value: "support", label: "Support & Read-only", description: "Marketing agencies and read-only viewers." },
+]
+
 export interface RoleMeta {
   value: Role
   label: string
   description: string
+  /** department the role belongs to; drives grouping on Users & Roles */
+  team: RoleTeam
   /** default landing route after login */
   home: string
   /** staff roles appear in the staff user picker; customer is portal-only */
@@ -32,22 +45,22 @@ export interface RoleMeta {
 }
 
 export const ROLE_LIST: RoleMeta[] = [
-  { value: "owner", label: "Owner / Super Admin", description: "Full access to everything, including users, permissions and settings.", home: "/", staff: true },
-  { value: "general_manager", label: "General Manager", description: "Full operational access; cannot edit the permission matrix.", home: "/", staff: true },
-  { value: "workshop_manager", label: "Workshop Manager", description: "Runs the workshop: creates and assigns job cards, manages technicians and job flow.", home: "/flow", staff: true },
-  { value: "workshop_supervisor", label: "Workshop Supervisor", description: "Assigns and manages workshop jobs and technicians.", home: "/flow", staff: true },
-  { value: "service_advisor", label: "Service Advisor", description: "Front desk: customers, vehicles, job cards, quotations and invoicing.", home: "/", staff: true },
-  { value: "reception", label: "Reception", description: "Front desk intake: registers customers, vehicles and opens job cards.", home: "/", staff: true },
-  { value: "technician", label: "Technician", description: "Works on assigned jobs and updates their status. No prices or invoices.", home: "/jobs", staff: true },
-  { value: "qc", label: "Quality Control (QC)", description: "Inspects completed work and updates job status. No prices.", home: "/flow", staff: true },
-  { value: "parts_manager", label: "Parts Manager", description: "Full parts control: inventory, parts requests and purchase orders.", home: "/parts", staff: true },
-  { value: "parts", label: "Parts / Store", description: "Manages inventory, parts requests and purchase orders.", home: "/parts", staff: true },
-  { value: "parts_staff", label: "Parts Staff", description: "Handles parts and inventory. No purchasing or reports.", home: "/parts", staff: true },
-  { value: "finance", label: "Finance / Accounts", description: "Invoices, payments and financial reports. No workshop edits.", home: "/invoices", staff: true },
-  { value: "washing", label: "Washing / Detailing", description: "Works on assigned wash jobs and updates their status.", home: "/", staff: true },
-  { value: "marketing", label: "Marketing / Agency", description: "Manages website tracking codes and integrations (GA4, Tag Manager, Meta Pixel) and views leads. No workshop or financial access.", home: "/marketing", staff: true },
-  { value: "viewer", label: "Viewer (Read-only)", description: "Read-only visibility across the CRM.", home: "/", staff: true },
-  { value: "customer", label: "Customer", description: "Portal access to own vehicles, jobs and invoices only.", home: "/portal", staff: false },
+  { value: "owner", team: "management", label: "Owner / Super Admin", description: "Full access to everything, including users, permissions and settings.", home: "/", staff: true },
+  { value: "general_manager", team: "management", label: "General Manager", description: "Full operational access; cannot edit the permission matrix.", home: "/", staff: true },
+  { value: "workshop_manager", team: "workshop", label: "Workshop Manager", description: "Runs the workshop: creates and assigns job cards, manages technicians and job flow.", home: "/flow", staff: true },
+  { value: "workshop_supervisor", team: "workshop", label: "Workshop Supervisor", description: "Assigns and manages workshop jobs and technicians.", home: "/flow", staff: true },
+  { value: "service_advisor", team: "front_office", label: "Service Advisor", description: "Front desk: customers, vehicles, job cards, quotations and invoicing.", home: "/", staff: true },
+  { value: "reception", team: "front_office", label: "Reception", description: "Front desk intake: registers customers, vehicles and opens job cards.", home: "/", staff: true },
+  { value: "technician", team: "workshop", label: "Technician", description: "Works on assigned jobs: sees the customer request, records inspection, diagnosis and photos, and requests parts. No prices or invoices.", home: "/jobs", staff: true },
+  { value: "qc", team: "workshop", label: "Quality Control (QC)", description: "Inspects completed work and updates job status. No prices.", home: "/flow", staff: true },
+  { value: "parts_manager", team: "parts", label: "Parts Manager", description: "Full parts control: inventory, parts requests and purchase orders.", home: "/parts", staff: true },
+  { value: "parts", team: "parts", label: "Parts / Store", description: "Manages inventory, parts requests and purchase orders.", home: "/parts", staff: true },
+  { value: "parts_staff", team: "parts", label: "Parts Staff", description: "Handles parts and inventory. No purchasing or reports.", home: "/parts", staff: true },
+  { value: "finance", team: "finance", label: "Finance / Accounts", description: "Invoices, payments and financial reports. No workshop edits.", home: "/invoices", staff: true },
+  { value: "washing", team: "workshop", label: "Washing / Detailing", description: "Works on assigned wash jobs and updates their status.", home: "/", staff: true },
+  { value: "marketing", team: "support", label: "Marketing / Agency", description: "Manages website tracking codes and integrations (GA4, Tag Manager, Meta Pixel) and views leads. No workshop or financial access.", home: "/marketing", staff: true },
+  { value: "viewer", team: "support", label: "Viewer (Read-only)", description: "Read-only visibility across the CRM.", home: "/", staff: true },
+  { value: "customer", team: "support", label: "Customer", description: "Portal access to own vehicles, jobs and invoices only.", home: "/portal", staff: false },
 ]
 
 export const ROLE_MAP: Record<string, RoleMeta> = Object.fromEntries(
@@ -70,6 +83,7 @@ export type Permission =
   | "customers.view" | "customers.create" | "customers.edit" | "customers.delete"
   | "vehicles.view" | "vehicles.create" | "vehicles.edit" | "vehicles.transfer" | "vehicles.delete"
   | "jobs.view_all" | "jobs.view_assigned" | "jobs.create" | "jobs.edit" | "jobs.update_status" | "jobs.assign" | "jobs.delete"
+  | "inspection.manage" | "diagnostics.manage" | "parts.request"
   | "quotations.view" | "quotations.create" | "quotations.edit" | "quotations.approve"
   | "invoices.view" | "invoices.create" | "invoices.edit"
   | "payments.view" | "payments.record"
@@ -120,6 +134,14 @@ export const PERMISSION_CATALOG: PermGroup[] = [
       { key: "jobs.update_status", label: "Update job status" },
       { key: "jobs.assign", label: "Assign technicians" },
       { key: "jobs.delete", label: "Delete job cards" },
+    ],
+  },
+  {
+    group: "Workshop Floor",
+    perms: [
+      { key: "inspection.manage", label: "Record vehicle inspection (assigned jobs)" },
+      { key: "diagnostics.manage", label: "Diagnose & run AI diagnostics (assigned jobs)" },
+      { key: "parts.request", label: "Request parts for a job" },
     ],
   },
   {

@@ -14,7 +14,7 @@ import {
 } from "@/lib/attendance"
 
 type Result = { ok: true; message?: string } | { ok: false; error: string }
-type Coords = { lat: number; lng: number } | null
+type Coords = { lat: number; lng: number; accuracy?: number | null } | null
 
 const STATUSES: AttendanceStatus[] = ["present", "late", "absent", "leave", "sick", "off"]
 
@@ -22,21 +22,30 @@ function validCoords(c: Coords): Coords {
   if (!c) return null
   const { lat, lng } = c
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
-  return { lat, lng }
+  const accuracy = Number.isFinite(c.accuracy) ? Math.round(Number(c.accuracy)) : null
+  return { lat, lng, accuracy }
 }
 
+/** Self check-in/out is only accepted from inside the workshop geofence with a reasonably precise GPS fix. */
 async function locationCheck(coords: Coords) {
   const svc = createServiceClient()
   const settings = await loadAttendanceSettings(svc)
-  const c = validCoords(coords)
-  let distance: number | null = null
-  if (c && settings.workshop_lat != null && settings.workshop_lng != null) {
-    distance = distanceMeters(c.lat, c.lng, settings.workshop_lat, settings.workshop_lng)
+  if (settings.workshop_lat == null || settings.workshop_lng == null) {
+    return { error: "The workshop location has not been set yet. Ask a manager to set it in Attendance → Shift settings." }
   }
-  if (settings.attendance_require_location) {
-    if (!c) return { error: "Location is required. Allow location access in your browser and try again." }
-    if (distance != null && distance > settings.geofence_radius_m) {
-      return { error: `You are ${distance} m from the workshop. You must be within ${settings.geofence_radius_m} m.` }
+  const c = validCoords(coords)
+  if (!c) {
+    return { error: "Location is required. Turn on location (GPS) and allow this site to use it, then try again." }
+  }
+  if (c.accuracy != null && c.accuracy > settings.max_gps_accuracy_m) {
+    return {
+      error: `Your GPS signal is too weak (±${c.accuracy} m). Step outside or near a window, wait a few seconds and try again.`,
+    }
+  }
+  const distance = distanceMeters(c.lat, c.lng, settings.workshop_lat, settings.workshop_lng)
+  if (distance > settings.geofence_radius_m) {
+    return {
+      error: `You are ${distance} m away from the workshop. Check-in/out is only allowed within ${settings.geofence_radius_m} m.`,
     }
   }
   return { svc, settings, c, distance }
@@ -70,6 +79,7 @@ export async function checkIn(coords: Coords, note?: string): Promise<Result> {
     check_in_lat: c?.lat ?? null,
     check_in_lng: c?.lng ?? null,
     check_in_distance_m: distance,
+    check_in_accuracy_m: c?.accuracy ?? null,
     check_in_note: note?.trim().slice(0, 300) || null,
     status: late > 0 ? "late" : "present",
     source: "self",
@@ -112,6 +122,7 @@ export async function checkOut(coords: Coords, note?: string): Promise<Result> {
       check_out_lat: c?.lat ?? null,
       check_out_lng: c?.lng ?? null,
       check_out_distance_m: distance,
+      check_out_accuracy_m: c?.accuracy ?? null,
       check_out_note: note?.trim().slice(0, 300) || null,
       updated_at: iso,
     })
@@ -221,7 +232,11 @@ export interface AttendanceSettingsInput {
   workshopLat: number | null
   workshopLng: number | null
   radius: number
-  requireLocation: boolean
+  maxAccuracy: number
+  startDate: string
+  dayBasis: "30" | "calendar" | "working"
+  absenceDeductionDays: number
+  lateDeduction: boolean
 }
 
 export async function saveAttendanceSettings(input: AttendanceSettingsInput): Promise<Result> {
@@ -235,7 +250,9 @@ export async function saveAttendanceSettings(input: AttendanceSettingsInput): Pr
   const coords = input.workshopLat != null && input.workshopLng != null
     ? validCoords({ lat: input.workshopLat, lng: input.workshopLng })
     : null
-  if (input.requireLocation && !coords) return { ok: false, error: "Set the workshop location before requiring it." }
+  if (!coords) return { ok: false, error: "Set the workshop location (press \"Use my location\" while at the workshop)." }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate)) return { ok: false, error: "Invalid attendance start date." }
+  if (!["30", "calendar", "working"].includes(input.dayBasis)) return { ok: false, error: "Invalid salary day basis." }
 
   const update = {
     shift_start: input.shiftStart,
@@ -245,7 +262,12 @@ export async function saveAttendanceSettings(input: AttendanceSettingsInput): Pr
     workshop_lat: coords?.lat ?? null,
     workshop_lng: coords?.lng ?? null,
     geofence_radius_m: Math.max(50, Math.min(5000, Math.round(input.radius || 300))),
-    attendance_require_location: input.requireLocation,
+    attendance_require_location: true,
+    max_gps_accuracy_m: Math.max(20, Math.min(1000, Math.round(input.maxAccuracy || 150))),
+    attendance_start_date: input.startDate,
+    payroll_day_basis: input.dayBasis,
+    absence_deduction_days: Math.max(0, Math.min(3, Math.round((input.absenceDeductionDays || 0) * 100) / 100)),
+    late_deduction_enabled: input.lateDeduction,
   }
   const svc = createServiceClient()
   const { error } = await svc.from("settings").update(update).eq("id", 1)
@@ -253,4 +275,25 @@ export async function saveAttendanceSettings(input: AttendanceSettingsInput): Pr
   await logAction(ctx, "attendance.settings_update", "settings", "1", update)
   revalidatePath("/attendance")
   return { ok: true, message: "Settings saved" }
+}
+
+export async function saveEmployeeSalary(userId: string, monthlySalary: number): Promise<Result> {
+  const ctx = await requireStaff()
+  if (!ctxCan(ctx, "attendance.manage")) return { ok: false, error: "You don't have permission to edit salaries." }
+  const amount = Math.round(Number(monthlySalary) * 100) / 100
+  if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000) return { ok: false, error: "Enter a valid salary." }
+  const svc = createServiceClient()
+  const { data: staff } = await svc.from("profiles").select("id, role").eq("id", userId).maybeSingle()
+  if (!staff || staff.role === "customer") return { ok: false, error: "Employee not found." }
+  const { data: before } = await svc.from("employee_salaries").select("monthly_salary").eq("user_id", userId).maybeSingle()
+  const { error } = await svc
+    .from("employee_salaries")
+    .upsert({ user_id: userId, monthly_salary: amount, updated_by: ctx.userId, updated_at: new Date().toISOString() })
+  if (error) return { ok: false, error: error.message }
+  await logAction(ctx, "payroll.salary_update", "employee_salaries", userId, {
+    before: before?.monthly_salary ?? null,
+    after: amount,
+  })
+  revalidatePath("/attendance")
+  return { ok: true, message: "Salary saved" }
 }

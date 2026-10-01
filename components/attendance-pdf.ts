@@ -8,6 +8,7 @@ import {
   type AttendanceRecord,
   type AttendanceSettings,
   type EmployeeSummary,
+  type PayrollLine,
   type StaffMember,
 } from "@/lib/attendance"
 import { roleLabel } from "@/lib/rbac/roles"
@@ -240,6 +241,154 @@ export function downloadAttendanceCsv(month: string, records: AttendanceRecord[]
   const a = document.createElement("a")
   a.href = URL.createObjectURL(blob)
   a.download = `attendance-${month}.csv`
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+const aed = (n: number) => n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+export async function buildPayrollPdf(opts: {
+  company: Company
+  month: string
+  settings: AttendanceSettings
+  payroll: PayrollLine[]
+}) {
+  const { jsPDF } = await import("jspdf")
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+  const W = doc.internal.pageSize.getWidth()
+  const H = doc.internal.pageSize.getHeight()
+  const M = 12
+  const basis =
+    opts.settings.payroll_day_basis === "30" ? "30 days" : opts.settings.payroll_day_basis === "calendar" ? "days in month" : "working days"
+
+  const cols: Col[] = [
+    { label: "Employee", w: 52 },
+    { label: "Role", w: 34 },
+    { label: "Salary", w: 24, right: true },
+    { label: "Daily rate", w: 22, right: true },
+    { label: "Absent", w: 16, right: true },
+    { label: "Absence ded.", w: 26, right: true },
+    { label: "Late", w: 18, right: true },
+    { label: "Late ded.", w: 22, right: true },
+    { label: "Total ded.", w: 26, right: true },
+    { label: "Net pay", w: 33, right: true },
+  ]
+
+  let y = 0
+  const header = () => {
+    doc.setFillColor(...GREEN)
+    doc.rect(0, 0, W, 3, "F")
+    doc.setTextColor(...INK)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(14)
+    doc.text(opts.company.name || "Company", M, 13)
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8)
+    doc.setTextColor(...GREY)
+    const sub = [opts.company.trn ? `TRN ${opts.company.trn}` : null, opts.company.address].filter(Boolean).join("  ·  ")
+    if (sub) doc.text(sub, M, 18)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(12)
+    doc.setTextColor(...INK)
+    doc.text(`Payroll Deductions — ${monthLabel(opts.month)}`, W - M, 13, { align: "right" })
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8)
+    doc.setTextColor(...GREY)
+    doc.text(
+      `Daily rate = salary ÷ ${basis} · ${opts.settings.absence_deduction_days} day(s) per absence · Late deduction ${opts.settings.late_deduction_enabled ? "on" : "off"} · Absences counted from ${opts.settings.attendance_start_date}`,
+      W - M,
+      18,
+      { align: "right" },
+    )
+    y = 26
+    doc.setFillColor(244, 244, 244)
+    doc.rect(M, y, W - 2 * M, 6, "F")
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(7.5)
+    let x = M + 2
+    for (const c of cols) {
+      doc.text(c.label, c.right ? x + c.w - 4 : x, y + 4, { align: c.right ? "right" : "left" })
+      x += c.w
+    }
+    y += 6
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8)
+  }
+
+  const row = (cells: string[], bold = false) => {
+    if (y > H - 30) {
+      doc.addPage()
+      header()
+    }
+    doc.setFont("helvetica", bold ? "bold" : "normal")
+    doc.setTextColor(...INK)
+    let x = M + 2
+    cells.forEach((cell, i) => {
+      const c = cols[i]
+      doc.text(doc.splitTextToSize(cell, c.w - 3)[0] ?? "", c.right ? x + c.w - 4 : x, y + 4, { align: c.right ? "right" : "left" })
+      x += c.w
+    })
+    doc.setDrawColor(...LINE)
+    doc.line(M, y + 6, W - M, y + 6)
+    y += 6
+  }
+
+  header()
+  const t = { salary: 0, abs: 0, late: 0, ded: 0, net: 0 }
+  for (const p of opts.payroll) {
+    t.salary += p.salary
+    t.abs += p.absenceDeduction
+    t.late += p.lateDeduction
+    t.ded += p.totalDeduction
+    t.net += p.net
+    row([
+      p.name,
+      roleLabel(p.role),
+      aed(p.salary),
+      aed(p.dailyRate),
+      String(p.absentDays),
+      aed(p.absenceDeduction),
+      formatDuration(p.lateMinutes),
+      aed(p.lateDeduction),
+      aed(p.totalDeduction),
+      aed(p.net),
+    ])
+  }
+  row(["Total (AED)", "", aed(t.salary), "", "", aed(t.abs), "", aed(t.late), aed(t.ded), aed(t.net)], true)
+
+  y += 16
+  doc.setDrawColor(...GREY)
+  doc.setFontSize(8)
+  doc.setTextColor(...GREY)
+  for (const [i, label] of ["Prepared by", "Approved by"].entries()) {
+    const x = M + i * 90
+    doc.line(x, y, x + 70, y)
+    doc.text(label, x, y + 4)
+  }
+
+  const pages = doc.getNumberOfPages()
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i)
+    doc.setFontSize(7)
+    doc.setTextColor(...GREY)
+    doc.text(`Page ${i} of ${pages}`, W - M, H - 6, { align: "right" })
+    doc.text(`Generated ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai" })} (GST)`, M, H - 6)
+  }
+  doc.save(`payroll-${opts.month}.pdf`)
+}
+
+export function downloadPayrollCsv(month: string, payroll: PayrollLine[]) {
+  const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`
+  const head = ["Employee", "Role", "Monthly salary", "Basis days", "Daily rate", "Absent days", "Absence deduction", "Late (min)", "Late deduction", "Missing check-outs", "Total deduction", "Net pay"]
+  const lines = payroll.map((p) =>
+    [p.name, roleLabel(p.role), p.salary.toFixed(2), p.basisDays, p.dailyRate.toFixed(2), p.absentDays, p.absenceDeduction.toFixed(2), Math.round(p.lateMinutes), p.lateDeduction.toFixed(2), p.missingCheckout, p.totalDeduction.toFixed(2), p.net.toFixed(2)]
+      .map(esc)
+      .join(","),
+  )
+  const blob = new Blob(["\uFEFF" + [head.map(esc).join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" })
+  const a = document.createElement("a")
+  a.href = URL.createObjectURL(blob)
+  a.download = `payroll-${month}.csv`
   a.click()
   URL.revokeObjectURL(a.href)
 }

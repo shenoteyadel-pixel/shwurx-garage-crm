@@ -14,6 +14,29 @@ export interface AttendanceSettings {
   workshop_lng: number | null
   geofence_radius_m: number
   attendance_require_location: boolean
+  max_gps_accuracy_m: number
+  attendance_start_date: string
+  payroll_day_basis: PayrollBasis
+  absence_deduction_days: number
+  late_deduction_enabled: boolean
+}
+
+export type PayrollBasis = "30" | "calendar" | "working"
+
+export interface PayrollLine {
+  userId: string
+  name: string
+  role: string
+  salary: number
+  basisDays: number
+  dailyRate: number
+  absentDays: number
+  absenceDeduction: number
+  lateMinutes: number
+  lateDeduction: number
+  missingCheckout: number
+  totalDeduction: number
+  net: number
 }
 
 export interface AttendanceRecord {
@@ -36,6 +59,7 @@ export interface StaffMember {
   id: string
   full_name: string | null
   role: string
+  created_at?: string | null
 }
 
 export interface EmployeeSummary {
@@ -61,7 +85,12 @@ export const DEFAULT_ATTENDANCE_SETTINGS: AttendanceSettings = {
   workshop_lat: null,
   workshop_lng: null,
   geofence_radius_m: 300,
-  attendance_require_location: false,
+  attendance_require_location: true,
+  max_gps_accuracy_m: 150,
+  attendance_start_date: "2026-01-01",
+  payroll_day_basis: "30",
+  absence_deduction_days: 1,
+  late_deduction_enabled: true,
 }
 
 export const RECORD_COLUMNS =
@@ -178,11 +207,13 @@ export function buildSummaries(
       lateMinutes: 0,
       missingCheckout: 0,
     }
+    const joined = st.created_at ? localDate(new Date(st.created_at)) : ""
+    const trackingStart = joined > s.attendance_start_date ? joined : s.attendance_start_date
     for (const day of days) {
       if (day > today) break
       const r = recs.get(day)
       if (!r) {
-        if (day < today && !s.attendance_off_days.includes(weekdayOf(day))) sum.absent++
+        if (day < today && day >= trackingStart && !s.attendance_off_days.includes(weekdayOf(day))) sum.absent++
         continue
       }
       if (r.status === "leave") sum.leave++
@@ -209,11 +240,54 @@ export function buildSummaries(
   })
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+export function basisDaysFor(s: AttendanceSettings, days: string[]): number {
+  if (s.payroll_day_basis === "calendar") return days.length
+  if (s.payroll_day_basis === "working") {
+    return Math.max(1, days.filter((d) => !s.attendance_off_days.includes(weekdayOf(d))).length)
+  }
+  return 30
+}
+
+/** Salary deductions: each absent day costs (daily rate × absence_deduction_days); late time is charged pro-rata per minute of the shift. */
+export function buildPayroll(
+  summaries: EmployeeSummary[],
+  salaries: Map<string, number>,
+  s: AttendanceSettings,
+  days: string[],
+): PayrollLine[] {
+  const basisDays = basisDaysFor(s, days)
+  const shift = Math.max(1, shiftMinutes(s))
+  return summaries.map((sum) => {
+    const salary = salaries.get(sum.userId) ?? 0
+    const dailyRate = salary / basisDays
+    const absenceDeduction = round2(sum.absent * s.absence_deduction_days * dailyRate)
+    const lateDeduction = s.late_deduction_enabled ? round2((sum.lateMinutes / shift) * dailyRate) : 0
+    const totalDeduction = Math.min(salary, round2(absenceDeduction + lateDeduction))
+    return {
+      userId: sum.userId,
+      name: sum.name,
+      role: sum.role,
+      salary,
+      basisDays,
+      dailyRate: round2(dailyRate),
+      absentDays: sum.absent,
+      absenceDeduction,
+      lateMinutes: sum.lateMinutes,
+      lateDeduction,
+      missingCheckout: sum.missingCheckout,
+      totalDeduction,
+      net: round2(salary - totalDeduction),
+    }
+  })
+}
+
 export async function loadAttendanceSettings(supabase: SupabaseClient): Promise<AttendanceSettings> {
   const { data } = await supabase
     .from("settings")
     .select(
-      "shift_start, shift_end, attendance_grace_minutes, attendance_off_days, workshop_lat, workshop_lng, geofence_radius_m, attendance_require_location",
+      "shift_start, shift_end, attendance_grace_minutes, attendance_off_days, workshop_lat, workshop_lng, geofence_radius_m, attendance_require_location, max_gps_accuracy_m, attendance_start_date, payroll_day_basis, absence_deduction_days, late_deduction_enabled",
     )
     .eq("id", 1)
     .maybeSingle()
@@ -224,5 +298,7 @@ export async function loadAttendanceSettings(supabase: SupabaseClient): Promise<
     shift_start: String(data.shift_start ?? "08:00").slice(0, 5),
     shift_end: String(data.shift_end ?? "18:00").slice(0, 5),
     attendance_off_days: data.attendance_off_days ?? [],
+    absence_deduction_days: Number(data.absence_deduction_days ?? 1),
+    attendance_start_date: String(data.attendance_start_date ?? DEFAULT_ATTENDANCE_SETTINGS.attendance_start_date),
   }
 }

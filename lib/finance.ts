@@ -1,6 +1,7 @@
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { loadVatReport } from "@/lib/vat-report"
+import { expenseCategoryLabel } from "@/lib/expense-categories"
 
 export type SaleRow = {
   number: string
@@ -48,6 +49,33 @@ export type ExpenseRow = {
   reference: string
 }
 
+export type RunningCostRow = {
+  date: string
+  category: string
+  categoryLabel: string
+  vendor: string
+  description: string
+  amount: number
+  vat: number
+  method: string
+  hasInvoice: boolean
+  hasReceipt: boolean
+  reference: string
+}
+
+export type PayrollRow = {
+  paidOn: string
+  month: string
+  employee: string
+  base: number
+  allowances: number
+  overtime: number
+  deductions: number
+  net: number
+  method: string
+  reference: string
+}
+
 export type AgingRow = {
   ref: string
   party: string
@@ -74,7 +102,7 @@ export type AgingBucket = (typeof AGING_BUCKETS)[number]
 
 export type LedgerRow = {
   date: string
-  type: "Sale" | "Purchase" | "Payment in" | "Payment out" | "Expense"
+  type: "Sale" | "Purchase" | "Payment in" | "Payment out" | "Expense" | "Running cost" | "Salary"
   ref: string
   party: string
   moneyIn: number
@@ -92,6 +120,8 @@ export type FinanceReport = {
     salesNet: number
     purchasesNet: number
     expenses: number
+    runningCosts: number
+    salaries: number
     grossProfit: number
     netProfit: number
     margin: number
@@ -104,6 +134,8 @@ export type FinanceReport = {
   purchases: PurchaseRow[]
   payments: PaymentRow[]
   expenses: ExpenseRow[]
+  runningCosts: RunningCostRow[]
+  payroll: PayrollRow[]
   ledger: LedgerRow[]
   audit: AuditRow[]
 }
@@ -146,6 +178,21 @@ function describeDetail(detail: unknown) {
 export async function loadFinanceReport(supabase: SupabaseClient, from: string, to: string): Promise<FinanceReport> {
   const toEnd = `${to}T23:59:59.999`
   const today = new Date()
+
+  const [bizRes, salRes] = await Promise.all([
+    supabase
+      .from("business_expenses")
+      .select("expense_date, category, vendor, description, amount, vat_amount, payment_method, has_invoice, receipt_path, reference")
+      .gte("expense_date", from)
+      .lte("expense_date", to)
+      .order("expense_date"),
+    supabase
+      .from("salary_payments")
+      .select("paid_on, period_month, base_salary, allowances, overtime, deductions, net_amount, payment_method, reference, profiles!salary_payments_user_id_fkey(full_name)")
+      .gte("paid_on", from)
+      .lte("paid_on", to)
+      .order("paid_on"),
+  ])
 
   const [invRes, billRes, poRes, payRes, expRes, openInvRes, openBillRes, auditRes, vat] = await Promise.all([
     supabase
@@ -305,6 +352,33 @@ export async function loadFinanceReport(supabase: SupabaseClient, from: string, 
     reference: e.reference ?? "",
   }))
 
+  const runningCosts: RunningCostRow[] = (bizRes.data ?? []).map((e: any) => ({
+    date: day(e.expense_date),
+    category: e.category ?? "other",
+    categoryLabel: expenseCategoryLabel(e.category),
+    vendor: e.vendor ?? "",
+    description: e.description ?? "",
+    amount: n(e.amount),
+    vat: n(e.vat_amount),
+    method: e.payment_method || "cash",
+    hasInvoice: !!e.has_invoice,
+    hasReceipt: !!e.receipt_path,
+    reference: e.reference ?? "",
+  }))
+
+  const payroll: PayrollRow[] = (salRes.data ?? []).map((s: any) => ({
+    paidOn: day(s.paid_on),
+    month: day(s.period_month).slice(0, 7),
+    employee: s.profiles?.full_name ?? "Employee",
+    base: n(s.base_salary),
+    allowances: n(s.allowances),
+    overtime: n(s.overtime),
+    deductions: n(s.deductions),
+    net: n(s.net_amount),
+    method: s.payment_method || "bank_transfer",
+    reference: s.reference ?? "",
+  }))
+
   const daysSince = (d: string) => Math.max(0, Math.floor((today.getTime() - new Date(d).getTime()) / 86_400_000))
 
   const receivableRows: AgingRow[] = (openInvRes.data ?? [])
@@ -342,7 +416,10 @@ export async function loadFinanceReport(supabase: SupabaseClient, from: string, 
   const purchasesNet = sum(purchases, (p) => p.net)
   const expenseTotal = sum(expenses, (e) => e.amount)
   const grossProfit = r2(salesNet - purchasesNet)
-  const netProfit = r2(grossProfit - expenseTotal)
+  // Running costs are recorded VAT-inclusive; only the net part is a P&L cost.
+  const runningTotal = sum(runningCosts, (e) => e.amount - e.vat)
+  const salaryTotal = sum(payroll, (s) => s.net)
+  const netProfit = r2(grossProfit - expenseTotal - runningTotal - salaryTotal)
 
   const methods = new Map<string, { moneyIn: number; moneyOut: number }>()
   for (const p of payments) {
@@ -366,6 +443,8 @@ export async function loadFinanceReport(supabase: SupabaseClient, from: string, 
       moneyOut: p.direction === "out" ? p.amount : 0,
     })),
     ...expenses.map((e) => ({ date: e.date, type: "Expense" as const, ref: e.reference || e.category, party: e.vendor, moneyIn: 0, moneyOut: e.amount })),
+    ...runningCosts.map((e) => ({ date: e.date, type: "Running cost" as const, ref: e.reference || e.categoryLabel, party: e.vendor, moneyIn: 0, moneyOut: e.amount })),
+    ...payroll.map((s) => ({ date: s.paidOn, type: "Salary" as const, ref: `Salary ${s.month}`, party: s.employee, moneyIn: 0, moneyOut: s.net })),
   ].sort((a, b) => a.date.localeCompare(b.date))
 
   const audit: AuditRow[] = (auditRes.data ?? []).map((a: any) => ({
@@ -389,6 +468,8 @@ export async function loadFinanceReport(supabase: SupabaseClient, from: string, 
       salesNet,
       purchasesNet,
       expenses: expenseTotal,
+      runningCosts: runningTotal,
+      salaries: salaryTotal,
       grossProfit,
       netProfit,
       margin: salesNet ? r2((netProfit / salesNet) * 100) : 0,
@@ -406,6 +487,8 @@ export async function loadFinanceReport(supabase: SupabaseClient, from: string, 
     purchases,
     payments,
     expenses,
+    runningCosts,
+    payroll,
     ledger,
     audit,
   }

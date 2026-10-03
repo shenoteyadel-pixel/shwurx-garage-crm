@@ -367,6 +367,8 @@ export function downloadFinanceCsv(report: FinanceReport, company: Company) {
     ["Purchases (excl. VAT)", -p.purchasesNet],
     ["Gross profit", p.grossProfit],
     ["Car expenses", -p.expenses],
+    ["Running costs", -p.runningCosts],
+    ["Salaries", -p.salaries],
     ["Net profit", p.netProfit],
     ["Net margin %", p.margin],
     [],

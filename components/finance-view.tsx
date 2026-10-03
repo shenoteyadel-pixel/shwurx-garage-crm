@@ -14,7 +14,7 @@ type Company = { name: string; trn: string | null; address: string | null }
 const fmt = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 
-const LEDGER_FILTERS = ["All", "Sale", "Purchase", "Payment in", "Payment out", "Expense"] as const
+const LEDGER_FILTERS = ["All", "Sale", "Purchase", "Payment in", "Payment out", "Expense", "Running cost", "Salary"] as const
 
 export function FinanceView({ report, company }: { report: FinanceReport; company: Company }) {
   const router = useRouter()
@@ -142,6 +142,8 @@ export function FinanceView({ report, company }: { report: FinanceReport; compan
             <Line label="Purchases" value={-p.purchasesNet} />
             <Line label="Gross profit" value={p.grossProfit} strong />
             <Line label="Car expenses" value={-p.expenses} />
+            <Line label="Running costs (bills, fuel, recovery…)" value={-p.runningCosts} />
+            <Line label="Salaries" value={-p.salaries} />
             <Line label="Net profit" value={p.netProfit} strong highlight />
           </dl>
         </Card>

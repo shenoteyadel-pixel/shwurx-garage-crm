@@ -12,8 +12,11 @@ interface Row {
   allowed: boolean
 }
 
-// Owner is implicitly all-powerful and not editable.
-const EDITABLE_ROLES = ROLE_LIST.filter((r) => r.staff && r.value !== "owner")
+// Owner is shown first with every permission granted and locked; the server grants it everything regardless.
+const EDITABLE_ROLES = [
+  ...ROLE_LIST.filter((r) => r.value === "owner"),
+  ...ROLE_LIST.filter((r) => r.staff && r.value !== "owner"),
+]
 
 export function PermissionMatrix({ rows }: { rows: Row[] }) {
   const [state, setState] = useState<Map<string, boolean>>(
@@ -22,9 +25,10 @@ export function PermissionMatrix({ rows }: { rows: Row[] }) {
   const [pending, start] = useTransition()
   const [savingKey, setSavingKey] = useState<string | null>(null)
 
-  const isOn = (role: Role, perm: Permission) => state.get(`${role}:${perm}`) ?? false
+  const isOn = (role: Role, perm: Permission) => role === "owner" || (state.get(`${role}:${perm}`) ?? false)
 
   function toggle(role: Role, perm: Permission) {
+    if (role === "owner") return
     const key = `${role}:${perm}`
     const next = !isOn(role, perm)
     setState((prev) => new Map(prev).set(key, next))
@@ -105,16 +109,20 @@ function FragmentGroup({
             const on = isOn(role, p.key)
             const key = `${role}:${p.key}`
             const saving = pending && savingKey === key
+            const locked = role === "owner"
             return (
               <td key={role} className="px-3 py-2.5 text-center">
                 <button
                   type="button"
                   role="switch"
                   aria-checked={on}
-                  aria-label={`${p.label} for ${role}`}
+                  aria-disabled={locked}
+                  aria-label={locked ? `${p.label} for owner (always allowed)` : `${p.label} for ${role}`}
+                  title={locked ? "Owner always has full access" : undefined}
                   onClick={() => toggle(role, p.key)}
                   className={[
                     "inline-flex h-6 w-6 items-center justify-center rounded-md border transition",
+                    locked ? "cursor-not-allowed" : "",
                     on
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-transparent text-transparent hover:border-primary/50",

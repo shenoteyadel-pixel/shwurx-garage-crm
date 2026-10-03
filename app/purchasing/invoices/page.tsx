@@ -1,5 +1,7 @@
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
+import { findDuplicateGroups, loadProfileNames } from "@/lib/invoice-duplicates"
+import { DuplicateInvoiceAlarm } from "@/components/duplicate-invoice-alarm"
 import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { PurchasingTabs } from "@/components/purchasing-tabs"
@@ -27,11 +29,14 @@ export default async function InvoiceCapturePage() {
 
   const { data: invoices } = await supabase
     .from("supplier_invoices")
-    .select("id, doc_number, status, payment_status, invoice_number, invoice_date, total, vat_amount, amount_paid, supplier_name_raw, created_at, suppliers(name)")
+    .select("id, doc_number, status, payment_status, invoice_number, invoice_date, total, vat_amount, amount_paid, supplier_id, supplier_name_raw, created_at, created_by, deleted_at, suppliers(name)")
     .order("created_at", { ascending: false })
     .limit(200)
 
   const rows = invoices ?? []
+  const duplicates = findDuplicateGroups(rows)
+  const names = await loadProfileNames(createServiceClient(), rows.map((r) => r.created_by))
+  const duplicateRows = rows.filter((r) => duplicates.has(r.id))
   const from = monthStart()
   const inputVatThisMonth = rows
     .filter((r) => r.status === "confirmed" && (r.invoice_date ?? r.created_at?.slice(0, 10) ?? "") >= from)
@@ -59,6 +64,19 @@ export default async function InvoiceCapturePage() {
           <Stat label="Drafts awaiting review" value={String(drafts)} />
         </div>
 
+        {duplicateRows.length > 0 && (
+          <DuplicateInvoiceAlarm
+            rows={duplicateRows.map((r) => ({
+              id: r.id,
+              label: r.doc_number || "draft",
+              invoiceNumber: r.invoice_number ?? "",
+              supplier: (r as any).suppliers?.name ?? r.supplier_name_raw ?? "Unknown supplier",
+              total: formatCurrency(r.total),
+              capturedBy: (r.created_by && names.get(r.created_by)) || "Unknown",
+            }))}
+          />
+        )}
+
         <InvoiceUpload />
 
         <Card className="overflow-hidden">
@@ -80,6 +98,7 @@ export default async function InvoiceCapturePage() {
                     <th className="px-4 py-3 font-semibold">Invoice #</th>
                     <th className="px-4 py-3 font-semibold">Date</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
+                    <th className="px-4 py-3 font-semibold">Captured by</th>
                     <th className="px-4 py-3 text-right font-semibold">VAT</th>
                     <th className="px-4 py-3 text-right font-semibold">Total</th>
                   </tr>
@@ -103,7 +122,18 @@ export default async function InvoiceCapturePage() {
                           {r.status === "confirmed" && r.payment_status !== "paid" && (
                             <span className="text-xs text-amber-400">{r.payment_status}</span>
                           )}
+                          {duplicates.has(r.id) && (
+                            <Badge
+                              className="border-red-500/40 bg-red-500/15 text-red-400"
+                              title={`Same invoice as ${duplicates.get(r.id)!.map((d) => d.label).join(", ")}`}
+                            >
+                              Duplicate
+                            </Badge>
+                          )}
                         </div>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {(r.created_by && names.get(r.created_by)) || "—"}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(r.vat_amount)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(r.total)}</td>

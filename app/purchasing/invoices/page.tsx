@@ -38,7 +38,7 @@ export default async function InvoiceCapturePage() {
     .reduce((t, r) => t + (Number(r.vat_amount) || 0), 0)
   const payable = rows
     .filter((r) => r.status === "confirmed")
-    .reduce((t, r) => t + ((Number(r.total) || 0) - (Number(r.amount_paid) || 0)), 0)
+    .reduce((t, r) => t + Math.max(0, (Number(r.total) || 0) - (Number(r.amount_paid) || 0)), 0)
   const drafts = rows.filter((r) => r.status === "draft").length
 
   return (

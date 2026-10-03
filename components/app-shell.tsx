@@ -42,6 +42,7 @@ import {
   Wallet,
   Receipt,
   Trophy,
+  Target,
   DatabaseBackup,
 } from "lucide-react"
 
@@ -102,6 +103,7 @@ const NAV_GROUPS = [
       { href: "/reports", label: "Reports", icon: BarChart3, anyOf: ["reports.view"] },
       { href: "/reports/labour", label: "Labour Report", icon: Clock, anyOf: ["reports.view"] },
       { href: "/reports/top-customers", label: "Top Customers", icon: Trophy, anyOf: ["reports.view"] },
+      { href: "/reports/staff-targets", label: "Staff Targets", icon: Target, ownerOnly: true },
     ],
   },
   {

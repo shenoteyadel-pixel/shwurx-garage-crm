@@ -38,7 +38,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
           .from("profiles")
           .select("id, full_name, role, created_at")
           .eq("is_active", true)
-          .neq("role", "customer")
+          .not("role", "in", "(customer,owner)")
           .order("full_name")
       : supabase.from("profiles").select("id, full_name, role, created_at").eq("id", ctx.userId),
     (() => {
@@ -55,9 +55,13 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     })(),
   ])
 
-  const staff = (staffRes.data?.length ? staffRes.data : [{ id: ctx.userId, full_name: ctx.name, role: ctx.role }]) as StaffMember[]
-  const records = (recordsRes.data ?? []) as AttendanceRecord[]
-  const todayRecords = (todayRes.data ?? []) as AttendanceRecord[]
+  const isOwner = ctx.role === "owner"
+  const staff = (
+    staffRes.data?.length || isOwner ? (staffRes.data ?? []) : [{ id: ctx.userId, full_name: ctx.name, role: ctx.role }]
+  ) as StaffMember[]
+  const trackedIds = new Set(staff.map((s) => s.id))
+  const records = ((recordsRes.data ?? []) as AttendanceRecord[]).filter((r) => trackedIds.has(r.user_id))
+  const todayRecords = ((todayRes.data ?? []) as AttendanceRecord[]).filter((r) => trackedIds.has(r.user_id))
   const summaries = buildSummaries(staff, records, settings, days, today)
   const salaries = new Map((salaryRes.data ?? []).map((s) => [s.user_id as string, Number(s.monthly_salary)]))
   const payroll = buildPayroll(summaries, salaries, settings, days)
@@ -75,6 +79,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
           todayRecords={todayRecords}
           summaries={summaries}
           payroll={payroll}
+          selfTracked={!isOwner}
           canViewAll={canViewAll}
           canManage={canManage}
           canEditSettings={canEditSettings}

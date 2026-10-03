@@ -4,7 +4,8 @@ import { cache } from "react"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import type { Permission, Role } from "@/lib/rbac/roles"
 import { ALL_PERMISSIONS } from "@/lib/rbac/roles"
-import { notifyFromAudit } from "@/lib/activity"
+import { notifyOwnersOfAudit } from "@/lib/activity"
+import { getClientInfo } from "@/lib/client-info"
 
 export interface SessionContext {
   userId: string
@@ -210,6 +211,7 @@ export interface AuditEntry {
 export async function writeAudit(entry: AuditEntry): Promise<void> {
   try {
     const svc = createServiceClient()
+    const client = await getClientInfo()
     await svc.from("audit_logs").insert({
       actor_id: entry.actorId ?? null,
       actor_name: entry.actorName ?? null,
@@ -217,11 +219,22 @@ export async function writeAudit(entry: AuditEntry): Promise<void> {
       action: entry.action,
       resource_type: entry.resourceType ?? null,
       resource_id: entry.resourceId != null ? String(entry.resourceId) : null,
-      detail: entry.detail ?? null,
+      detail: client ? { ...(entry.detail ?? {}), client } : (entry.detail ?? null),
       status: entry.status ?? "ok",
     })
+    if (entry.actorId) {
+      await notifyOwnersOfAudit(
+        { id: entry.actorId, name: entry.actorName || "Unknown user", role: entry.actorRole ?? null },
+        entry.action,
+        entry.resourceType ?? undefined,
+        entry.resourceId != null ? String(entry.resourceId) : null,
+        entry.detail ?? undefined,
+        client,
+        entry.status ?? "ok",
+      )
+    }
   } catch (err) {
-    console.log("[v0] audit write failed:", (err as Error)?.message)
+    console.error("audit write failed:", (err as Error)?.message)
   }
 }
 
@@ -243,5 +256,4 @@ export async function logAction(
     detail,
     status: "ok",
   })
-  await notifyFromAudit({ id: ctx.userId, name: ctx.name }, action, resourceType, resourceId, detail)
 }

@@ -2,6 +2,7 @@ import "server-only"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import type { Permission } from "@/lib/rbac/roles"
 import { sendPushToUsers } from "@/lib/push"
+import { describeDevice, type ClientInfo } from "@/lib/client-info"
 
 type ActivityInput = {
   title: string
@@ -85,18 +86,51 @@ function linkFor(resourceType?: string, resourceId?: string | null, detail?: Det
   }
 }
 
-/** Called by logAction: turns important audited actions into phone notifications. */
-export async function notifyFromAudit(
-  actor: { id: string; name: string },
+function humanizeAction(action: string): string {
+  const text = action.replace(/[._]/g, " ").trim()
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/**
+ * Activity log alert for every audited action by anyone (including the owner).
+ * Sent only to owner accounts, with the actor's IP and device (phone / tablet / PC).
+ */
+export async function notifyOwnersOfAudit(
+  actor: { id: string; name: string; role: string | null },
   action: string,
-  resourceType?: string,
-  resourceId?: string | null,
-  detail?: Detail,
+  resourceType: string | undefined,
+  resourceId: string | null,
+  detail: Detail,
+  client: ClientInfo | null,
+  status: string,
 ) {
-  const build = AUDIT_ALERTS[action]
-  if (!build) return
-  const { title, body } = build(detail)
-  await notifyActivity({ title, body: body || undefined, link: linkFor(resourceType, resourceId, detail), actor })
+  try {
+    const svc = createServiceClient()
+    const { data: owners } = await svc.from("profiles").select("id").eq("role", "owner")
+    const ids = (owners ?? []).map((o) => o.id)
+    if (!ids.length) return
+
+    const build = AUDIT_ALERTS[action]
+    const base = build ? build(detail) : { title: humanizeAction(action) }
+    const title = status === "denied" ? `Blocked: ${base.title}` : base.title
+    const by = actor.role ? `${actor.name} (${actor.role.replace(/_/g, " ")})` : actor.name
+    const body = [
+      base.body || null,
+      `By ${by}`,
+      client ? `IP ${client.ip}` : null,
+      client ? describeDevice(client) : null,
+    ]
+      .filter(Boolean)
+      .join(" · ")
+    const link = status === "denied" ? undefined : linkFor(resourceType, resourceId, detail)
+
+    await svc.from("notifications").insert(
+      ids.map((id) => ({ user_id: id, title, body, type: "activity_log", link: link ?? null })),
+    )
+    await sendPushToUsers(ids, { title, body, type: "activity_log", link })
+  } catch (err) {
+    console.error("notifyOwnersOfAudit failed", err)
+  }
 }
 
 async function currentActor(): Promise<{ id: string; name: string } | null> {

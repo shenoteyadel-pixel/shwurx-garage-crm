@@ -8,6 +8,8 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 import { STAGES } from "@/lib/constants"
 import { VehicleVisual } from "@/components/vehicle-visual"
 import { PortalLinkButton } from "@/components/portal-link-button"
+import { CustomerHistoryButton } from "@/components/customer-history-button"
+import { getSettings } from "@/lib/settings"
 import { ArrowLeft, Pencil, Plus, Phone, Mail, Building2, Car, FileText, ReceiptText, Wrench } from "lucide-react"
 
 export const metadata = { title: "Customer · SHWURX Auto Service Center" }
@@ -49,18 +51,35 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   ])
 
   const jobIds = (jobs ?? []).map((j) => j.id)
-  const [{ data: invoices }, { data: quotations }] = await Promise.all([
+  const [{ data: invoices }, { data: quotations }, company] = await Promise.all([
     jobIds.length
       ? supabase
           .from("invoices")
-          .select("id, invoice_number, status, issue_date, total, amount_paid, job_id")
+          .select(
+            "id, invoice_number, status, issue_date, total, amount_paid, job_id, payments(amount, method, reference, paid_at, created_at, direction)",
+          )
           .in("job_id", jobIds)
           .order("issue_date", { ascending: false })
       : Promise.resolve({ data: [] as any[] }),
     jobIds.length
       ? supabase.from("quotations").select("id, job_id, total, created_at").in("job_id", jobIds)
       : Promise.resolve({ data: [] as any[] }),
+    getSettings(),
   ])
+
+  const historyPayments = (invoices ?? [])
+    .flatMap((i: any) =>
+      ((i.payments ?? []) as any[])
+        .filter((p) => p.direction === "in")
+        .map((p) => ({
+          date: (p.paid_at || p.created_at) as string | null,
+          invoice: i.invoice_number as string,
+          method: p.method as string | null,
+          reference: p.reference as string | null,
+          amount: Number(p.amount) || 0,
+        })),
+    )
+    .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
 
   const totalInvoiced = (invoices ?? []).reduce((s, i) => s + Number(i.total || 0), 0)
   const totalPaid = (invoices ?? []).reduce((s, i) => s + Number(i.amount_paid || 0), 0)
@@ -106,7 +125,37 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
               ) : null}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <CustomerHistoryButton
+              company={{ name: company.legal_name || company.company_name, trn: company.trn, address: company.address }}
+              customer={{
+                name: customer.full_name,
+                mobile: customer.mobile,
+                email: customer.email,
+                company: customer.company_name,
+                trn: customer.trn,
+              }}
+              vehicles={(vehicles ?? []).map((v) => ({
+                label: [v.year, v.make, v.model, v.variant].filter(Boolean).join(" ") || "Vehicle",
+                plate: plateLabel(v),
+                vin: v.vin,
+              }))}
+              jobs={(jobs ?? []).map((j) => ({
+                number: j.job_number,
+                vehicle: [j.vehicle_make, j.vehicle_model].filter(Boolean).join(" "),
+                plate: j.plate_number,
+                stage: stageLabel(j.stage),
+                date: j.created_at,
+              }))}
+              invoices={(invoices ?? []).map((i: any) => ({
+                number: i.invoice_number,
+                date: i.issue_date,
+                status: i.status,
+                total: Number(i.total || 0),
+                paid: Number(i.amount_paid || 0),
+              }))}
+              payments={historyPayments}
+            />
             {user.permissions.includes("customers.edit") && (
               <PortalLinkButton
                 customerId={id}

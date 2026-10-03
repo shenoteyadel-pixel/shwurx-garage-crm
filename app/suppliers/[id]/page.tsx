@@ -11,6 +11,8 @@ import {
   type AccountInvoice,
   type AccountPayment,
 } from "@/components/supplier-account-client"
+import { SupplierStatementButton } from "@/components/supplier-statement-button"
+import { getSettings } from "@/lib/settings"
 import { ArrowLeft, Phone, Mail, Building2 } from "lucide-react"
 
 export const metadata = { title: "Dealer Account · SHWURX Auto Service Center" }
@@ -28,7 +30,7 @@ export default async function SupplierAccountPage({ params }: { params: Promise<
     .maybeSingle()
   if (!supplier) notFound()
 
-  const [{ data: invoiceRows }, { data: paymentRows }] = await Promise.all([
+  const [{ data: invoiceRows }, { data: paymentRows }, company] = await Promise.all([
     supabase
       .from("supplier_invoices")
       .select("id, doc_number, invoice_number, invoice_date, status, payment_status, total, amount_paid")
@@ -42,7 +44,8 @@ export default async function SupplierAccountPage({ params }: { params: Promise<
       .eq("direction", "out")
       .eq("supplier_invoices.supplier_id", id)
       .order("paid_at", { ascending: false })
-      .limit(200),
+      .limit(1000),
+    getSettings(),
   ])
 
   const invoices: AccountInvoice[] = (invoiceRows ?? []).map((i) => ({
@@ -110,6 +113,13 @@ export default async function SupplierAccountPage({ params }: { params: Promise<
               {supplier.trn && <span>TRN {supplier.trn}</span>}
             </div>
           </div>
+          <SupplierStatementButton
+            company={{ name: company.legal_name || company.company_name, trn: company.trn, address: company.address }}
+            supplier={supplier}
+            invoices={invoices}
+            payments={payments}
+            opening={opening}
+          />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

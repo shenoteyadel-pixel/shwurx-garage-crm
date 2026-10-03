@@ -40,6 +40,7 @@ import {
   Megaphone,
   Wallet,
   Receipt,
+  Trophy,
 } from "lucide-react"
 
 // Nav is grouped into labeled sections so every area — especially admin tools
@@ -98,6 +99,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/reports", label: "Reports", icon: BarChart3, anyOf: ["reports.view"] },
       { href: "/reports/labour", label: "Labour Report", icon: Clock, anyOf: ["reports.view"] },
+      { href: "/reports/top-customers", label: "Top Customers", icon: Trophy, anyOf: ["reports.view"] },
     ],
   },
   {

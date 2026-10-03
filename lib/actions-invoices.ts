@@ -212,6 +212,17 @@ function duplicateMessage(d: DuplicateInvoice): string {
   return `This invoice was already uploaded as ${d.label} (${d.status}). Open the existing one instead of uploading it again.`
 }
 
+async function reportBlockedDuplicate(ctx: SessionContext, dup: DuplicateInvoice, invoiceNumber?: string | null) {
+  try {
+    await logAction(ctx, "supplier_invoice_duplicate_blocked", "supplier_invoice", dup.id, {
+      invoice_number: invoiceNumber ?? null,
+      existing: dup.label,
+    })
+  } catch (e) {
+    console.error("reportBlockedDuplicate failed", e)
+  }
+}
+
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer)
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("")
@@ -284,6 +295,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
   const sameFile = await findDuplicateInvoice(supabase, { fileHash })
   if (sameFile) {
     await discardUpload()
+    await reportBlockedDuplicate(ctx, sameFile, sameFile.label)
     return { ok: false, error: duplicateMessage(sameFile), duplicateId: sameFile.id }
   }
 
@@ -319,6 +331,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
   })
   if (sameInvoice) {
     await discardUpload()
+    await reportBlockedDuplicate(ctx, sameInvoice, extracted?.invoice_number)
     return { ok: false, error: duplicateMessage(sameInvoice), duplicateId: sameInvoice.id }
   }
 
@@ -452,6 +465,7 @@ export type SaveDraftPayload = {
  */
 async function applyDraft(
   supabase: Awaited<ReturnType<typeof createClient>>,
+  ctx: SessionContext,
   payload: SaveDraftPayload,
 ): Promise<void> {
   const clean = payload.lines.filter((l) => (l.description || "").trim())
@@ -459,6 +473,19 @@ async function applyDraft(
   const vat = clean.reduce((t, l) => t + (n(l.quantity) * n(l.unit_cost) * n(l.vat_rate)) / 100, 0)
   const discount = n(payload.discountAmount)
   const total = subtotal - discount + vat
+
+  const dup = await findDuplicateInvoice(supabase, {
+    excludeId: payload.id,
+    invoiceNumber: payload.invoiceNumber,
+    supplierId: uuidOrNull(payload.supplierId),
+    total,
+  })
+  if (dup) {
+    await reportBlockedDuplicate(ctx, dup, payload.invoiceNumber)
+    throw new Error(
+      `Duplicate invoice: invoice ${payload.invoiceNumber} from this supplier already exists as ${dup.label} (${dup.status}). It was not saved.`,
+    )
+  }
 
   const { error: headErr } = await supabase
     .from("supplier_invoices")
@@ -522,8 +549,8 @@ async function applyDraft(
  */
 export async function saveInvoiceDraft(payload: SaveDraftPayload): Promise<InvoiceActionResult> {
   try {
-    const { supabase } = await guard()
-    await applyDraft(supabase, payload)
+    const { supabase, ctx } = await guard()
+    await applyDraft(supabase, ctx, payload)
     return { ok: true }
   } catch (e) {
     return toActionError(e, "Could not save the invoice draft.")
@@ -563,6 +590,7 @@ async function applyConfirm(
     onlyConfirmed: true,
   })
   if (dup) {
+    await reportBlockedDuplicate(ctx, dup, invoice.invoice_number as string | null)
     throw new Error(
       `Duplicate invoice: supplier invoice ${invoice.invoice_number} is already confirmed as ${dup.label}. Delete this draft instead of confirming it twice.`,
     )
@@ -801,7 +829,7 @@ export async function confirmSupplierInvoice(id: string): Promise<ConfirmResult>
 export async function saveAndConfirmSupplierInvoice(payload: SaveDraftPayload): Promise<ConfirmResult> {
   try {
     const { supabase, ctx, userId } = await guard()
-    await applyDraft(supabase, payload)
+    await applyDraft(supabase, ctx, payload)
     const summary = await applyConfirm(supabase, ctx, userId, payload.id)
     return { ok: true, summary }
   } catch (e) {

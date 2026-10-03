@@ -7,6 +7,8 @@ import { AppShell } from "@/components/app-shell"
 import { InvoiceReview, type InvoiceHeader, type InvoiceItemRow } from "@/components/invoice-review"
 import { LinkedSalesPanel } from "@/components/linked-sales-panel"
 import { getLinkedSalesForSupplierInvoice } from "@/lib/linked-sales"
+import { findDuplicateGroups, loadProfileNames, type DuplicateMatch } from "@/lib/invoice-duplicates"
+import { InvoicePeoplePanel } from "@/components/invoice-people-panel"
 import { ArrowLeft } from "lucide-react"
 
 export const metadata = { title: "Review Invoice · SHWURX Auto Service Center" }
@@ -70,6 +72,17 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
 
   const linkedVehicles = await getLinkedSalesForSupplierInvoice(supabase, id)
 
+  const names = await loadProfileNames(serviceDb, [invoice.created_by, invoice.confirmed_by])
+  let duplicateOf: DuplicateMatch[] = []
+  if (invoice.invoice_number) {
+    const { data: sameNumber } = await serviceDb
+      .from("supplier_invoices")
+      .select("id, doc_number, invoice_number, supplier_id, supplier_name_raw, deleted_at")
+      .is("deleted_at", null)
+      .ilike("invoice_number", String(invoice.invoice_number).trim())
+    duplicateOf = findDuplicateGroups([invoice, ...(sameNumber ?? []).filter((r) => r.id !== invoice.id)]).get(invoice.id) ?? []
+  }
+
   const header: InvoiceHeader = {
     id: invoice.id,
     doc_number: invoice.doc_number,
@@ -125,6 +138,13 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
         >
           <ArrowLeft className="h-4 w-4" /> Invoice Capture
         </Link>
+        <InvoicePeoplePanel
+          capturedBy={(invoice.created_by && names.get(invoice.created_by)) || null}
+          capturedAt={invoice.created_at}
+          confirmedBy={(invoice.confirmed_by && names.get(invoice.confirmed_by)) || null}
+          confirmedAt={invoice.confirmed_at}
+          duplicateOf={duplicateOf}
+        />
         <InvoiceReview
           invoice={header}
           items={itemRows}

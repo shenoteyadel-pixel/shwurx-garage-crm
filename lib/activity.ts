@@ -32,6 +32,12 @@ const STAGE_LABELS: Record<string, string> = {
  * Anything not listed here is still written to the audit log, just without a push.
  */
 const AUDIT_ALERTS: Record<string, (d: Detail) => { title: string; body?: string }> = {
+  supplier_invoice_duplicate_blocked: (d) => ({
+    title: "Duplicate invoice blocked",
+    body: [str(d?.invoice_number) && `Invoice ${str(d?.invoice_number)}`, str(d?.existing) && `already saved as ${str(d?.existing)}`]
+      .filter(Boolean)
+      .join(" "),
+  }),
   "job.create": (d) => ({ title: "New job card created", body: str(d?.job_number) && `Job ${str(d?.job_number)}` }),
   "job.update_stage": (d) => {
     const s = str(d?.stage)

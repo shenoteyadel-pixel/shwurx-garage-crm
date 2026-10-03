@@ -1,24 +1,80 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { Card, Button, Input, Label, Textarea } from "@/components/ui"
 import { saveSettings } from "@/lib/actions-crm"
 import type { Settings } from "@/lib/settings"
-import { Check, Loader2 } from "lucide-react"
+import { AlertCircle, Check, Loader2 } from "lucide-react"
+
+type SaveStatus = "idle" | "pending" | "saving" | "saved" | "error" | "invalid"
+
+const AUTOSAVE_DELAY_MS = 1200
 
 export function SettingsForm({ settings }: { settings: Settings }) {
+  const formRef = useRef<HTMLFormElement>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [pending, start] = useTransition()
-  const [saved, setSaved] = useState(false)
+  const [status, setStatus] = useState<SaveStatus>("idle")
+  const [error, setError] = useState<string | null>(null)
+
+  const save = (fd: FormData) =>
+    start(async () => {
+      setStatus("saving")
+      try {
+        await saveSettings(fd)
+        setError(null)
+        setStatus("saved")
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not save")
+        setStatus("error")
+      }
+    })
+
+  const flush = () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = null
+    const form = formRef.current
+    if (!form) return
+    if (!form.checkValidity()) {
+      setStatus("invalid")
+      return
+    }
+    save(new FormData(form))
+  }
+
+  const schedule = () => {
+    setStatus("pending")
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(flush, AUTOSAVE_DELAY_MS)
+  }
+
+  // Save anything still waiting when the user leaves the page.
+  useEffect(() => {
+    const onHide = () => {
+      if (timerRef.current) flush()
+    }
+    window.addEventListener("pagehide", onHide)
+    return () => {
+      window.removeEventListener("pagehide", onHide)
+      if (timerRef.current) flush()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <form
-      action={(fd) =>
-        start(async () => {
-          await saveSettings(fd)
-          setSaved(true)
-          setTimeout(() => setSaved(false), 2500)
-        })
-      }
+      ref={formRef}
+      data-autosave
+      onInput={schedule}
+      onChange={schedule}
+      onBlur={() => {
+        if (timerRef.current) flush()
+      }}
+      action={(fd) => {
+        if (timerRef.current) clearTimeout(timerRef.current)
+        timerRef.current = null
+        save(fd)
+      }}
     >
       <Card className="p-6">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Identity</h2>
@@ -127,9 +183,33 @@ export function SettingsForm({ settings }: { settings: Settings }) {
 
         <div className="mt-6 flex items-center gap-3">
           <Button type="submit" disabled={pending}>
-            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : null}
-            {saved ? "Saved" : "Save settings"}
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Save now
           </Button>
+          <p role="status" aria-live="polite" className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            {status === "pending" && "Changes will save automatically…"}
+            {status === "saving" && (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+              </>
+            )}
+            {status === "saved" && (
+              <>
+                <Check className="h-4 w-4 text-primary" /> All changes saved
+              </>
+            )}
+            {status === "invalid" && (
+              <>
+                <AlertCircle className="h-4 w-4 text-destructive" /> Fill the required fields to save
+              </>
+            )}
+            {status === "error" && (
+              <>
+                <AlertCircle className="h-4 w-4 text-destructive" /> Not saved: {error}
+              </>
+            )}
+            {status === "idle" && "Settings save automatically as you type"}
+          </p>
         </div>
       </Card>
     </form>

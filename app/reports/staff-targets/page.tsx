@@ -3,6 +3,7 @@ import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { createServiceClient } from "@/lib/supabase/server"
 import { StaffTargetsClient, type TargetRow } from "@/components/staff-targets-client"
+import type { TargetKind } from "@/lib/actions-targets"
 
 export const metadata = { title: "Staff Targets · SHWURX Auto Service Center" }
 
@@ -42,7 +43,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
       .or(`and(invoice_date.gte.${from},invoice_date.lte.${to}),and(invoice_date.is.null,created_at.gte.${from},created_at.lt.${next})`),
     svc
       .from("invoices")
-      .select("total, jobs(advisor_id)")
+      .select("total, jobs(advisor_id, technician_id)")
       .neq("status", "cancelled")
       .gte("issue_date", from)
       .lte("issue_date", to),
@@ -54,8 +55,13 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
   for (const r of purchasesRes.data ?? []) add(purchases, r.created_by, r.total)
 
   const sales = new Map<string, Acc>()
-  for (const r of (salesRes.data ?? []) as unknown as { total: number | null; jobs: { advisor_id: string | null } | null }[]) {
+  const technicianWork = new Map<string, Acc>()
+  for (const r of (salesRes.data ?? []) as unknown as {
+    total: number | null
+    jobs: { advisor_id: string | null; technician_id: string | null } | null
+  }[]) {
     add(sales, r.jobs?.advisor_id ?? null, r.total)
+    add(technicianWork, r.jobs?.technician_id ?? null, r.total)
   }
 
   const staff = (staffRes.data ?? []).map((p) => ({
@@ -66,12 +72,16 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
   }))
   const staffById = new Map(staff.map((s) => [s.id, s]))
 
-  const targets = { purchase: new Map<string, number>(), sales: new Map<string, number>() }
+  const targets: Record<TargetKind, Map<string, number>> = {
+    purchase: new Map(),
+    sales: new Map(),
+    technician: new Map(),
+  }
   for (const t of targetsRes.data ?? []) {
-    targets[t.kind as "purchase" | "sales"]?.set(t.user_id, Number(t.monthly_target) || 0)
+    targets[t.kind as TargetKind]?.set(t.user_id, Number(t.monthly_target) || 0)
   }
 
-  function rows(kind: "purchase" | "sales", totals: Map<string, Acc>): TargetRow[] {
+  function rows(kind: TargetKind, totals: Map<string, Acc>): TargetRow[] {
     const ids = new Set([...totals.keys(), ...targets[kind].keys()])
     return [...ids]
       .map((id) => {
@@ -94,6 +104,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
         month={month}
         purchasers={rows("purchase", purchases)}
         advisors={rows("sales", sales)}
+        technicians={rows("technician", technicianWork)}
         staff={staff.filter((s) => s.active).map(({ id, name }) => ({ id, name }))}
       />
     </AppShell>

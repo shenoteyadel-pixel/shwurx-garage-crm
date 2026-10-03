@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { Check, ShoppingCart, UserCog } from "lucide-react"
+import { Check, ShoppingCart, UserCog, Wrench } from "lucide-react"
 import { formatCurrency as money } from "@/lib/utils"
 import { Card, GhostButton, PrimaryButton } from "@/components/ui"
 import { saveStaffTarget, type TargetKind } from "@/lib/actions-targets"
@@ -34,11 +34,13 @@ export function StaffTargetsClient({
   month,
   purchasers,
   advisors,
+  technicians,
   staff,
 }: {
   month: string
   purchasers: TargetRow[]
   advisors: TargetRow[]
+  technicians: TargetRow[]
   staff: Staff[]
 }) {
   const router = useRouter()
@@ -50,7 +52,7 @@ export function StaffTargetsClient({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Staff Targets</h1>
           <p className="text-sm text-muted-foreground text-pretty">
-            Monthly purchase total per purchaser and sales total per service advisor, compared with their target.
+            Monthly totals for every staff member — purchasers, service advisors and technicians — compared with their target.
           </p>
         </div>
         <div className="flex items-end gap-2">
@@ -109,6 +111,15 @@ export function StaffTargetsClient({
         countLabel="Invoices"
         icon={<UserCog className="size-5" aria-hidden />}
         rows={advisors}
+        staff={staff}
+      />
+      <TargetSection
+        kind="technician"
+        title="Technicians"
+        subtitle={`Customer invoices (excluding cancelled) for jobs they worked on in ${monthLabel(month)}`}
+        countLabel="Jobs"
+        icon={<Wrench className="size-5" aria-hidden />}
+        rows={technicians}
         staff={staff}
       />
     </div>

@@ -91,6 +91,7 @@ export type Permission =
   | "costs.view" | "suppliers.view" | "profit.view"
   | "parts.view" | "parts.manage" | "purchase_orders.manage"
   | "reports.view" | "reports.financial"
+  | "expenses.manage" | "payroll.manage"
   | "appointments.view" | "appointments.manage"
   | "leads.view" | "leads.manage"
   | "marketing.view" | "marketing.manage"
@@ -185,6 +186,13 @@ export const PERMISSION_CATALOG: PermGroup[] = [
     perms: [
       { key: "reports.view", label: "View reports" },
       { key: "reports.financial", label: "View financial reports" },
+    ],
+  },
+  {
+    group: "Expenses & Payroll",
+    perms: [
+      { key: "expenses.manage", label: "Record company expenses & upload bills" },
+      { key: "payroll.manage", label: "Record salary payments" },
     ],
   },
   {

@@ -171,6 +171,12 @@ export function ReportsClient({
         >
           VAT Return
         </Link>
+        <Link
+          href="/reports/top-customers"
+          className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+        >
+          Top Customers
+        </Link>
         <div className="ml-auto flex flex-wrap gap-2">
           <GhostButton onClick={() => preset("month")}>This Month</GhostButton>
           <GhostButton onClick={() => preset("quarter")}>This Quarter</GhostButton>

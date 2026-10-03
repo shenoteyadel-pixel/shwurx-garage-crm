@@ -41,11 +41,15 @@ export const getSessionContext = cache(async (): Promise<SessionContext | null> 
     .maybeSingle()
 
   const role = (profile?.role ?? "viewer") as Role
-  const isActive = profile?.is_active ?? true
+  const isOwner = role === "owner"
+  // The owner is never locked out: no deactivation, no overrides, no forced password reset.
+  const isActive = isOwner ? true : (profile?.is_active ?? true)
 
   // Effective permissions: role defaults, then per-user overrides win.
   const perms = new Set<Permission>()
-  if (isActive) {
+  if (isOwner) {
+    for (const p of ALL_PERMISSIONS) perms.add(p as Permission)
+  } else if (isActive) {
     const { data: rolePerms } = await supabase
       .from("role_permissions")
       .select("permission, allowed")
@@ -74,7 +78,7 @@ export const getSessionContext = cache(async (): Promise<SessionContext | null> 
     isActive,
     isStaff: isActive && role !== "customer",
     customerId: profile?.customer_id ?? null,
-    mustSetPassword: profile?.must_set_password ?? false,
+    mustSetPassword: isOwner ? false : (profile?.must_set_password ?? false),
     inviteStatus: profile?.invite_status ?? "not_sent",
     permissions: perms,
   }

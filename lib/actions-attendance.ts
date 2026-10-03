@@ -53,6 +53,7 @@ async function locationCheck(coords: Coords) {
 
 export async function checkIn(coords: Coords, note?: string): Promise<Result> {
   const ctx = await requireStaff()
+  if (ctx.role === "owner") return { ok: false, error: "The owner account is not tracked by attendance." }
   const chk = await locationCheck(coords)
   if ("error" in chk) return { ok: false, error: chk.error as string }
   const { svc, settings, c, distance } = chk
@@ -163,6 +164,7 @@ export async function saveManualRecord(input: ManualRecordInput): Promise<Result
   const svc = createServiceClient()
   const { data: staff } = await svc.from("profiles").select("id, role").eq("id", input.userId).maybeSingle()
   if (!staff || staff.role === "customer") return { ok: false, error: "Employee not found." }
+  if (staff.role === "owner") return { ok: false, error: "The owner account is not tracked by attendance." }
 
   const checkInIso = works && input.checkIn ? localToIso(input.workDate, input.checkIn) : null
   let checkOutIso = works && input.checkOut ? localToIso(input.workDate, input.checkOut) : null

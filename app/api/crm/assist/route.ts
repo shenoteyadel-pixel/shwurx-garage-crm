@@ -51,7 +51,7 @@ export async function GET() {
     !settings.attendance_off_days.includes(weekdayOf(today)) && (!startDate || today >= startDate)
   const onLeave = attendance && ["leave", "sick", "off"].includes(attendance.status)
 
-  if (isWorkDay && !onLeave) {
+  if (!isOwner && isWorkDay && !onLeave) {
     const nowMin = localMinutes(now)
     const startMin = hhmmToMinutes(settings.shift_start)
     const endMin = hhmmToMinutes(settings.shift_end)

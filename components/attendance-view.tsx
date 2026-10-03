@@ -86,14 +86,16 @@ export function AttendanceView(props: {
   todayRecords: AttendanceRecord[]
   summaries: EmployeeSummary[]
   payroll: PayrollLine[]
+  selfTracked?: boolean
   canViewAll: boolean
   canManage: boolean
   canEditSettings: boolean
   company: Company
 }) {
-  const [tab, setTab] = useState<Tab>("me")
+  const selfTracked = props.selfTracked ?? true
+  const [tab, setTab] = useState<Tab>(selfTracked ? "me" : "today")
   const tabs: { key: Tab; label: string; show: boolean }[] = [
-    { key: "me", label: "My attendance", show: true },
+    { key: "me", label: "My attendance", show: selfTracked },
     { key: "today", label: "Today", show: props.canViewAll },
     { key: "report", label: "Monthly report", show: props.canViewAll },
     { key: "payroll", label: "Payroll deductions", show: props.canManage },

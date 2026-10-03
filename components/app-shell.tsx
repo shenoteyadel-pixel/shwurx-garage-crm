@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState } from "react"
+import { UnsavedChangesGuard } from "@/components/unsaved-changes-guard"
 import { cn } from "@/lib/utils"
 import { signOut } from "@/lib/actions"
 import { NotificationBell } from "@/components/notification-bell"
@@ -255,6 +256,7 @@ export function AppShell({
             <img src="/brand/wurx-logo-ink.png" alt="" className="block w-3/5 max-w-2xl -rotate-12 opacity-[0.04] dark:hidden" />
           </div>
           {children}
+          <UnsavedChangesGuard />
         </main>
       </div>
     </div>

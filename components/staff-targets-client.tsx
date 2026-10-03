@@ -3,10 +3,18 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { Check, ShoppingCart, UserCog, Wrench } from "lucide-react"
+import { Check, ShoppingCart, Sparkles, Trash2, UserCog, Wrench } from "lucide-react"
 import { formatCurrency as money } from "@/lib/utils"
 import { Card, GhostButton, PrimaryButton } from "@/components/ui"
-import { saveStaffTarget, type TargetKind } from "@/lib/actions-targets"
+import {
+  removeStaffTarget,
+  saveStaffTarget,
+  saveStaffTargets,
+  suggestStaffTargets,
+  type SuggestionMap,
+  type TargetKind,
+  type TargetSuggestion,
+} from "@/lib/actions-targets"
 
 export type TargetRow = {
   userId: string
@@ -30,6 +38,11 @@ function monthLabel(month: string) {
   return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" })
 }
 
+function shortMonth(month: string) {
+  const [y, m] = month.split("-").map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "short" })
+}
+
 export function StaffTargetsClient({
   month,
   purchasers,
@@ -45,6 +58,19 @@ export function StaffTargetsClient({
 }) {
   const router = useRouter()
   const go = (m: string) => router.push(`/reports/staff-targets?month=${m}`)
+  const [suggestions, setSuggestions] = useState<{ month: string; map: SuggestionMap; ai: boolean } | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [loading, startLoading] = useTransition()
+  const current = suggestions?.month === month ? suggestions : null
+
+  function loadSuggestions() {
+    setAiError(null)
+    startLoading(async () => {
+      const res = await suggestStaffTargets(month)
+      if (!res.ok) return setAiError(res.error)
+      setSuggestions({ month, map: res.suggestions, ai: res.ai })
+    })
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -52,7 +78,7 @@ export function StaffTargetsClient({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Staff Targets</h1>
           <p className="text-sm text-muted-foreground text-pretty">
-            Monthly totals for every staff member — purchasers, service advisors and technicians — compared with their target.
+            Set, change or remove monthly targets for every staff member, and use AI suggestions as a reference.
           </p>
         </div>
         <div className="flex items-end gap-2">
@@ -95,6 +121,28 @@ export function StaffTargetsClient({
         </span>
       </div>
 
+      <Card className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-primary">
+            <Sparkles className="size-5" aria-hidden />
+          </span>
+          <div>
+            <h2 className="font-semibold">AI target reference</h2>
+            <p className="text-sm text-muted-foreground text-pretty">
+              {current
+                ? current.ai
+                  ? `Suggestions for ${monthLabel(month)} based on each person's last 6 months. Nothing is saved until you click Use or Apply.`
+                  : `AI was unavailable, so these suggestions use each person's 6-month average plus 10%. Nothing is saved until you click Use or Apply.`
+                : `Get a suggested target for each person from their last 6 months of work. You decide whether to use it.`}
+            </p>
+            {aiError && <p className="mt-1 text-xs text-destructive">{aiError}</p>}
+          </div>
+        </div>
+        <PrimaryButton onClick={loadSuggestions} disabled={loading}>
+          {loading ? "Analysing…" : current ? "Refresh suggestions" : "Get AI suggestions"}
+        </PrimaryButton>
+      </Card>
+
       <TargetSection
         kind="purchase"
         title="Purchasers"
@@ -103,6 +151,7 @@ export function StaffTargetsClient({
         icon={<ShoppingCart className="size-5" aria-hidden />}
         rows={purchasers}
         staff={staff}
+        suggestions={current?.map.purchase}
       />
       <TargetSection
         kind="sales"
@@ -112,6 +161,7 @@ export function StaffTargetsClient({
         icon={<UserCog className="size-5" aria-hidden />}
         rows={advisors}
         staff={staff}
+        suggestions={current?.map.sales}
       />
       <TargetSection
         kind="technician"
@@ -121,6 +171,7 @@ export function StaffTargetsClient({
         icon={<Wrench className="size-5" aria-hidden />}
         rows={technicians}
         staff={staff}
+        suggestions={current?.map.technician}
       />
     </div>
   )
@@ -134,6 +185,7 @@ function TargetSection({
   icon,
   rows,
   staff,
+  suggestions,
 }: {
   kind: TargetKind
   title: string
@@ -142,16 +194,49 @@ function TargetSection({
   icon: React.ReactNode
   rows: TargetRow[]
   staff: Staff[]
+  suggestions?: Record<string, TargetSuggestion>
 }) {
+  const router = useRouter()
   const [adding, setAdding] = useState("")
-  const extra = adding ? staff.find((s) => s.id === adding) : null
+  const [applyError, setApplyError] = useState<string | null>(null)
+  const [applying, startApply] = useTransition()
+
+  const staffById = new Map(staff.map((s) => [s.id, s]))
   const listed = new Set(rows.map((r) => r.userId))
-  const all: TargetRow[] = extra && !listed.has(extra.id)
-    ? [...rows, { userId: extra.id, name: extra.name, title: "", total: 0, count: 0, target: 0 }]
-    : rows
-  const available = staff.filter((s) => !listed.has(s.id))
+  const extraIds = [
+    ...Object.keys(suggestions ?? {}).filter((id) => !listed.has(id) && staffById.has(id)),
+    ...(adding && !listed.has(adding) ? [adding] : []),
+  ]
+  const all: TargetRow[] = [
+    ...rows,
+    ...[...new Set(extraIds)].map((id) => ({
+      userId: id,
+      name: staffById.get(id)?.name ?? "Unnamed",
+      title: "",
+      total: 0,
+      count: 0,
+      target: 0,
+    })),
+  ]
+  const shown = new Set(all.map((r) => r.userId))
+  const available = staff.filter((s) => !shown.has(s.id))
   const totalSum = rows.reduce((t, r) => t + r.total, 0)
   const targetSum = rows.reduce((t, r) => t + r.target, 0)
+
+  const toApply = all.filter((r) => suggestions?.[r.userId] && suggestions[r.userId].target !== r.target)
+
+  function applyAll() {
+    if (!suggestions || toApply.length === 0) return
+    if (!confirm(`Set ${toApply.length} ${title.toLowerCase()} target(s) to the AI suggestion?`)) return
+    setApplyError(null)
+    startApply(async () => {
+      const res = await saveStaffTargets(
+        toApply.map((r) => ({ userId: r.userId, kind, amount: suggestions[r.userId].target })),
+      )
+      if (!res.ok) return setApplyError(res.error)
+      router.refresh()
+    })
+  }
 
   return (
     <Card className="overflow-hidden p-0">
@@ -163,11 +248,20 @@ function TargetSection({
             <p className="text-xs text-muted-foreground">{subtitle}</p>
           </div>
         </div>
-        <div className="text-right text-sm">
-          <div className="font-semibold">{money(totalSum)}</div>
-          <div className="text-xs text-muted-foreground">of {money(targetSum)} target</div>
+        <div className="flex items-center gap-4">
+          {suggestions && toApply.length > 0 && (
+            <GhostButton onClick={applyAll} disabled={applying}>
+              <Sparkles className="size-4" aria-hidden />
+              {applying ? "Applying…" : `Apply AI targets (${toApply.length})`}
+            </GhostButton>
+          )}
+          <div className="text-right text-sm">
+            <div className="font-semibold">{money(totalSum)}</div>
+            <div className="text-xs text-muted-foreground">of {money(targetSum)} target</div>
+          </div>
         </div>
       </div>
+      {applyError && <p className="border-b border-border px-4 py-2 text-xs text-destructive">{applyError}</p>}
 
       {all.length === 0 ? (
         <p className="p-6 text-center text-sm text-muted-foreground">No activity this month. Add a person below to set a target.</p>
@@ -180,12 +274,19 @@ function TargetSection({
                 <th className="px-4 py-2 text-right font-medium">{countLabel}</th>
                 <th className="px-4 py-2 text-right font-medium">Total</th>
                 <th className="px-4 py-2 font-medium">Monthly target</th>
+                {suggestions && <th className="min-w-56 px-4 py-2 font-medium">AI reference</th>}
                 <th className="min-w-44 px-4 py-2 font-medium">Progress</th>
               </tr>
             </thead>
             <tbody>
               {all.map((r) => (
-                <Row key={r.userId} row={r} kind={kind} />
+                <Row
+                  key={`${r.userId}-${r.target}`}
+                  row={r}
+                  kind={kind}
+                  showSuggestion={!!suggestions}
+                  suggestion={suggestions?.[r.userId]}
+                />
               ))}
             </tbody>
           </table>
@@ -216,7 +317,17 @@ function TargetSection({
   )
 }
 
-function Row({ row, kind }: { row: TargetRow; kind: TargetKind }) {
+function Row({
+  row,
+  kind,
+  showSuggestion,
+  suggestion,
+}: {
+  row: TargetRow
+  kind: TargetKind
+  showSuggestion: boolean
+  suggestion?: TargetSuggestion
+}) {
   const router = useRouter()
   const [value, setValue] = useState(row.target ? String(row.target) : "")
   const [saved, setSaved] = useState(false)
@@ -227,10 +338,10 @@ function Row({ row, kind }: { row: TargetRow; kind: TargetKind }) {
   const pct = row.target > 0 ? Math.round((row.total / row.target) * 100) : null
   const achieved = pct !== null && pct >= 100
 
-  function save() {
+  function run(action: () => Promise<{ ok: true } | { ok: false; error: string }>) {
     setError(null)
     start(async () => {
-      const res = await saveStaffTarget(row.userId, kind, Number(value || 0))
+      const res = await action()
       if (!res.ok) return setError(res.error)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -238,8 +349,18 @@ function Row({ row, kind }: { row: TargetRow; kind: TargetKind }) {
     })
   }
 
+  const save = () => run(() => saveStaffTarget(row.userId, kind, Number(value || 0)))
+
+  function remove() {
+    if (!confirm(`Remove the target for ${row.name}?`)) return
+    setValue("")
+    run(() => removeStaffTarget(row.userId, kind))
+  }
+
+  const peak = suggestion ? Math.max(1, ...suggestion.history.map((h) => h.total)) : 1
+
   return (
-    <tr className="border-b border-border last:border-0">
+    <tr className="border-b border-border align-top last:border-0">
       <td className="px-4 py-3">
         <div className="font-medium">{row.name}</div>
         {row.title && <div className="text-xs capitalize text-muted-foreground">{row.title}</div>}
@@ -276,10 +397,57 @@ function Row({ row, kind }: { row: TargetRow; kind: TargetKind }) {
             <span className="flex items-center gap-1 text-xs text-primary">
               <Check className="size-4" aria-hidden /> Saved
             </span>
+          ) : row.target > 0 ? (
+            <button
+              type="button"
+              onClick={remove}
+              disabled={pending}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-destructive"
+              aria-label={`Remove target for ${row.name}`}
+              title="Remove target"
+            >
+              <Trash2 className="size-4" aria-hidden />
+            </button>
           ) : null}
         </form>
         {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
       </td>
+      {showSuggestion && (
+        <td className="px-4 py-3">
+          {suggestion ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold tabular-nums">{money(suggestion.target)}</span>
+                {Number(value || 0) !== suggestion.target && (
+                  <button
+                    type="button"
+                    onClick={() => setValue(String(suggestion.target))}
+                    className="rounded-md border border-border px-2 py-0.5 text-xs font-medium text-primary hover:bg-accent"
+                  >
+                    Use
+                  </button>
+                )}
+              </div>
+              <div className="flex h-6 items-end gap-0.5" aria-hidden>
+                {suggestion.history.map((h) => (
+                  <div
+                    key={h.month}
+                    title={`${shortMonth(h.month)}: ${money(h.total)}`}
+                    className="w-3 rounded-sm bg-primary/50"
+                    style={{ height: `${Math.max(8, (h.total / peak) * 100)}%` }}
+                  />
+                ))}
+              </div>
+              <p className="sr-only">
+                Last 6 months: {suggestion.history.map((h) => `${shortMonth(h.month)} ${money(h.total)}`).join(", ")}
+              </p>
+              <p className="max-w-64 text-xs leading-relaxed text-muted-foreground text-pretty">{suggestion.reason}</p>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">No history in the last 6 months</span>
+          )}
+        </td>
+      )}
       <td className="px-4 py-3">
         {pct === null ? (
           <span className="text-xs text-muted-foreground">No target set</span>
@@ -299,9 +467,7 @@ function Row({ row, kind }: { row: TargetRow; kind: TargetKind }) {
               />
             </div>
             <span className={achieved ? "text-xs font-medium text-primary" : "text-xs text-muted-foreground"}>
-              {achieved
-                ? `Target achieved · ${pct}%`
-                : `${pct}% · ${money(row.target - row.total)} to go`}
+              {achieved ? `Target achieved · ${pct}%` : `${pct}% · ${money(row.target - row.total)} to go`}
             </span>
           </div>
         )}

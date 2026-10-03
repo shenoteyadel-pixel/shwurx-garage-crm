@@ -41,6 +41,7 @@ import {
   Wallet,
   Receipt,
   Trophy,
+  DatabaseBackup,
 } from "lucide-react"
 
 // Nav is grouped into labeled sections so every area — especially admin tools
@@ -107,6 +108,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/users", label: "Users & Roles", icon: ShieldCheck, anyOf: ["users.manage", "permissions.manage"] },
       { href: "/settings", label: "Settings", icon: Settings, anyOf: ["settings.manage"] },
+      { href: "/data-export", label: "Download Data", icon: DatabaseBackup, ownerOnly: true },
       { href: "/recycle-bin", label: "Recycle Bin", icon: Trash2, ownerOnly: true },
     ],
   },

@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache"
 import { getShellUser } from "@/lib/shell-user"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 
-export type TargetKind = "purchase" | "sales"
+export type TargetKind = "purchase" | "sales" | "technician"
+const KINDS: TargetKind[] = ["purchase", "sales", "technician"]
 
 export async function saveStaffTarget(userId: string, kind: TargetKind, amount: number) {
   const user = await getShellUser()
   if (user.role !== "owner") return { ok: false as const, error: "Only the owner can set targets." }
-  if (kind !== "purchase" && kind !== "sales") return { ok: false as const, error: "Invalid target type." }
+  if (!KINDS.includes(kind)) return { ok: false as const, error: "Invalid target type." }
   if (!/^[0-9a-f-]{36}$/i.test(userId)) return { ok: false as const, error: "Invalid staff member." }
   const value = Math.round(Number(amount) * 100) / 100
   if (!Number.isFinite(value) || value < 0 || value > 100_000_000) {

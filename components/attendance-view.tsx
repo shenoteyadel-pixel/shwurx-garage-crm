@@ -30,6 +30,7 @@ import {
   saveEmployeeSalary,
   saveManualRecord,
 } from "@/lib/actions-attendance"
+import { LocationPicker } from "@/components/attendance/location-picker"
 import { buildAttendancePdf, buildPayrollPdf, downloadAttendanceCsv, downloadPayrollCsv } from "@/components/attendance-pdf"
 
 type Company = { name: string; trn: string | null; address: string | null }
@@ -900,8 +901,6 @@ function SettingsForm({ settings }: { settings: AttendanceSettings }) {
     absenceDeductionDays: settings.absence_deduction_days,
     lateDeduction: settings.late_deduction_enabled,
   })
-  const [locating, setLocating] = useState(false)
-
   return (
     <Card className="flex flex-col gap-5 p-5">
       <form
@@ -965,41 +964,17 @@ function SettingsForm({ settings }: { settings: AttendanceSettings }) {
         <section className="flex flex-col gap-3 border-t border-border pt-5">
           <h2 className="text-base font-semibold">Workshop location</h2>
           <p className="text-xs text-muted-foreground">
-            Stand inside the workshop and press &quot;Use my location&quot;. Check-in and check-out are blocked for anyone
-            outside the radius, or whose GPS reading is too inaccurate to prove where they are.
+            Set this from anywhere — you don&apos;t need to be at the workshop. Staff can only check in and out inside the
+            circle on the map, and only if their phone&apos;s GPS is accurate enough.
           </p>
+          <LocationPicker
+            lat={f.workshopLat}
+            lng={f.workshopLng}
+            radius={f.radius}
+            onChange={(workshopLat, workshopLng) => setF((cur) => ({ ...cur, workshopLat, workshopLng }))}
+            onRadiusChange={(radius) => setF((cur) => ({ ...cur, radius }))}
+          />
           <div className="grid gap-3 sm:grid-cols-4">
-            <div>
-              <Label htmlFor="s-lat">Latitude</Label>
-              <Input
-                id="s-lat"
-                type="number"
-                step="any"
-                value={f.workshopLat ?? ""}
-                onChange={(e) => setF({ ...f, workshopLat: e.target.value === "" ? null : Number(e.target.value) })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="s-lng">Longitude</Label>
-              <Input
-                id="s-lng"
-                type="number"
-                step="any"
-                value={f.workshopLng ?? ""}
-                onChange={(e) => setF({ ...f, workshopLng: e.target.value === "" ? null : Number(e.target.value) })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="s-radius">Allowed radius (m)</Label>
-              <Input
-                id="s-radius"
-                type="number"
-                min={50}
-                max={5000}
-                value={f.radius}
-                onChange={(e) => setF({ ...f, radius: Number(e.target.value) })}
-              />
-            </div>
             <div>
               <Label htmlFor="s-acc">Max GPS error (m)</Label>
               <Input
@@ -1011,32 +986,6 @@ function SettingsForm({ settings }: { settings: AttendanceSettings }) {
                 onChange={(e) => setF({ ...f, maxAccuracy: Number(e.target.value) })}
               />
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-4">
-            <GhostButton
-              type="button"
-              disabled={locating}
-              onClick={async () => {
-                setLocating(true)
-                const p = await getPosition()
-                setLocating(false)
-                if (p) setF((cur) => ({ ...cur, workshopLat: p.lat, workshopLng: p.lng }))
-                else setMsg({ ok: false, text: "Could not get your location. Allow location access and try again." })
-              }}
-            >
-              {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
-              Use my location
-            </GhostButton>
-            {f.workshopLat != null && f.workshopLng != null && (
-              <a
-                className="text-sm text-primary underline-offset-4 hover:underline"
-                href={`https://www.google.com/maps?q=${f.workshopLat},${f.workshopLng}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Check on map
-              </a>
-            )}
           </div>
         </section>
 

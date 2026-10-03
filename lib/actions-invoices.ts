@@ -832,6 +832,14 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
   const { data: invoice } = await supabase.from("supplier_invoices").select("total, status").eq("id", id).single()
   if (!invoice || invoice.status !== "confirmed") throw new Error("Invoice is not confirmed")
 
+  const { data: existingPayments } = await supabase.from("payments").select("amount").eq("supplier_invoice_id", id)
+  const alreadyPaid = (existingPayments ?? []).reduce((t, p) => t + n(p.amount), 0)
+  const remaining = Math.max(0, n(invoice.total) - alreadyPaid)
+  if (remaining <= 0.01) throw new Error("This invoice is already fully paid.")
+  if (amount > remaining + 0.01) {
+    throw new Error(`Amount is more than the outstanding balance (AED ${remaining.toFixed(2)}).`)
+  }
+
   const { error: insertError } = await supabase.from("payments").insert({
     direction: "out",
     supplier_invoice_id: id,

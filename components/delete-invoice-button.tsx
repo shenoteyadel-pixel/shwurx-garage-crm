@@ -26,17 +26,33 @@ export function DeleteInvoiceButton({
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [paymentTotal, setPaymentTotal] = useState<number | null>(null)
 
   const title = kind === "draft" ? "Delete draft invoice" : "Delete duplicate invoice"
+
+  function close() {
+    if (pending) return
+    setOpen(false)
+    setError(null)
+    setPaymentTotal(null)
+  }
 
   function onDelete() {
     setError(null)
     start(async () => {
-      const res = kind === "draft" ? await deleteInvoiceDraft(id) : await deleteDuplicateInvoice(id)
+      const res =
+        kind === "draft"
+          ? await deleteInvoiceDraft(id)
+          : await deleteDuplicateInvoice(id, { removePayments: paymentTotal !== null })
       if (!res.ok) {
+        if ("paymentTotal" in res && typeof res.paymentTotal === "number") {
+          setPaymentTotal(res.paymentTotal)
+          return
+        }
         setError(res.error)
         return
       }
+      setPaymentTotal(null)
       setOpen(false)
       if (redirectTo) router.push(redirectTo)
       else router.refresh()
@@ -61,7 +77,7 @@ export function DeleteInvoiceButton({
         {!compact && (kind === "draft" ? "Delete draft" : "Delete duplicate")}
       </Button>
 
-      <Modal open={open} onClose={() => !pending && setOpen(false)} title={title}>
+      <Modal open={open} onClose={close} title={title}>
         <div className="flex flex-col gap-4">
           {kind === "draft" ? (
             <p className="text-sm leading-relaxed text-muted-foreground">
@@ -79,7 +95,20 @@ export function DeleteInvoiceButton({
                 <li>Part lines this copy added to job cards are removed.</li>
                 <li>The supplier balance no longer counts it twice.</li>
               </ul>
-              <p>Copies with recorded payments can&apos;t be deleted. Delete the unpaid copy instead.</p>
+            </div>
+          )}
+
+          {paymentTotal !== null && (
+            <div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm leading-relaxed">
+              <p className="font-medium text-foreground">
+                This copy has a payment of AED{" "}
+                {paymentTotal.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
+                recorded on it.
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                The same bill was paid on both copies. Deleting this copy also removes its duplicate payment record, so
+                cash out and the supplier balance are only counted once. The other copy keeps its payment.
+              </p>
             </div>
           )}
 
@@ -90,17 +119,17 @@ export function DeleteInvoiceButton({
           )}
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
+            <Button type="button" variant="outline" onClick={close} disabled={pending} className="h-11">
               Cancel
             </Button>
             <Button
               type="button"
               onClick={onDelete}
               disabled={pending}
-              className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="h-11 gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {pending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-              {pending ? "Deleting…" : "Delete"}
+              {pending ? "Deleting…" : paymentTotal !== null ? "Delete copy and payment" : "Delete"}
             </Button>
           </div>
         </div>

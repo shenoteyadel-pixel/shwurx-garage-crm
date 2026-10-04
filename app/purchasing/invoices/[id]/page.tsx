@@ -10,6 +10,7 @@ import { getLinkedSalesForSupplierInvoice } from "@/lib/linked-sales"
 import { findDuplicateGroups, loadProfileNames, type DuplicateMatch } from "@/lib/invoice-duplicates"
 import { InvoicePeoplePanel } from "@/components/invoice-people-panel"
 import { ArrowLeft } from "lucide-react"
+import { DeleteInvoiceButton } from "@/components/delete-invoice-button"
 
 export const metadata = { title: "Review Invoice · SHWURX Auto Service Center" }
 
@@ -132,12 +133,25 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
   return (
     <AppShell user={user}>
       <div className="mx-auto max-w-6xl space-y-4">
-        <Link
-          href="/purchasing/invoices"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> Invoice Capture
-        </Link>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Link
+            href="/purchasing/invoices"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" /> Invoice Capture
+          </Link>
+          {invoice.status === "confirmed" &&
+            !invoice.deleted_at &&
+            duplicateOf.length > 0 &&
+            user.permissions.includes("purchase_orders.manage") && (
+              <DeleteInvoiceButton
+                id={invoice.id}
+                label={invoice.doc_number || invoice.invoice_number || "invoice"}
+                kind="duplicate"
+                redirectTo="/purchasing/invoices"
+              />
+            )}
+        </div>
         <InvoicePeoplePanel
           capturedBy={(invoice.created_by && names.get(invoice.created_by)) || null}
           capturedAt={invoice.created_at}

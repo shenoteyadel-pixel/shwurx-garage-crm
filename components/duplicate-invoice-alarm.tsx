@@ -1,8 +1,10 @@
 import Link from "next/link"
 import { AlertTriangle } from "lucide-react"
+import { DeleteInvoiceButton } from "@/components/delete-invoice-button"
 
 export type DuplicateAlarmRow = {
   id: string
+  status: string
   label: string
   invoiceNumber: string
   supplier: string
@@ -10,7 +12,7 @@ export type DuplicateAlarmRow = {
   capturedBy: string
 }
 
-export function DuplicateInvoiceAlarm({ rows }: { rows: DuplicateAlarmRow[] }) {
+export function DuplicateInvoiceAlarm({ rows, canDelete = false }: { rows: DuplicateAlarmRow[]; canDelete?: boolean }) {
   return (
     <section
       role="alert"
@@ -40,6 +42,11 @@ export function DuplicateInvoiceAlarm({ rows }: { rows: DuplicateAlarmRow[] }) {
             <div className="flex items-center gap-3 text-muted-foreground">
               <span>Captured by {r.capturedBy}</span>
               <span className="tabular-nums text-foreground">{r.total}</span>
+              {r.status === "draft" ? (
+                <DeleteInvoiceButton id={r.id} label={r.invoiceNumber || r.label} kind="draft" compact />
+              ) : canDelete ? (
+                <DeleteInvoiceButton id={r.id} label={r.label} kind="duplicate" compact />
+              ) : null}
             </div>
           </li>
         ))}

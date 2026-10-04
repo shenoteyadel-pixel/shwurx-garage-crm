@@ -1,6 +1,7 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
+import { findDuplicateGroups } from "@/lib/invoice-duplicates"
 import { get, del } from "@vercel/blob"
 import { revalidatePath } from "next/cache"
 import { requireAnyPermission, logAction, ForbiddenError, type SessionContext } from "@/lib/rbac/context"
@@ -951,5 +952,113 @@ export async function deleteInvoiceDraft(id: string): Promise<InvoiceActionResul
   return { ok: true }
   } catch (e) {
     return toActionError(e, "Could not delete the draft.")
+  }
+}
+
+/* ============================================================
+   7. Delete a confirmed duplicate (reverses stock + job links)
+   ============================================================ */
+/**
+ * A confirmed invoice has already added stock, written stock movements and
+ * linked parts to job cards, so removing a duplicate must undo those postings
+ * or stock and job costs stay counted twice. Restricted to purchasing managers
+ * because the reversal touches inventory; runs on the service client since
+ * inventory/stock RLS requires parts.manage. Soft-deletes the invoice row so
+ * the audit trail survives.
+ */
+export async function deleteDuplicateInvoice(id: string): Promise<InvoiceActionResult> {
+  try {
+    const ctx = await requireAnyPermission(["purchase_orders.manage"])
+    const db = createServiceClient()
+
+    const { data: inv, error: invErr } = await db
+      .from("supplier_invoices")
+      .select("id, status, doc_number, invoice_number, supplier_id, supplier_name_raw, amount_paid, deleted_at")
+      .eq("id", id)
+      .maybeSingle()
+    if (invErr) throw new Error(invErr.message)
+    if (!inv || inv.deleted_at) return { ok: true }
+    if (inv.status !== "confirmed") throw new Error("Use Delete draft for invoices that are not confirmed yet.")
+    if (!inv.invoice_number) throw new Error("This invoice has no invoice number, so it cannot be a duplicate.")
+
+    const { data: sameNumber } = await db
+      .from("supplier_invoices")
+      .select("id, doc_number, invoice_number, supplier_id, supplier_name_raw, deleted_at")
+      .is("deleted_at", null)
+      .ilike("invoice_number", String(inv.invoice_number).trim())
+    const twins = findDuplicateGroups([inv, ...(sameNumber ?? []).filter((r) => r.id !== id)]).get(id) ?? []
+    if (!twins.length) throw new Error("This invoice is no longer a duplicate — the other copy was already removed.")
+
+    const { count: paymentCount } = await db
+      .from("payments")
+      .select("id", { count: "exact", head: true })
+      .eq("supplier_invoice_id", id)
+    if ((paymentCount ?? 0) > 0 || n(inv.amount_paid) > 0) {
+      throw new Error("Payments are recorded on this copy. Delete the extra copy that has no payments instead.")
+    }
+
+    const { data: items, error: itemsErr } = await db
+      .from("supplier_invoice_items")
+      .select("id, description, quantity, unit_cost, inventory_item_id, match_status, parts_request_id")
+      .eq("invoice_id", id)
+    if (itemsErr) throw new Error(itemsErr.message)
+
+    const reference = `Reversal of duplicate ${inv.doc_number ?? `bill ${inv.invoice_number}`}`
+    const billRef = `Bill ${inv.invoice_number}`
+
+    for (const it of items ?? []) {
+      if (it.match_status === "ignore" || !it.inventory_item_id) continue
+      const qty = n(it.quantity)
+      if (qty <= 0) continue
+
+      const { data: cur } = await db.from("inventory_items").select("quantity").eq("id", it.inventory_item_id).single()
+      const onHand = Math.max(0, n(cur?.quantity))
+      const removed = Math.min(qty, onHand)
+      if (removed > 0) {
+        const { error: qErr } = await db
+          .from("inventory_items")
+          .update({ quantity: onHand - removed, updated_at: new Date().toISOString() })
+          .eq("id", it.inventory_item_id)
+        if (qErr) throw new Error(`Could not reverse stock for "${it.description}": ${qErr.message}`)
+        const { error: mvErr } = await db.from("stock_movements").insert({
+          item_id: it.inventory_item_id,
+          kind: "out",
+          quantity: removed,
+          unit_cost: n(it.unit_cost),
+          reference,
+          supplier_id: inv.supplier_id,
+          created_by: ctx.userId,
+        })
+        if (mvErr) throw new Error(`Could not record the stock reversal for "${it.description}": ${mvErr.message}`)
+      }
+
+      // Remove the job-card part line this copy created, but only when no other
+      // live invoice also points at it (the original copy keeps it).
+      if (it.parts_request_id) {
+        const { data: others } = await db
+          .from("supplier_invoice_items")
+          .select("id, supplier_invoices!inner(deleted_at)")
+          .eq("parts_request_id", it.parts_request_id)
+          .neq("invoice_id", id)
+          .is("supplier_invoices.deleted_at", null)
+          .limit(1)
+        if (!others?.length) {
+          await db.from("parts_requests").delete().eq("id", it.parts_request_id).eq("notes", billRef)
+        }
+      }
+    }
+
+    const { error: delErr } = await db
+      .from("supplier_invoices")
+      .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+      .eq("id", id)
+    if (delErr) throw new Error(delErr.message)
+
+    await logAction(ctx, "supplier_invoice_duplicate_deleted", "supplier_invoice", id)
+    revalidatePath("/purchasing/invoices")
+    revalidatePath("/inventory")
+    return { ok: true }
+  } catch (e) {
+    return toActionError(e, "Could not delete the duplicate invoice.")
   }
 }

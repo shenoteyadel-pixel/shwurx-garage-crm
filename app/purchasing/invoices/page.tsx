@@ -7,6 +7,7 @@ import { AppShell } from "@/components/app-shell"
 import { PurchasingTabs } from "@/components/purchasing-tabs"
 import { Card, Badge } from "@/components/ui"
 import { InvoiceUpload } from "@/components/invoice-upload"
+import { DeleteInvoiceButton } from "@/components/delete-invoice-button"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { ScanLine } from "lucide-react"
 
@@ -30,10 +31,12 @@ export default async function InvoiceCapturePage() {
   const { data: invoices } = await supabase
     .from("supplier_invoices")
     .select("id, doc_number, status, payment_status, invoice_number, invoice_date, total, vat_amount, amount_paid, supplier_id, supplier_name_raw, created_at, created_by, deleted_at, suppliers(name)")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(200)
 
   const rows = invoices ?? []
+  const canDeleteDuplicates = user.permissions.includes("purchase_orders.manage")
   const duplicates = findDuplicateGroups(rows)
   const names = await loadProfileNames(createServiceClient(), rows.map((r) => r.created_by))
   const duplicateRows = rows.filter((r) => duplicates.has(r.id))
@@ -66,8 +69,10 @@ export default async function InvoiceCapturePage() {
 
         {duplicateRows.length > 0 && (
           <DuplicateInvoiceAlarm
+            canDelete={canDeleteDuplicates}
             rows={duplicateRows.map((r) => ({
               id: r.id,
+              status: r.status,
               label: r.doc_number || "draft",
               invoiceNumber: r.invoice_number ?? "",
               supplier: (r as any).suppliers?.name ?? r.supplier_name_raw ?? "Unknown supplier",
@@ -101,6 +106,9 @@ export default async function InvoiceCapturePage() {
                     <th className="px-4 py-3 font-semibold">Captured by</th>
                     <th className="px-4 py-3 text-right font-semibold">VAT</th>
                     <th className="px-4 py-3 text-right font-semibold">Total</th>
+                    <th className="px-4 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -137,6 +145,13 @@ export default async function InvoiceCapturePage() {
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(r.vat_amount)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(r.total)}</td>
+                      <td className="px-4 py-2 text-right">
+                        {r.status === "draft" ? (
+                          <DeleteInvoiceButton id={r.id} label={r.invoice_number || "draft"} kind="draft" compact />
+                        ) : duplicates.has(r.id) && canDeleteDuplicates ? (
+                          <DeleteInvoiceButton id={r.id} label={r.doc_number || r.invoice_number || "invoice"} kind="duplicate" compact />
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

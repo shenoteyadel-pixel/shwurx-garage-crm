@@ -650,7 +650,7 @@ function FlowCard({
             model={job.vehicle_model}
             bodyType={job.body_type}
             color={job.color}
-            className="h-24 w-full"
+            className="h-20 w-full sm:h-24"
           />
           {(job.plate_emirate || job.plate_code || job.plate_number) && (
             <div className="flex justify-center py-1">

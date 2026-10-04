@@ -62,13 +62,13 @@ export async function notifyByPermission(
   )
 }
 
-// Notify every active owner / general manager (management alerts).
+// Notify every active owner (management alerts).
 export async function notifyOwners(payload: { title: string; body?: string; type?: string; link?: string }) {
   const svc = createServiceClient()
   const { data: users } = await svc
     .from("profiles")
     .select("id")
-    .in("role", ["owner", "general_manager"])
+    .eq("role", "owner")
     .eq("is_active", true)
   if (!users?.length) return
   await svc.from("notifications").insert(

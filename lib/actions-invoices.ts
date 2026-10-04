@@ -966,7 +966,14 @@ export async function deleteInvoiceDraft(id: string): Promise<InvoiceActionResul
  * inventory/stock RLS requires parts.manage. Soft-deletes the invoice row so
  * the audit trail survives.
  */
-export async function deleteDuplicateInvoice(id: string): Promise<InvoiceActionResult> {
+export type DeleteDuplicateResult =
+  | { ok: true }
+  | { ok: false; error: string; paymentTotal?: number; paymentCount?: number }
+
+export async function deleteDuplicateInvoice(
+  id: string,
+  opts: { removePayments?: boolean } = {},
+): Promise<DeleteDuplicateResult> {
   try {
     const ctx = await requireAnyPermission(["purchase_orders.manage"])
     const db = createServiceClient()
@@ -989,12 +996,20 @@ export async function deleteDuplicateInvoice(id: string): Promise<InvoiceActionR
     const twins = findDuplicateGroups([inv, ...(sameNumber ?? []).filter((r) => r.id !== id)]).get(id) ?? []
     if (!twins.length) throw new Error("This invoice is no longer a duplicate — the other copy was already removed.")
 
-    const { count: paymentCount } = await db
+    const { data: copyPayments, error: payErr } = await db
       .from("payments")
-      .select("id", { count: "exact", head: true })
+      .select("id, amount")
       .eq("supplier_invoice_id", id)
-    if ((paymentCount ?? 0) > 0 || n(inv.amount_paid) > 0) {
-      throw new Error("Payments are recorded on this copy. Delete the extra copy that has no payments instead.")
+    if (payErr) throw new Error(payErr.message)
+    const paymentCount = copyPayments?.length ?? 0
+    const paymentTotal = (copyPayments ?? []).reduce((s, p) => s + n(p.amount), 0)
+    if ((paymentCount > 0 || n(inv.amount_paid) > 0) && !opts.removePayments) {
+      return {
+        ok: false,
+        error: "This copy has a payment recorded on it.",
+        paymentCount,
+        paymentTotal: paymentTotal || n(inv.amount_paid),
+      }
     }
 
     const { data: items, error: itemsErr } = await db
@@ -1054,7 +1069,18 @@ export async function deleteDuplicateInvoice(id: string): Promise<InvoiceActionR
       .eq("id", id)
     if (delErr) throw new Error(delErr.message)
 
-    await logAction(ctx, "supplier_invoice_duplicate_deleted", "supplier_invoice", id)
+    // The duplicate copy's payment is a duplicate record too; remove it so the
+    // supplier ledger and cash reports don't count the same bill paid twice.
+    if (paymentCount > 0) {
+      const { error: pdErr } = await db.from("payments").delete().eq("supplier_invoice_id", id)
+      if (pdErr) throw new Error(`Invoice removed, but its payment could not be deleted: ${pdErr.message}`)
+    }
+
+    await logAction(ctx, "supplier_invoice_duplicate_deleted", "supplier_invoice", id, {
+      payments_removed: paymentCount,
+      payment_total: paymentTotal,
+    })
+    revalidatePath("/purchasing/payments")
     revalidatePath("/purchasing/invoices")
     revalidatePath("/inventory")
     return { ok: true }

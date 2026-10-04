@@ -1,5 +1,7 @@
 "use server"
 
+import { logCurrent } from "@/lib/rbac/context"
+
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { logAction } from "@/lib/rbac/context"
@@ -211,6 +213,7 @@ export async function deleteMarkerPhoto(jobId: string, photoId: string) {
   if (!photoId) return
   const { error } = await supabase.from("inspection_marker_photos").delete().eq("id", photoId)
   if (error) throw new Error(error.message)
+  await logCurrent("inspection.photo_delete", "job", jobId)
   revalidatePath(`/jobs/${jobId}`)
 }
 

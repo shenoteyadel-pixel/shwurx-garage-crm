@@ -1,5 +1,7 @@
 "use server"
 
+import { logCurrent } from "@/lib/rbac/context"
+
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { requirePermission, type SessionContext } from "@/lib/rbac/context"
@@ -73,6 +75,7 @@ export async function upsertJobAddon(input: UpsertAddonInput) {
     // best-effort
   }
 
+  await logCurrent("job.addon_update", "job", input.jobId, { type: input.type, enabled: input.enabled })
   revalidatePath(`/jobs/${input.jobId}`)
 }
 
@@ -85,5 +88,6 @@ export async function setJobAddonStatus(jobId: string, type: AddonType, status: 
     .eq("job_id", jobId)
     .eq("type", type)
   if (error) throw new Error(error.message)
+  await logCurrent("job.addon_status", "job", jobId, { type, status })
   revalidatePath(`/jobs/${jobId}`)
 }

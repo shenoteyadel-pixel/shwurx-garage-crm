@@ -1,5 +1,7 @@
 "use server"
 
+import { logCurrent } from "@/lib/rbac/context"
+
 import { z } from "zod"
 import { generateObject } from "ai"
 import { revalidatePath } from "next/cache"
@@ -286,6 +288,7 @@ export async function addDiagnosticTest(formData: FormData) {
     position: (max?.position ?? -1) + 1,
   })
   if (error) throw new Error(error.message)
+  await logCurrent("diagnostic.test_add", "job", jobId, { description })
   revalidatePath(`/jobs/${jobId}`)
 }
 

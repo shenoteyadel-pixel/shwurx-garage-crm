@@ -4,7 +4,22 @@ import { generateImage } from "ai"
 import { gateway } from "@ai-sdk/gateway"
 import { canonicalizeVehicle, type BodyType } from "@/lib/vehicle"
 import { catalogBodyType } from "@/lib/vehicle-catalog"
-import { removeDarkBackground, uploadVehiclePng } from "@/lib/vehicle-image-cutout"
+import sharp from "sharp"
+import { uploadVehiclePng } from "@/lib/vehicle-image-cutout"
+
+// Crop to the car's bounding box so wheels sit on the card/lift edge, and keep
+// the file small enough for phones.
+async function trimTransparent(input: Buffer): Promise<Buffer> {
+  try {
+    return await sharp(input, { failOn: "none" })
+      .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 10 })
+      .resize({ width: 1000, height: 640, fit: "inside", withoutEnlargement: true })
+      .png({ compressionLevel: 9 })
+      .toBuffer()
+  } catch {
+    return input
+  }
+}
 
 // One consistent studio model + framing for EVERY car, so the whole board looks
 // uniform. gpt-image-1 gives the best factory-correct body shape and a clean
@@ -27,7 +42,7 @@ function cacheKey(year: string, make: string, model: string, color: string, trim
   // Bump the version prefix whenever the prompt changes so every vehicle
   // regenerates instead of serving a stale cached render.
   return createHash("sha1")
-    .update(`v9|${year}|${make}|${model}|${generation}|${trim}|${color}`.toLowerCase())
+    .update(`v10|${year}|${make}|${model}|${generation}|${trim}|${color}`.toLowerCase())
     .digest("hex")
     .slice(0, 20)
 }
@@ -87,12 +102,20 @@ function buildPrompt(year: string, make: string, model: string, color: string, t
   // cars to keep contrast against a light background, painting them black. A
   // dark backdrop flips that so light colours render correctly, and the dark
   // cutout step removes the charcoal cleanly.
+  const colourLines = color
+    ? [
+        `A photorealistic studio product photograph of a single ${yearText}${brand} car with a ${paint} exterior paint colour.`,
+        `The entire car body is ${paint}. This is essential: the paint colour must be ${paint}, covering every body panel, roof, doors, bonnet and bumpers — do not darken it, do not render it black.`,
+      ]
+    : [
+        `A photorealistic studio product photograph of a single ${yearText}${brand} car in a rich, realistic factory metallic paint colour that is popular for this model.`,
+      ]
   return [
-    `A photorealistic studio product photograph of a single ${yearText}${brand} car with a ${paint} exterior paint colour.`,
-    `The entire car body is ${paint}. This is essential: the paint colour must be ${paint}, covering every body panel, roof, doors, bonnet and bumpers — do not darken it, do not render it black.`,
+    ...colourLines,
     `Exact factory-correct body shape and proportions for a ${brand}, with the correct genuine ${make} manufacturer badge and grille — never another car brand's logo.${genClause}${trimClause}${bodyClause}`,
     "Three-quarter front view from a slightly low angle, the front of the car facing to the left, the whole vehicle centred and fully in frame with even margin on all sides, always the same camera distance and framing.",
-    "Set on a seamless dark charcoal grey studio background (#2a2a2a) with even soft professional automotive lighting and gentle rim light, no scenery, no floor reflection.",
+    "All four tyres, the wheels, windscreen and windows are fully and solidly rendered with realistic glass tint and black rubber tyres.",
+    "Isolated on a fully transparent background, with soft professional automotive studio lighting, no scenery, no floor, no shadow, no reflection.",
     // Critical: stop the model baking the year / a number plate / captions onto the car.
     "Absolutely no text, no numbers, no license plate, no captions, no watermark, no extra logos anywhere in the image. The number plate area must be blank.",
     "Sharp focus, high detail, centered composition.",
@@ -122,11 +145,15 @@ export async function generateVehicleImage(v: VehicleForImage): Promise<string |
       model: gateway.imageModel(IMAGE_MODEL),
       prompt: buildPrompt(year, make, model, color, trim, body, generation),
       size: IMAGE_SIZE,
+      // Native transparency keeps every dark detail (tyres, glass, grille).
+      // The old charcoal-backdrop flood-fill erased those, leaving a ghostly
+      // white sketch of the car.
+      providerOptions: { openai: { background: "transparent", quality: "medium", output_format: "png" } },
       abortSignal: AbortSignal.timeout(110000),
     })
     const raw = Buffer.from(image.uint8Array)
-    const cut = (await removeDarkBackground(raw)) ?? raw
-    const url = await uploadVehiclePng(cut, PREFIX, key)
+    const trimmed = await trimTransparent(raw)
+    const url = await uploadVehiclePng(trimmed, PREFIX, key)
     if (!url) return null
     // Cache-bust so a regenerated key is picked up immediately.
     return `${url}?v=${key}`

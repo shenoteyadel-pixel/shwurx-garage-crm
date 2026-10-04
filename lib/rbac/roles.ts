@@ -49,7 +49,7 @@ export const ROLE_LIST: RoleMeta[] = [
   { value: "general_manager", team: "management", label: "General Manager", description: "Full operational access; cannot edit the permission matrix.", home: "/", staff: true },
   { value: "workshop_manager", team: "workshop", label: "Workshop Manager", description: "Runs the workshop: creates and assigns job cards, manages technicians and job flow.", home: "/flow", staff: true },
   { value: "workshop_supervisor", team: "workshop", label: "Workshop Supervisor", description: "Assigns and manages workshop jobs and technicians.", home: "/flow", staff: true },
-  { value: "service_advisor", team: "front_office", label: "Service Advisor", description: "Front desk: customers, vehicles, job cards, quotations and invoicing.", home: "/", staff: true },
+  { value: "service_advisor", team: "front_office", label: "Service Advisor", description: "Job card control only: customers, vehicles, job cards and their quotations/invoices at selling price. No reports, garage finances, purchase costs or profit.", home: "/jobs", staff: true },
   { value: "reception", team: "front_office", label: "Reception", description: "Front desk intake: registers customers, vehicles and opens job cards.", home: "/", staff: true },
   { value: "technician", team: "workshop", label: "Technician", description: "Works on assigned jobs: sees the customer request, records inspection, diagnosis and photos, and requests parts. No prices or invoices.", home: "/jobs", staff: true },
   { value: "qc", team: "workshop", label: "Quality Control (QC)", description: "Inspects completed work and updates job status. No prices.", home: "/flow", staff: true },

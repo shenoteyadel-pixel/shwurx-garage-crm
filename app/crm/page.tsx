@@ -21,7 +21,8 @@ export default async function DashboardPage() {
   const supabase = await createClient()
 
   const canViewAll = ctx.permissions.has("jobs.view_all")
-  const canSeeMoney = ctx.permissions.has("prices.view")
+  // Garage-wide revenue is a financial report, not a job-card price.
+  const canSeeMoney = ctx.permissions.has("reports.financial")
   const canScan = ctx.permissions.has("purchase_orders.manage")
 
   const { data: jobsRaw } = await supabase

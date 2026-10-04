@@ -437,7 +437,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               partCatalog={partCatalog}
             />
               <AddonServices jobId={job.id} addons={addons} locked={locked} />
-              <PartsManager jobId={job.id} parts={(parts ?? []) as any} locked={locked} />
+              <PartsManager
+                jobId={job.id}
+                parts={
+                  (sessionCtx?.permissions.has("costs.view")
+                    ? (parts ?? [])
+                    : (parts ?? []).map((p) => ({ ...p, cost: null }))) as any
+                }
+                locked={locked}
+              />
             </>
           ) : (
             <>

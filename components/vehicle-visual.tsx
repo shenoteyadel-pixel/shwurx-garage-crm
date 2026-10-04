@@ -158,11 +158,7 @@ export function VehicleVisual({
     <div
       className={cn(
         "relative overflow-hidden",
-        // Reference renders are mostly white/silver studio shots, so on the light
-        // theme they need a darker backdrop or the car blends into the card.
-        activeRef
-          ? "bg-gradient-to-b from-muted-foreground/45 to-muted-foreground/70 dark:from-muted/50 dark:to-card"
-          : "bg-gradient-to-b from-secondary to-accent dark:from-muted/50 dark:to-card",
+        "bg-gradient-to-b from-secondary to-accent dark:from-muted/50 dark:to-card",
         className,
       )}
     >
@@ -184,7 +180,7 @@ export function VehicleVisual({
           alt={alt || label}
           loading="lazy"
           decoding="async"
-          className="h-full w-full object-contain p-2 contrast-125 drop-shadow-[0_4px_6px_rgba(0,0,0,0.45)] dark:contrast-100"
+          className="h-full w-full object-contain p-2 drop-shadow-[0_4px_6px_rgba(0,0,0,0.35)]"
           onError={() => setRefFailed(true)}
           referrerPolicy="no-referrer"
         />

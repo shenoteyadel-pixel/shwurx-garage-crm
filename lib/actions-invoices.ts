@@ -1,5 +1,7 @@
 "use server"
 
+import { logCurrent } from "@/lib/rbac/context"
+
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { findDuplicateGroups } from "@/lib/invoice-duplicates"
 import { get, del } from "@vercel/blob"
@@ -921,6 +923,7 @@ export async function setSupplierInvoiceOnAccount(id: string, onAccount: boolean
     .from("supplier_invoices")
     .update({ payment_status: status, updated_at: new Date().toISOString() })
     .eq("id", id)
+  await logCurrent("supplier_invoice.on_account", "supplier_invoice", id, { on_account: onAccount })
   revalidatePath(`/purchasing/invoices/${id}`)
   revalidatePath("/suppliers")
   return { ok: true }

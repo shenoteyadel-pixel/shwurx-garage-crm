@@ -1,5 +1,7 @@
 "use server"
 
+import { logCurrent } from "@/lib/rbac/context"
+
 import { revalidatePath } from "next/cache"
 import { generateObject } from "ai"
 import { z } from "zod"
@@ -52,6 +54,7 @@ export async function saveStaffTargets(items: { userId: string; kind: TargetKind
   const { error } = await createServiceClient().from("staff_targets").upsert(rows, { onConflict: "user_id,kind" })
   if (error) return { ok: false as const, error: error.message }
 
+  await logCurrent("targets.save", "user", null, { count: rows.length })
   revalidatePath("/reports/staff-targets")
   return { ok: true as const }
 }
@@ -64,6 +67,7 @@ export async function removeStaffTarget(userId: string, kind: TargetKind) {
   const { error } = await createServiceClient().from("staff_targets").delete().eq("user_id", userId).eq("kind", kind)
   if (error) return { ok: false as const, error: error.message }
 
+  await logCurrent("targets.remove", "user", userId, { kind })
   revalidatePath("/reports/staff-targets")
   return { ok: true as const }
 }

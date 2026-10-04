@@ -257,3 +257,18 @@ export async function logAction(
     status: "ok",
   })
 }
+
+/** Log a successful action for whoever is signed in. Never throws. */
+export async function logCurrent(
+  action: string,
+  resourceType?: string,
+  resourceId?: string | null,
+  detail?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const ctx = await getSessionContext()
+    if (ctx) await logAction(ctx, action, resourceType, resourceId, detail)
+  } catch (err) {
+    console.error("logCurrent failed:", (err as Error)?.message)
+  }
+}

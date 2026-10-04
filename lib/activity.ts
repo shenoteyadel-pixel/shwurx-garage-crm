@@ -69,6 +69,34 @@ const AUDIT_ALERTS: Record<string, (d: Detail) => { title: string; body?: string
   "user.update_role": () => ({ title: "Staff role changed" }),
   "user.force_logout": () => ({ title: "Staff member logged out" }),
   "user.login": () => ({ title: "Staff login" }),
+  "customer.create": (d) => ({ title: "New customer added", body: str(d?.name) }),
+  "customer.update": () => ({ title: "Customer details updated" }),
+  "vehicle.create": (d) => ({ title: "New vehicle added", body: [str(d?.make), str(d?.model)].filter(Boolean).join(" ") }),
+  "vehicle.update": () => ({ title: "Vehicle details updated" }),
+  "vehicle.image_set": () => ({ title: "Vehicle photo changed" }),
+  "job.move": (d) => {
+    const s = str(d?.stage)
+    return {
+      title: "Car moved on the flow board",
+      body: [s && `To ${STAGE_LABELS[s] ?? s.replace(/_/g, " ")}`, str(d?.lift_bay) && `Bay ${str(d?.lift_bay)}`].filter(Boolean).join(" · "),
+    }
+  },
+  "job.update_details": () => ({ title: "Job card details edited" }),
+  "job.cover_photo": () => ({ title: "Job cover photo set" }),
+  "job.cover_photo_clear": () => ({ title: "Job cover photo removed" }),
+  "job.addon_update": (d) => ({ title: "Job add-on updated", body: str(d?.type).replace(/_/g, " ") }),
+  "job.addon_status": (d) => ({ title: "Job add-on status changed", body: [str(d?.type).replace(/_/g, " "), str(d?.status)].filter(Boolean).join(" · ") }),
+  "part.request": (d) => ({ title: "Part requested", body: [str(d?.part_name), str(d?.quantity) && `x${str(d?.quantity)}`].filter(Boolean).join(" ") }),
+  "part.update": (d) => ({ title: "Part request updated", body: str(d?.status) }),
+  "diagnostic.test_add": (d) => ({ title: "Diagnostic test added", body: str(d?.description).slice(0, 80) }),
+  "inspection.photo_delete": () => ({ title: "Inspection photo deleted" }),
+  "supplier.save": (d) => ({ title: "Supplier saved", body: str(d?.name) }),
+  "inventory.save": (d) => ({ title: "Inventory item saved", body: str(d?.name) }),
+  "inventory.stock_movement": (d) => ({ title: "Stock movement recorded", body: [str(d?.kind), str(d?.quantity)].filter(Boolean).join(" · ") }),
+  "supplier_invoice.on_account": (d) => ({ title: d?.on_account ? "Purchase invoice put on account" : "Purchase invoice taken off account" }),
+  "settings.update": () => ({ title: "Company settings changed" }),
+  "targets.save": () => ({ title: "Staff targets updated" }),
+  "targets.remove": () => ({ title: "Staff target removed" }),
 }
 
 function linkFor(resourceType?: string, resourceId?: string | null, detail?: Detail): string | undefined {
@@ -87,6 +115,12 @@ function linkFor(resourceType?: string, resourceId?: string | null, detail?: Det
       return "/leads"
     case "user":
       return "/users"
+    case "customer":
+      return `/customers/${resourceId}`
+    case "vehicle":
+      return `/vehicles/${resourceId}`
+    case "supplier":
+      return "/suppliers"
     default:
       return jobId ? `/jobs/${jobId}` : undefined
   }

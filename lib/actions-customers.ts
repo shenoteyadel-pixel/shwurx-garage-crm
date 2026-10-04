@@ -1,5 +1,7 @@
 "use server"
 
+import { logCurrent } from "@/lib/rbac/context"
+
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
@@ -140,6 +142,7 @@ export async function createCustomer(fd: FormData) {
   payload.full_name = s(fd, "full_name") || "Unnamed Customer"
   const { data, error } = await supabase.from("customers").insert(payload).select("id").single()
   if (error) throw new Error(error.message)
+  await logCurrent("customer.create", "customer", data.id, { name: payload.full_name })
   revalidatePath("/customers")
   const redirectTo = String(fd.get("redirect_to") || "")
   if (redirectTo) redirect(redirectTo)
@@ -160,6 +163,7 @@ export async function updateCustomer(id: string, fd: FormData) {
     if (fd.has("mobile")) jobPatch.customer_mobile = s(fd, "mobile")
     await supabase.from("jobs").update(jobPatch).eq("customer_id", id)
   }
+  await logCurrent("customer.update", "customer", id)
   revalidatePath(`/customers/${id}`)
   revalidatePath("/customers")
   revalidatePath("/jobs")
@@ -196,6 +200,7 @@ export async function createCustomerInline(input: {
     .select("id, full_name, mobile, email, company_name")
     .single()
   if (error) throw new Error(error.message)
+  await logCurrent("customer.create", "customer", null, { name: input.full_name })
   revalidatePath("/customers")
   return data
 }
@@ -269,6 +274,7 @@ export async function createVehicle(fd: FormData) {
   const { data, error } = await supabase.from("vehicles").insert(payload).select("id").single()
   if (error) throw new Error(error.message)
   after(() => backfillVehicleImage(data.id))
+  await logCurrent("vehicle.create", "vehicle", data.id)
   revalidatePath("/customers")
   const redirectTo = String(fd.get("redirect_to") || "")
   if (redirectTo) redirect(redirectTo)
@@ -337,6 +343,7 @@ export async function createVehicleInline(input: {
       .single()
     if (error) return { ok: false, error: error.message }
     after(() => backfillVehicleImage(data.id))
+    await logCurrent("vehicle.create", "vehicle", null, { make: input.make ?? null, model: input.model ?? null })
     revalidatePath(`/customers/${input.customer_id}`)
     return { ok: true, vehicle: data as VehicleRow }
   } catch (e) {
@@ -427,6 +434,7 @@ export async function updateVehicle(id: string, fd: FormData) {
   await syncVehicleToJobs(supabase, id, updated)
   // Regenerate the correct studio image in the background after an identity change.
   if (identityChanged && !isCustom) after(() => backfillVehicleImage(id))
+  await logCurrent("vehicle.update", "vehicle", id)
   revalidatePath(`/vehicles/${id}`)
   revalidatePath("/jobs")
   revalidatePath("/flow")
@@ -508,6 +516,7 @@ export async function setCustomVehicleImage(id: string, url: string) {
     .from("jobs")
     .update({ vehicle_reference_image_url: clean, vehicle_image_source: "custom", updated_at: stamp })
     .eq("vehicle_id", id)
+  await logCurrent("vehicle.image_set", "vehicle", id)
   revalidatePath(`/vehicles/${id}`)
   revalidatePath("/jobs")
   revalidatePath("/flow")

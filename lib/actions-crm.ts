@@ -1,5 +1,7 @@
 "use server"
 
+import { logCurrent } from "@/lib/rbac/context"
+
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
@@ -52,6 +54,7 @@ export async function saveSettings(formData: FormData) {
   }
   const { error } = await supabase.from("settings").update(patch).eq("id", 1)
   if (error) throw new Error(error.message)
+  await logCurrent("settings.update", "settings", null)
   revalidatePath("/settings")
   }
 
@@ -111,6 +114,7 @@ export async function saveSupplier(formData: FormData) {
     const { error } = await supabase.from("suppliers").insert({ ...payload, created_by: user.id })
     if (error) throw new Error(error.message)
   }
+  await logCurrent("supplier.save", "supplier", id, { name: payload.name })
   revalidatePath("/suppliers")
 }
 
@@ -176,6 +180,7 @@ export async function saveInventoryItem(formData: FormData) {
       })
     }
   }
+  await logCurrent("inventory.save", "inventory_item", id, { name: payload.name })
   revalidatePath("/inventory")
 }
 
@@ -226,6 +231,7 @@ export async function recordStockMovement(formData: FormData) {
     .update({ quantity: nextQty, updated_at: new Date().toISOString() })
     .eq("id", itemId)
 
+  await logCurrent("inventory.stock_movement", "inventory_item", itemId, { kind, quantity: qty })
   revalidatePath("/inventory")
 }
 

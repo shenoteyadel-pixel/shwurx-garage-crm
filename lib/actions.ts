@@ -1,5 +1,7 @@
 "use server"
 
+import { logCurrent } from "@/lib/rbac/context"
+
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
@@ -190,6 +192,7 @@ export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: str
   const { error } = await supabase.from("jobs").update(patch).eq("id", jobId)
   if (error) throw new Error(error.message)
   if (stage === "delivered") await onJobDelivered(supabase, jobId)
+  await logCurrent("job.move", "job", jobId, { stage, lift_bay: liftBay ?? null })
   revalidatePath("/crm")
   revalidatePath("/flow")
   revalidatePath(`/jobs/${jobId}`)
@@ -457,6 +460,7 @@ export async function updateJobDetails(jobId: string, formData: FormData) {
   }
   const { error } = await supabase.from("jobs").update(patch).eq("id", jobId)
   if (error) throw new Error(error.message)
+  await logCurrent("job.update_details", "job", jobId)
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/crm")
 }
@@ -530,6 +534,7 @@ export async function setCoverPhoto(jobId: string, url: string) {
   if (!jobId || !url) throw new Error("Missing job or photo")
   const { error } = await supabase.from("jobs").update({ cover_photo_url: url }).eq("id", jobId)
   if (error) throw new Error(error.message)
+  await logCurrent("job.cover_photo", "job", jobId)
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/flow")
   revalidatePath("/crm")
@@ -541,6 +546,7 @@ export async function clearCoverPhoto(jobId: string) {
   const { supabase } = await guard("jobs.update_status")
   const { error } = await supabase.from("jobs").update({ cover_photo_url: null }).eq("id", jobId)
   if (error) throw new Error(error.message)
+  await logCurrent("job.cover_photo_clear", "job", jobId)
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/flow")
   revalidatePath("/crm")
@@ -830,6 +836,7 @@ export async function addPart(jobId: string, formData: FormData) {
     type: "parts",
     link: `/jobs/${jobId}`,
   })
+  await logCurrent("part.request", "job", jobId, { part_name: partName, quantity })
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/parts")
 }
@@ -842,6 +849,7 @@ export async function updatePart(partId: string, jobId: string, formData: FormDa
   if (formData.has("cost")) patch.cost = formData.get("cost") ? Number(formData.get("cost")) : null
   const { error } = await supabase.from("parts_requests").update(patch).eq("id", partId)
   if (error) throw new Error(error.message)
+  await logCurrent("part.update", "job", jobId, { status: patch.status ?? null })
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/parts")
 }

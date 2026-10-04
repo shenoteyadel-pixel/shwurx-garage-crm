@@ -189,8 +189,8 @@ async function currentActor(): Promise<{ id: string; name: string } | null> {
 }
 
 /**
- * Records a CRM activity as an in-app notification + phone push for owners /
- * general managers (and optional permission holders). Never throws, so a
+ * Records a CRM activity as an in-app notification + phone push for owners,
+ * plus staff whose role holds `permission` (role-related alerts). Never throws, so a
  * notification failure can't break the action that triggered it.
  */
 export async function notifyActivity(input: ActivityInput) {
@@ -202,7 +202,7 @@ export async function notifyActivity(input: ActivityInput) {
     const { data: owners } = await svc
       .from("profiles")
       .select("id")
-      .in("role", ["owner", "general_manager"])
+      .eq("role", "owner")
       .eq("is_active", true)
     owners?.forEach((u) => recipients.add(u.id))
 

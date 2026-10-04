@@ -155,7 +155,12 @@ export function VehicleVisual({
   const activeRef = !activePhoto && referenceImage && !refFailed ? referenceImage : null
 
   return (
-    <div className={cn("relative overflow-hidden bg-gradient-to-b from-muted/50 to-card", className)}>
+    <div
+      className={cn(
+        "relative overflow-hidden bg-gradient-to-b from-secondary to-accent dark:from-muted/50 dark:to-card",
+        className,
+      )}
+    >
       {activePhoto ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -166,11 +171,15 @@ export function VehicleVisual({
           referrerPolicy="no-referrer"
         />
       ) : activeRef ? (
+        // Studio renders are shown whole (contain) rather than cropped, so the
+        // car isn't zoomed/blurred; the shadow keeps it legible on light themes.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={activeRef || "/placeholder.svg"}
           alt={alt || label}
-          className="h-full w-full object-cover"
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-contain p-1.5 drop-shadow-[0_3px_4px_rgba(0,0,0,0.28)]"
           onError={() => setRefFailed(true)}
           referrerPolicy="no-referrer"
         />

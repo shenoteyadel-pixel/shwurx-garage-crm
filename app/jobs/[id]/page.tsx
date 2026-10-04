@@ -11,7 +11,8 @@ import { getJobAddons } from "@/lib/actions-addons"
 import { ApprovalsPanel } from "@/components/approvals-panel"
 import { getJobApprovals } from "@/lib/actions-approvals"
 import { JobPhotos } from "@/components/job-photos"
-import { StaffAssign } from "@/components/staff-assign"
+import { StaffAssign, type JobTech } from "@/components/staff-assign"
+import { photoKindsForTrade, tradeFromTitle, tradeUsesDiagnosis, type Trade } from "@/lib/trades"
 import { CarExpensesManager, type CarExpense } from "@/components/car-expenses-manager"
 import { EditJobVehicle } from "@/components/edit-job-vehicle"
 import { getSessionContext } from "@/lib/rbac/context"
@@ -57,7 +58,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const { data: photos } = await supabase
     .from("vehicle_photos")
-    .select("id, url, kind, caption")
+    .select("id, url, kind, caption, uploaded_by")
     .eq("job_id", id)
     .is("deleted_at", null)
     .order("created_at")
@@ -263,6 +264,20 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     active_jobs: activeCount.get(s.id) ?? 0,
   }))
 
+  const { data: techRows } = await supabase
+    .from("job_technicians")
+    .select("user_id, trade")
+    .eq("job_id", id)
+    .order("created_at")
+  const jobTechs = (techRows ?? []) as JobTech[]
+  const uploaderNames: Record<string, string> = {}
+  for (const s of staffRows ?? []) if (s.full_name) uploaderNames[s.id] = s.full_name
+  const viewerId = sessionCtx?.userId ?? null
+  const viewerProfile = (staffRows ?? []).find((s) => s.id === viewerId)
+  const viewerTrade: Trade =
+    jobTechs.find((t) => t.user_id === viewerId)?.trade ?? tradeFromTitle(viewerProfile?.job_title)
+  const canAssign = sessionCtx?.permissions.has("jobs.assign") ?? false
+
   const stageMeta = STAGE_MAP[job.stage as Stage]
   const vehicle =
     [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
@@ -384,10 +399,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-              <JobPhotos jobId={job.id} photos={(photos ?? []) as any} coverUrl={coverPhoto} />
-
           {showPrices ? (
             <>
+              <JobPhotos
+                jobId={job.id}
+                photos={(photos ?? []) as any}
+                coverUrl={coverPhoto}
+                uploaderNames={uploaderNames}
+                currentUserId={viewerId}
+              />
               <RepairDetails job={job as any} />
               <InspectionPanel
                 jobId={job.id}
@@ -426,23 +446,37 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 approved={locked}
                 labour={techLabour}
                 parts={techParts}
+                trade={viewerTrade}
               />
-              <RepairDetails job={job as any} />
-              <InspectionPanel
+              <JobPhotos
                 jobId={job.id}
-                inspection={inspectionData}
-                printHref={`/jobs/${job.id}/inspection/print`}
-                bodyType={job.body_type}
-                make={job.vehicle_make}
-                model={job.vehicle_model}
+                photos={(photos ?? []) as any}
+                coverUrl={coverPhoto}
+                allowedKinds={photoKindsForTrade(viewerTrade)}
+                uploaderNames={uploaderNames}
+                canManageCover={false}
+                currentUserId={viewerId}
               />
-              <DiagnosticsPanel
-                jobId={job.id}
-                session={(diagnosticSession as any) ?? null}
-                tests={diagnosticTests}
-                vehicleSummary={diagnosticVehicleSummary}
-                complaint={job.complaint}
-              />
+              {tradeUsesDiagnosis(viewerTrade) && (
+                <>
+                  <DiagnosticsPanel
+                    jobId={job.id}
+                    session={(diagnosticSession as any) ?? null}
+                    tests={diagnosticTests}
+                    vehicleSummary={diagnosticVehicleSummary}
+                    complaint={job.complaint}
+                  />
+                  <RepairDetails job={job as any} />
+                  <InspectionPanel
+                    jobId={job.id}
+                    inspection={inspectionData}
+                    printHref={`/jobs/${job.id}/inspection/print`}
+                    bodyType={job.body_type}
+                    make={job.vehicle_make}
+                    model={job.vehicle_model}
+                  />
+                </>
+              )}
               <TechPartsRequest
                 jobId={job.id}
                 parts={(parts ?? []) as any}
@@ -527,6 +561,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             staff={(staff ?? []) as any}
             advisorId={job.advisor_id}
             technicianId={job.technician_id}
+            technicians={jobTechs}
+            canAssign={canAssign}
           />
 
           {showPrices && (

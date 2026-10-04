@@ -1,34 +1,45 @@
 "use client"
 
 import * as React from "react"
-import { addPhotos, deletePhoto, setCoverPhoto, clearCoverPhoto, type PhotoKind } from "@/lib/actions"
+import { addPhotos, deletePhoto, setCoverPhoto, clearCoverPhoto } from "@/lib/actions"
+import { PHOTO_CATEGORIES, type PhotoKind } from "@/lib/trades"
 import { PhotoUploader } from "@/components/photo-uploader"
 import { Button, Card } from "@/components/ui"
-import { X, Star, ImageIcon } from "lucide-react"
+import { X, Star, ImageIcon, Camera } from "lucide-react"
 
-type Photo = { id: string; url: string; kind: string; caption: string | null }
-
-const CATEGORIES: { key: PhotoKind; label: string; hint: string; damage?: boolean }[] = [
-  { key: "vehicle", label: "Vehicle", hint: "Exterior / general car shots" },
-  { key: "problem", label: "Problem / Fault", hint: "The fault found during diagnosis (leaks, wear, broken parts)", damage: true },
-  { key: "damage", label: "Damage / Inspection", hint: "Damage and inspection photos", damage: true },
-  { key: "parts", label: "Parts", hint: "Old and new parts, components, spare parts" },
-  { key: "document", label: "Documents", hint: "Registration, insurance, paperwork" },
-  { key: "other", label: "Other", hint: "Anything else" },
-]
+type Photo = { id: string; url: string; kind: string; caption: string | null; uploaded_by?: string | null }
 
 export function JobPhotos({
   jobId,
   photos,
   coverUrl,
+  allowedKinds,
+  uploaderNames = {},
+  canManageCover = true,
+  currentUserId,
 }: {
   jobId: string
   photos: Photo[]
   coverUrl?: string | null
+  /** Categories this viewer may upload to. Omit to allow every category. */
+  allowedKinds?: PhotoKind[]
+  uploaderNames?: Record<string, string>
+  canManageCover?: boolean
+  currentUserId?: string | null
 }) {
   const [adding, setAdding] = React.useState<PhotoKind | null>(null)
   const [pending, setPending] = React.useState<string[]>([])
   const [saving, setSaving] = React.useState(false)
+
+  const canUpload = (k: PhotoKind) => !allowedKinds || allowedKinds.includes(k)
+  // Upload sections first, then any other category that already has photos,
+  // so everyone sees the whole car history on the same job card.
+  const visible = [
+    ...PHOTO_CATEGORIES.filter((c) => canUpload(c.key)),
+    ...PHOTO_CATEGORIES.filter((c) => !canUpload(c.key) && photos.some((p) => p.kind === c.key)),
+  ]
+  const knownKinds = new Set(PHOTO_CATEGORIES.map((c) => c.key as string))
+  const legacy = photos.filter((p) => !knownKinds.has(p.kind))
 
   async function savePending(kind: PhotoKind) {
     if (!pending.length) return setAdding(null)
@@ -43,79 +54,99 @@ export function JobPhotos({
   }
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Photos</h2>
-        <span className="text-[11px] text-muted-foreground">
-          {coverUrl ? "Cover photo set" : "No cover photo \u2014 using placeholder"}
-        </span>
+        <span className="text-xs text-muted-foreground">{photos.length} total</span>
       </div>
 
-      {/* Current cover preview */}
-      <div className="mb-5 flex items-center gap-3 rounded-lg border border-border bg-background/40 p-3">
-        <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-md border border-border bg-muted">
-          {coverUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={coverUrl || "/placeholder.svg"} alt="Vehicle cover" className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-              <ImageIcon className="h-5 w-5" />
-            </div>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-foreground">Vehicle Cover Photo</p>
-          <p className="text-[11px] text-muted-foreground">
-            Shown on Car Flow, job lists and customer tracking. Choose it explicitly with{" "}
-            <span className="text-foreground">Set as cover</span> below.
-          </p>
-        </div>
-        {coverUrl && (
-          <form action={clearCoverPhoto.bind(null, jobId)}>
-            <Button type="submit" variant="ghost" size="sm">
-              Clear
-            </Button>
-          </form>
-        )}
-      </div>
-
-      {CATEGORIES.map((cat, idx) => {
-        const list = photos.filter((p) => p.kind === cat.key)
-        return (
-          <div key={cat.key} className={idx > 0 ? "mt-6" : ""}>
-            <Section
-              title={cat.label}
-              hint={cat.hint}
-              photos={list}
-              jobId={jobId}
-              coverUrl={coverUrl}
-              accentDamage={cat.damage}
-              onAdd={() => {
-                setPending([])
-                setAdding(cat.key)
-              }}
-            />
-            {adding === cat.key && (
-              <div className="mt-3 rounded-lg border border-border bg-background/40 p-3">
-                <PhotoUploader
-                  value={pending}
-                  onChange={setPending}
-                  label={`Upload ${cat.label.toLowerCase()} photos`}
-                  accentDamage={cat.damage}
-                />
-                <div className="mt-2 flex justify-end gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setAdding(null)}>
-                    Cancel
-                  </Button>
-                  <Button size="sm" onClick={() => savePending(cat.key)} disabled={saving}>
-                    {saving ? "Saving..." : "Save"}
-                  </Button>
-                </div>
+      {canManageCover && (
+        <div className="mb-5 flex items-center gap-3 rounded-lg border border-border bg-background/40 p-3">
+          <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-md border border-border bg-muted">
+            {coverUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={coverUrl || "/placeholder.svg"} alt="Vehicle cover" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                <ImageIcon className="h-5 w-5" />
               </div>
             )}
           </div>
-        )
-      })}
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-foreground">Vehicle Cover Photo</p>
+            <p className="text-xs text-muted-foreground">
+              Shown on Car Flow, job lists and customer tracking. Use <span className="text-foreground">Set as cover</span>{" "}
+              on any photo.
+            </p>
+          </div>
+          {coverUrl && (
+            <form action={clearCoverPhoto.bind(null, jobId)}>
+              <Button type="submit" variant="ghost" size="sm">
+                Clear
+              </Button>
+            </form>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-6">
+        {visible.map((cat) => {
+          const list = photos.filter((p) => p.kind === cat.key)
+          const uploadable = canUpload(cat.key)
+          return (
+            <div key={cat.key}>
+              <Section
+                title={cat.label}
+                hint={cat.hint}
+                photos={list}
+                jobId={jobId}
+                coverUrl={coverUrl}
+                uploaderNames={uploaderNames}
+                canManageCover={canManageCover}
+                canDelete={(p) => canManageCover || (!!currentUserId && p.uploaded_by === currentUserId)}
+                onAdd={
+                  uploadable
+                    ? () => {
+                        setPending([])
+                        setAdding(cat.key)
+                      }
+                    : undefined
+                }
+              />
+              {adding === cat.key && (
+                <div className="mt-3 rounded-lg border border-border bg-background/40 p-3">
+                  <PhotoUploader
+                    value={pending}
+                    onChange={setPending}
+                    label={`Upload ${cat.label.toLowerCase()} photos`}
+                    accentDamage={cat.damage}
+                  />
+                  <div className="mt-3 flex gap-2">
+                    <Button variant="ghost" className="flex-1 sm:flex-none" onClick={() => setAdding(null)}>
+                      Cancel
+                    </Button>
+                    <Button className="flex-1 sm:flex-none" onClick={() => savePending(cat.key)} disabled={saving}>
+                      {saving ? "Saving..." : "Save photos"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {legacy.length > 0 && (
+          <Section
+            title="Other"
+            hint=""
+            photos={legacy}
+            jobId={jobId}
+            coverUrl={coverUrl}
+            uploaderNames={uploaderNames}
+            canManageCover={canManageCover}
+            canDelete={() => canManageCover}
+          />
+        )}
+      </div>
     </Card>
   )
 }
@@ -127,25 +158,35 @@ function Section({
   jobId,
   coverUrl,
   onAdd,
-  accentDamage,
+  uploaderNames,
+  canManageCover,
+  canDelete,
 }: {
   title: string
   hint: string
   photos: Photo[]
   jobId: string
   coverUrl?: string | null
-  onAdd: () => void
-  accentDamage?: boolean
+  onAdd?: () => void
+  uploaderNames: Record<string, string>
+  canManageCover: boolean
+  canDelete: (p: Photo) => boolean
 }) {
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">
-          {title} <span className="text-muted-foreground/60">({photos.length})</span>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-foreground">
+          {title} <span className="text-muted-foreground">({photos.length})</span>
         </span>
-        <button onClick={onAdd} className="text-xs font-medium text-primary hover:underline">
-          + Add
-        </button>
+        {onAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-primary/40 px-3 text-xs font-semibold text-primary hover:bg-primary/10"
+          >
+            <Camera className="h-3.5 w-3.5" /> Add
+          </button>
+        )}
       </div>
       {photos.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border py-4 text-center text-xs text-muted-foreground">
@@ -155,6 +196,7 @@ function Section({
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {photos.map((p) => {
             const isCover = coverUrl != null && p.url === coverUrl
+            const by = p.uploaded_by ? uploaderNames[p.uploaded_by] : null
             return (
               <div
                 key={p.id}
@@ -163,41 +205,48 @@ function Section({
                   (isCover ? "border-primary ring-1 ring-primary" : "border-border")
                 }
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={p.url || "/placeholder.svg"}
-                  alt={p.caption || title}
-                  className="h-full w-full object-cover"
-                />
+                <a href={p.url} target="_blank" rel="noreferrer" className="block h-full w-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url || "/placeholder.svg"} alt={p.caption || title} className="h-full w-full object-cover" />
+                </a>
 
                 {isCover && (
-                  <span className="absolute left-1 top-1 inline-flex items-center gap-1 rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-semibold text-primary-foreground">
+                  <span className="absolute left-1 top-1 inline-flex items-center gap-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
                     <Star className="h-2.5 w-2.5 fill-current" /> Cover
                   </span>
                 )}
 
-                <div className="absolute inset-x-1 bottom-1 opacity-0 transition group-hover:opacity-100">
-                  {!isCover && (
-                    <form action={setCoverPhoto.bind(null, jobId, p.url)}>
-                      <button
-                        type="submit"
-                        className="inline-flex w-full items-center justify-center gap-1 rounded-md bg-primary/90 px-1.5 py-1 text-[9px] font-semibold text-primary-foreground hover:bg-primary"
-                      >
-                        <Star className="h-2.5 w-2.5" /> Set as cover
-                      </button>
-                    </form>
-                  )}
-                </div>
+                {by && (
+                  <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-background/80 px-1.5 py-0.5 text-[10px] text-foreground">
+                    {by}
+                  </span>
+                )}
 
-                <form action={deletePhoto.bind(null, p.id, jobId)}>
-                  <button
-                    type="submit"
-                    className="absolute right-1 top-1 rounded-full bg-black/70 p-1 text-white opacity-0 transition group-hover:opacity-100"
-                    aria-label="Delete photo"
+                {canManageCover && !isCover && (
+                  <form
+                    action={setCoverPhoto.bind(null, jobId, p.url)}
+                    className="absolute inset-x-1 bottom-5 hidden group-hover:block"
                   >
-                    <X className="h-3 w-3" />
-                  </button>
-                </form>
+                    <button
+                      type="submit"
+                      className="inline-flex w-full items-center justify-center gap-1 rounded-md bg-primary/90 px-1.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary"
+                    >
+                      <Star className="h-2.5 w-2.5" /> Set as cover
+                    </button>
+                  </form>
+                )}
+
+                {canDelete(p) && (
+                  <form action={deletePhoto.bind(null, p.id, jobId)}>
+                    <button
+                      type="submit"
+                      className="absolute right-1 top-1 rounded-full bg-background/80 p-1.5 text-foreground transition sm:opacity-0 sm:group-hover:opacity-100"
+                      aria-label="Delete photo"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </form>
+                )}
               </div>
             )
           })}

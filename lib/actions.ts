@@ -17,6 +17,14 @@ import { notifyActivity } from "@/lib/activity"
 import { syncPendingApproval } from "@/lib/actions-approvals"
 import { resyncQuotationAddons } from "@/lib/addons"
 import { getSettings } from "@/lib/settings"
+import {
+  PHOTO_KINDS,
+  TRADE_VALUES,
+  tradeFromTitle,
+  tradeLabel,
+  type PhotoKind,
+  type Trade,
+} from "@/lib/trades"
 
 /**
  * When a job reaches "delivered", start the tracking-link grace window for the
@@ -353,7 +361,65 @@ export async function assignStaff(jobId: string, field: "advisor_id" | "technici
       link: `/jobs/${jobId}`,
     })
   }
+  if (value && field === "technician_id") {
+    const { data: p } = await supabase.from("profiles").select("job_title").eq("id", value).maybeSingle()
+    await supabase
+      .from("job_technicians")
+      .upsert(
+        { job_id: jobId, user_id: value, trade: tradeFromTitle(p?.job_title), assigned_by: ctx.userId },
+        { onConflict: "job_id,user_id", ignoreDuplicates: true },
+      )
+  }
   revalidatePath(`/jobs/${jobId}`)
+}
+
+/** Add a technician to the job team (several technicians can work on one car). */
+export async function addJobTechnician(jobId: string, userId: string, trade: Trade) {
+  const { supabase, ctx } = await guard("jobs.assign")
+  if (!jobId || !userId) throw new Error("Pick a technician")
+  const safeTrade: Trade = TRADE_VALUES.includes(trade) ? trade : "mechanic"
+  const { error } = await supabase
+    .from("job_technicians")
+    .upsert({ job_id: jobId, user_id: userId, trade: safeTrade, assigned_by: ctx.userId }, { onConflict: "job_id,user_id" })
+  if (error) throw new Error(error.message)
+
+  // Keep jobs.technician_id as the lead technician for lists and reports.
+  const { data: job } = await supabase.from("jobs").select("job_number, technician_id").eq("id", jobId).maybeSingle()
+  if (job && !job.technician_id) {
+    await supabase.from("jobs").update({ technician_id: userId, updated_at: new Date().toISOString() }).eq("id", jobId)
+  }
+  await logAction(ctx, "job.technician_add", "job", jobId, { userId, trade: safeTrade })
+  await notifyUser(userId, {
+    title: "New job assigned to you",
+    body: `You were added as ${tradeLabel(safeTrade)} on job ${job?.job_number ?? jobId.slice(0, 8)}.`,
+    type: "assignment",
+    link: `/jobs/${jobId}`,
+  })
+  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/flow")
+}
+
+export async function removeJobTechnician(jobId: string, userId: string) {
+  const { supabase, ctx } = await guard("jobs.assign")
+  const { error } = await supabase.from("job_technicians").delete().eq("job_id", jobId).eq("user_id", userId)
+  if (error) throw new Error(error.message)
+  const { data: job } = await supabase.from("jobs").select("technician_id").eq("id", jobId).maybeSingle()
+  if (job?.technician_id === userId) {
+    const { data: next } = await supabase
+      .from("job_technicians")
+      .select("user_id")
+      .eq("job_id", jobId)
+      .order("created_at")
+      .limit(1)
+      .maybeSingle()
+    await supabase
+      .from("jobs")
+      .update({ technician_id: next?.user_id ?? null, updated_at: new Date().toISOString() })
+      .eq("id", jobId)
+  }
+  await logAction(ctx, "job.technician_remove", "job", jobId, { userId })
+  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/flow")
 }
 
 export async function updateJobDetails(jobId: string, formData: FormData) {
@@ -420,16 +486,15 @@ export async function deleteJob(jobId: string) {
 
 // Photo categories. "vehicle" = exterior/general car shots; the cover photo is
 // chosen explicitly (see setCoverPhoto), never auto-derived from these.
-export type PhotoKind = "vehicle" | "problem" | "damage" | "parts" | "document" | "other"
-const PHOTO_KINDS: PhotoKind[] = ["vehicle", "problem", "damage", "parts", "document", "other"]
+export type { PhotoKind } from "@/lib/trades"
 
 export async function addPhotos(jobId: string, urls: string[], kind: PhotoKind) {
-  const { supabase } = await guard("jobs.update_status")
+  const { supabase, ctx } = await guard("jobs.update_status")
   if (!urls.length) return
   const safeKind: PhotoKind = PHOTO_KINDS.includes(kind) ? kind : "other"
   const { error } = await supabase
     .from("vehicle_photos")
-    .insert(urls.map((url) => ({ job_id: jobId, url, kind: safeKind })))
+    .insert(urls.map((url) => ({ job_id: jobId, url, kind: safeKind, uploaded_by: ctx.userId })))
   if (error) throw new Error(error.message)
   await notifyActivity({
     title: "Photos uploaded",
@@ -756,6 +821,7 @@ export async function addPart(jobId: string, formData: FormData) {
     cost: canCost && formData.get("cost") ? Number(formData.get("cost")) : null,
     notes: String(formData.get("notes") || "").slice(0, 1000) || null,
     status: "required",
+    requested_by: ctx.userId,
   })
   if (error) throw new Error(error.message)
   await notifyByPermission("parts.manage", {

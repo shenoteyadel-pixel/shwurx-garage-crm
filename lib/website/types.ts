@@ -179,6 +179,31 @@ export interface CustomPage {
   serviceSlug: string | null
 }
 
+/**
+ * A real team member, entered by the owner. Never generated: empty slots are
+ * drafts that only appear in the editor until they are complete and visible.
+ */
+export interface TeamMember {
+  id: string
+  name: L10n
+  jobTitle: L10n
+  bio: L10n
+  department: L10n
+  photoId: string | null
+  visible: boolean
+  archived: boolean
+  sortOrder: number
+}
+
+export interface TeamPage {
+  /** page switch; the page is only public when it also has a public member */
+  visible: boolean
+  title: L10n
+  intro: L10n
+  members: TeamMember[]
+  seo: SeoFields
+}
+
 export interface PagesContent {
   home: {
     eyebrow: L10n
@@ -193,6 +218,7 @@ export interface PagesContent {
   brandsIndex: { title: L10n; intro: L10n; seo: SeoFields }
   servicesIndex: { title: L10n; intro: L10n; seo: SeoFields }
   privacy: { title: L10n; body: L10n; seo: SeoFields }
+  team: TeamPage
   /** the shared inspection → quotation → approval process */
   process: TextItem[]
   custom: CustomPage[]

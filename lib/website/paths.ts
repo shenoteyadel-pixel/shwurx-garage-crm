@@ -2,7 +2,7 @@
  * Public website path rules, shared by the proxy (routing/allowlist) and the
  * client language switch. English is unprefixed; Arabic lives under /ar.
  */
-export const SITE_ROOTS = ["/brands", "/services", "/about", "/contact", "/appointment", "/blog", "/privacy", "/pages"]
+export const SITE_ROOTS = ["/brands", "/services", "/about", "/team", "/contact", "/appointment", "/blog", "/privacy", "/pages"]
 
 export function isSitePath(p: string): boolean {
   return p === "/" || SITE_ROOTS.some((r) => p === r || p.startsWith(r + "/"))

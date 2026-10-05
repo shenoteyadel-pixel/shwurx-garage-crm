@@ -6,6 +6,7 @@ import { getEditorState, readDocumentRow, readRevision, type EditorState } from 
 import { effectiveAnalytics } from "@/lib/website/analytics-server"
 import { sanitizeAnalytics, type AnalyticsConfig } from "@/lib/website/analytics"
 import { getDictionary } from "@/lib/i18n/dictionaries"
+import { buildInventory, type InventoryItem } from "@/lib/website/inventory"
 import { SITE_CONTENT_GROUPS, SITE_IMAGE_SLOTS, readPath } from "@/lib/site-content-fields"
 
 import {
@@ -28,6 +29,26 @@ export type WebsiteSectionDTO = {
   images: Record<string, string>
   posts: BlogPost[]
   editorState: EditorState | null
+  overview: WebsiteOverviewDTO
+}
+
+export type WebsiteOverviewDTO = {
+  /** configured public domain, or null when none is set */
+  liveUrl: string | null
+  lastPublishedAt: string | null
+  lastPublishedBy: string | null
+  inventory: InventoryItem[]
+}
+
+function configuredSiteUrl(): string | null {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+  if (!raw || raw.includes("NEXT_PUBLIC")) return null
+  try {
+    const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`)
+    return u.origin
+  } catch {
+    return null
+  }
 }
 
 /** Analytics-only view: config + revision pointers. Never any page, brand, blog or financial data. */
@@ -76,7 +97,30 @@ async function loadWebsiteSection(): Promise<WebsiteSectionDTO> {
     const v = overrides.images?.[slot.key]
     if (typeof v === "string" && v) images[slot.key] = v
   }
+  const liveId = editorState?.publishedRevisionId ?? null
+  const live = liveId ? await readRevision(liveId) : null
+  const liveRev = editorState?.revisions.find((r) => r.id === liveId) ?? null
+  const overview: WebsiteOverviewDTO = {
+    liveUrl: configuredSiteUrl(),
+    lastPublishedAt: liveRev?.createdAt ?? null,
+    lastPublishedBy: liveRev?.createdByName ?? null,
+    inventory: editorState?.initialised
+      ? buildInventory(
+          editorState.draft,
+          live,
+          posts.map((p) => ({
+            id: p.id,
+            slug: p.slug,
+            title: p.title,
+            status: p.status,
+            excerpt: p.excerpt,
+            coverUrl: p.cover_url,
+          })),
+        )
+      : [],
+  }
   return {
+    overview,
     fieldDefaults: {
       en: Object.fromEntries(paths.map((p) => [p, readPath(enDict, p)])),
       ar: Object.fromEntries(paths.map((p) => [p, readPath(arDict, p)])),

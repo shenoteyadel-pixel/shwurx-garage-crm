@@ -38,6 +38,7 @@ function isPublicPath(path: string): boolean {
   const publicSitePrefixes = [
     "/services",
     "/about",
+    "/team",
     "/appointment",
     "/contact",
     "/blog",

@@ -1,5 +1,5 @@
 import type { MediaSource, WebsiteDocument } from "./types"
-import { seedDocument } from "./seed"
+import { blankTeamMember, seedDocument, TEAM_NAV_FOOTER, TEAM_NAV_HEADER } from "./seed"
 import { analyticsIssues, sanitizeAnalytics } from "./analytics"
 
 const MAX_STR = 8000
@@ -97,6 +97,7 @@ const ITEM_TEMPLATES: Record<string, unknown> = {
     serviceSlug: null,
   },
   faqs: { id: "", q: L, a: L },
+  members: blankTeamMember("", 0),
   caseStudies: { id: "", title: L, body: L, mediaIds: [""], documented: false },
   redirects: { from: "", to: "", permanent: true },
   galleryIds: "",
@@ -142,7 +143,7 @@ function shapeBlocks(input: unknown, drops: string[] | undefined, path: string):
 
 const NULLABLE_SLUGS = new Set(["brandSlug", "serviceSlug"])
 /** Schema-nullable media references: explicit null must never inherit another item's value. */
-const NULLABLE_IDS = new Set(["logoId", "ogImageId", "heroImageId", "imageId", "defaultOgImageId"])
+const NULLABLE_IDS = new Set(["logoId", "ogImageId", "heroImageId", "imageId", "defaultOgImageId", "photoId"])
 const NULLABLE_NUMS = new Set(["width", "height", "yearTo"])
 
 /** Shape `input` like `template`: wrong types fall back to the template value. */
@@ -165,7 +166,8 @@ function shape(input: unknown, template: unknown, key = "", drops?: string[], pa
   if (typeof template === "boolean") return typeof input === "boolean" ? input : template
   if (Array.isArray(template)) {
     if (!Array.isArray(input)) return template
-    const itemTpl = template[0] ?? ITEM_TEMPLATES[key]
+    // Seeded team slots carry ids, so new members must not inherit slot 01's id.
+    const itemTpl = key === "members" ? ITEM_TEMPLATES.members : (template[0] ?? ITEM_TEMPLATES[key])
     if (itemTpl === undefined) return input.filter((v) => typeof v === "string")
     const isObjTpl = typeof itemTpl === "object" && itemTpl !== null
     const out: unknown[] = []
@@ -219,6 +221,11 @@ export function parseDocument(
       caseIds.add(c.id)
     }
   }
+  const memberIds = new Set<string>()
+  for (const m of doc.pages.team.members) {
+    if (!m.id || memberIds.has(m.id)) issues.push({ level: "error", where: "Team", message: `Missing or duplicate team member id "${m.id}".` })
+    memberIds.add(m.id)
+  }
   return issues.some((i) => i.level === "error") ? { ok: false, issues } : { ok: true, doc }
 }
 
@@ -245,8 +252,54 @@ export function normalizeDocument(input: unknown, drops?: string[]): WebsiteDocu
       if (u) doc.images[k] = u
     }
   }
+  migrateTeam(doc, clean)
   doc.schemaVersion = 1
   return doc
+}
+
+/**
+ * Documents saved before the Team page existed get the 18 draft slots (via the
+ * seed template) and the nav links exactly once. A stored Team block, even
+ * with a deliberately empty member list, is never re-scaffolded.
+ */
+function migrateTeam(doc: WebsiteDocument, clean: unknown) {
+  const rawPages = isObj(clean) ? (clean as { pages?: unknown }).pages : undefined
+  const hadTeam = isObj(rawPages) && isObj((rawPages as { team?: unknown }).team)
+  if (!hadTeam && isObj(clean) && isObj((clean as { nav?: unknown }).nav)) {
+    if (!doc.nav.header.some((l) => l.href === "/team")) {
+      const at = doc.nav.header.findIndex((l) => l.href === "/about")
+      doc.nav.header.splice(at < 0 ? doc.nav.header.length : at + 1, 0, structuredClone(TEAM_NAV_HEADER))
+    }
+    if (!doc.nav.footer.some((l) => l.href === "/team")) {
+      const at = doc.nav.footer.findIndex((l) => l.href === "/contact")
+      doc.nav.footer.splice(at < 0 ? doc.nav.footer.length : at, 0, structuredClone(TEAM_NAV_FOOTER))
+    }
+  }
+  doc.pages.team.members = doc.pages.team.members
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => a.m.sortOrder - b.m.sortOrder || a.i - b.i)
+    .map(({ m }, i) => ({ ...m, sortOrder: i }))
+}
+
+/** Complete (both languages), visible and not archived. Photo is optional. */
+export function isPublicTeamMember(m: import("./types").TeamMember): boolean {
+  return (
+    m.visible &&
+    !m.archived &&
+    !!m.name.en.trim() &&
+    !!m.name.ar.trim() &&
+    !!m.jobTitle.en.trim() &&
+    !!m.jobTitle.ar.trim()
+  )
+}
+
+export function publicTeamMembers(doc: WebsiteDocument) {
+  return doc.pages.team.members.filter(isPublicTeamMember)
+}
+
+/** The /team route and its nav links exist only when there is someone to show. */
+export function isTeamPagePublic(doc: WebsiteDocument): boolean {
+  return doc.pages.team.visible && publicTeamMembers(doc).length > 0
 }
 
 function isObj(v: unknown): boolean {
@@ -275,7 +328,7 @@ export function validateDocument(doc: WebsiteDocument): ValidationIssue[] {
   slugCheck(doc.services, "Service")
   slugCheck(doc.pages.custom, "Page")
 
-  const reserved = new Set(["brands", "services", "about", "contact", "blog", "privacy", "appointment", "track", "ar"])
+  const reserved = new Set(["brands", "services", "about", "contact", "blog", "privacy", "appointment", "track", "ar", "team"])
   for (const p of doc.pages.custom) {
     if (reserved.has(p.slug)) issues.push({ level: "error", where: `Page: ${p.title.en}`, message: `"${p.slug}" is a reserved URL.` })
   }
@@ -296,6 +349,16 @@ export function validateDocument(doc: WebsiteDocument): ValidationIssue[] {
   }
   for (const s of doc.services.filter((x) => x.visible)) {
     if (!s.name.en.trim() || !s.name.ar.trim()) issues.push({ level: "error", where: `Service: ${s.slug}`, message: "Name is required in English and Arabic." })
+  }
+  for (const m of doc.pages.team.members) {
+    if (!m.visible || m.archived) continue
+    const label = m.name.en || m.name.ar || m.id
+    if (!isPublicTeamMember(m)) {
+      issues.push({ level: "warning", where: `Team: ${label}`, message: "Marked visible but name or job title is missing in English or Arabic; this member stays hidden." })
+    }
+    if (m.photoId && !approved.has(m.photoId)) {
+      issues.push({ level: "warning", where: `Team: ${label}`, message: "Photo is not approved for public use; the card shows initials instead." })
+    }
   }
   if (!doc.business.phone && !doc.business.whatsapp) {
     issues.push({ level: "warning", where: "Business", message: "No phone or WhatsApp number; call buttons will be hidden." })

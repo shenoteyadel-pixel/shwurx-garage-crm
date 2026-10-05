@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { MapPin, Phone, Mail } from "lucide-react"
-import { localePath, pick, publicMedia } from "@/lib/website/render"
+import { localePath, pick, publicMedia, visibleNav } from "@/lib/website/render"
 import type { Lang, WebsiteDocument } from "@/lib/website/types"
 
 // Public legal identifiers (shown on the storefront footer, as on business cards).
@@ -48,9 +48,7 @@ export function SiteFooter({ doc, lang }: { doc: WebsiteDocument; lang: Lang }) 
         <div>
           <h2 className="text-sm font-bold uppercase tracking-wide">{t.quick}</h2>
           <ul className="mt-4 flex flex-col gap-2.5 text-sm text-muted-foreground">
-            {doc.nav.footer
-              .filter((l) => l.visible)
-              .map((l) => (
+            {visibleNav(doc, doc.nav.footer).map((l) => (
                 <li key={l.id}>
                   <Link href={localePath(lang, l.href)} className="transition hover:text-foreground">
                     {pick(l.label, lang)}

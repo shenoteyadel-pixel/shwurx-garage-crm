@@ -3,7 +3,8 @@ import type { Metadata } from "next"
 import { getServerLocale } from "@/lib/i18n/server"
 import { getRenderDocument } from "./store"
 import { isIndexableDeployment, resolveSiteOrigin } from "./env"
-import type { L10n, Lang, MediaAsset, SeoFields, WebsiteDocument } from "./types"
+import { isTeamPagePublic } from "./normalize"
+import type { L10n, Lang, MediaAsset, NavLink, SeoFields, WebsiteDocument } from "./types"
 
 // The live apex 308-redirects to www, so canonicals always use the www origin.
 export const SITE_URL = resolveSiteOrigin()
@@ -19,6 +20,12 @@ export function localePath(lang: Lang, path: string): string {
   if (!path.startsWith("/") || path.startsWith("//")) return path
   if (lang === "en") return path
   return path === "/" ? "/ar" : `/ar${path}`
+}
+
+/** Visible nav links, dropping /team while no member is public (avoids a link to a 404). */
+export function visibleNav(doc: WebsiteDocument, links: NavLink[]): NavLink[] {
+  const teamPublic = isTeamPagePublic(doc)
+  return links.filter((l) => l.visible && (teamPublic || (l.href !== "/team" && !l.href.startsWith("/team#"))))
 }
 
 /** Only approved, public-safe media is ever rendered publicly. */

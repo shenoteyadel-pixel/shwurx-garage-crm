@@ -233,7 +233,7 @@ export function ListEditor<T extends { id: string }>({
       </div>
       {items.length === 0 && <p className="text-xs text-muted-foreground">Nothing added yet.</p>}
       {items.map((item, i) => (
-        <div key={item.id} className="flex flex-col gap-3 rounded-lg border border-border bg-background/40 p-3">
+        <div key={item.id} data-record={item.id} className="flex scroll-mt-24 flex-col gap-3 rounded-lg border border-border bg-background/40 p-3">
           {render(item, (next) => onChange(items.map((x) => (x.id === item.id ? next : x))))}
           <div className="flex justify-end gap-1">
             <Button type="button" size="icon" variant="ghost" aria-label="Move up" onClick={() => move(i, -1)}>

@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next"
 import { getPublishedDocument } from "@/lib/website/store"
+import { isTeamPagePublic } from "@/lib/website/normalize"
 import { SITE_URL, localePath } from "@/lib/website/render"
 
 export const revalidate = 3600
@@ -10,6 +11,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
   const paths: string[] = ["/", "/brands", "/services", "/about", "/contact", "/blog", "/privacy"]
 
+  if (isTeamPagePublic(doc) && !doc.pages.team.seo.noindex) paths.push("/team")
   for (const b of doc.brands) if (b.visible && !b.seo.noindex) paths.push(`/brands/${b.slug}`)
   for (const s of doc.services) if (s.visible && !s.seo.noindex) paths.push(`/services/${s.slug}`)
   for (const p of doc.pages.custom) if (p.visible && !p.seo.noindex) paths.push(`/pages/${p.slug}`)

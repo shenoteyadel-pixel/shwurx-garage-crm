@@ -6,7 +6,7 @@ import { TrackingGate } from "@/components/site/tracking-gate"
 import { consentNeeded } from "@/lib/website/consent-needed"
 import { PreviewBar } from "@/components/site/preview-bar"
 import { SiteTracking } from "@/components/site-tracking"
-import { localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
+import { localePath, pick, publicMedia, siteContext, visibleNav } from "@/lib/website/render"
 import { effectiveAnalytics, siteAnalytics } from "@/lib/website/analytics-server"
 import { normalizeRuntime } from "@/lib/website/analytics"
 import { ConsentBanner } from "@/components/site/consent-banner"
@@ -47,7 +47,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
       {preview && <PreviewBar label={previewLabel ?? "Draft"} />}
       <SiteHeader
         logo={siteLogo ? { url: siteLogo.url, alt: pick(siteLogo.alt, lang) || "SHWURX" } : null}
-        nav={doc.nav.header.filter((l) => l.visible).map((l) => ({ href: localePath(lang, l.href), label: pick(l.label, lang) }))}
+        nav={visibleNav(doc, doc.nav.header).map((l) => ({ href: localePath(lang, l.href), label: pick(l.label, lang) }))}
         homeHref={localePath(lang, "/")}
         enquireHref={localePath(lang, "/contact#enquire")}
         enquireLabel={ar ? "أرسل استفساراً" : "Send an enquiry"}

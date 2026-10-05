@@ -1,7 +1,7 @@
 "use client"
 
 import { assignedMediaIds, mediaStatus, MEDIA_STATUS_LABEL } from "@/lib/website/media-usage"
-import { useMemo, useRef, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import {
@@ -47,10 +47,12 @@ import {
   uid,
 } from "./fields"
 import { AnalyticsSection } from "./analytics-section"
+import { TeamSection } from "./team-section"
 
-type Section =
+export type BuilderSection =
   | "business"
   | "pages"
+  | "team"
   | "brands"
   | "services"
   | "custom"
@@ -60,10 +62,15 @@ type Section =
   | "media"
   | "analytics"
   | "history"
+type Section = BuilderSection
+
+/** Lets the Website overview jump straight to a section (and optionally start a new team member). */
+export type BuilderOpenRequest = { section: BuilderSection; recordId?: string; addTeamMember?: boolean; nonce: number }
 
 const SECTIONS: { key: Section; label: string }[] = [
   { key: "business", label: "Business" },
   { key: "pages", label: "Home & pages" },
+  { key: "team", label: "Team" },
   { key: "brands", label: "Brands" },
   { key: "services", label: "Services" },
   { key: "custom", label: "Custom pages" },
@@ -76,13 +83,34 @@ const SECTIONS: { key: Section; label: string }[] = [
 
 const emptySeo = () => ({ title: emptyL10n(), description: emptyL10n(), ogImageId: null, noindex: false })
 
-export function WebsiteBuilder({ state }: { state: EditorState }) {
+export function WebsiteBuilder({ state, open }: { state: EditorState; open?: BuilderOpenRequest | null }) {
   const editCount = useRef(0)
   const router = useRouter()
   const [doc, setDoc] = useState<WebsiteDocument>(state.draft)
   const [version, setVersion] = useState(state.draftVersion)
   const [dirty, setDirty] = useState(false)
-  const [section, setSection] = useState<Section>("business")
+  const [section, setSection] = useState<Section>(open?.section ?? "business")
+  const [handledOpen, setHandledOpen] = useState<number | null>(open?.nonce ?? null)
+  const [pendingTeamAdd, setPendingTeamAdd] = useState<number | null>(open?.addTeamMember ? open.nonce : null)
+  const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(
+    open?.recordId ? { id: open.recordId, nonce: open.nonce } : null,
+  )
+  if (open && open.nonce !== handledOpen) {
+    setHandledOpen(open.nonce)
+    setSection(open.section)
+    setFocus(open.recordId ? { id: open.recordId, nonce: open.nonce } : null)
+    if (open.addTeamMember) setPendingTeamAdd(open.nonce)
+  }
+  // Scrolling to the opened record is a DOM side effect of the jump, not data fetching.
+  useEffect(() => {
+    if (!focus) return
+    const frame = requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-record="${CSS.escape(focus.id)}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [focus])
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null)
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
   const [pending, start] = useTransition()
@@ -330,8 +358,17 @@ export function WebsiteBuilder({ state }: { state: EditorState }) {
       <Card className="flex flex-col gap-5 p-5">
         {section === "business" && <BusinessSection doc={doc} mutate={mutate} />}
         {section === "pages" && <PagesSection doc={doc} mutate={mutate} />}
-        {section === "brands" && <BrandsSection doc={doc} mutate={mutate} />}
-        {section === "services" && <ServicesSection doc={doc} mutate={mutate} />}
+        {section === "team" && (
+          <TeamSection
+            key={pendingTeamAdd ?? "team"}
+            doc={doc}
+            mutate={mutate}
+            autoAdd={pendingTeamAdd !== null}
+            onAutoAdded={() => setPendingTeamAdd(null)}
+          />
+        )}
+        {section === "brands" && <BrandsSection key={focus?.nonce ?? "brands"} doc={doc} mutate={mutate} focusId={focus?.id} />}
+        {section === "services" && <ServicesSection key={focus?.nonce ?? "services"} doc={doc} mutate={mutate} focusId={focus?.id} />}
         {section === "custom" && <CustomPagesSection doc={doc} mutate={mutate} />}
         {section === "nav" && <NavSection doc={doc} mutate={mutate} />}
         {section === "form" && <FormSection doc={doc} mutate={mutate} />}
@@ -380,9 +417,9 @@ export function WebsiteBuilder({ state }: { state: EditorState }) {
 
 type SectionProps = { doc: WebsiteDocument; mutate: (fn: (d: WebsiteDocument) => void) => void }
 
-function SectionTitle({ title, intro }: { title: string; intro?: string }) {
+function SectionTitle({ title, intro, record }: { title: string; intro?: string; record?: string }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex scroll-mt-24 flex-col gap-1" data-record={record}>
       <h3 className="text-lg font-semibold">{title}</h3>
       {intro && <p className="text-sm leading-relaxed text-muted-foreground">{intro}</p>}
     </div>
@@ -429,7 +466,7 @@ function PagesSection({ doc, mutate }: SectionProps) {
   const p = doc.pages
   return (
     <>
-      <SectionTitle title="Home page" />
+      <SectionTitle title="Home page" record="home" />
       <L10nField label="Small heading" value={p.home.eyebrow} onChange={(v) => mutate((d) => void (d.pages.home.eyebrow = v))} />
       <L10nField label="Main heading" value={p.home.title} onChange={(v) => mutate((d) => void (d.pages.home.title = v))} />
       <L10nField label="Subtitle" value={p.home.subtitle} onChange={(v) => mutate((d) => void (d.pages.home.subtitle = v))} multiline />
@@ -453,7 +490,7 @@ function PagesSection({ doc, mutate }: SectionProps) {
 
       {(["about", "privacy"] as const).map((key) => (
         <div key={key} className="flex flex-col gap-4 border-t border-border pt-5">
-          <SectionTitle title={key === "about" ? "About page" : "Privacy page"} />
+          <SectionTitle title={key === "about" ? "About page" : "Privacy page"} record={key} />
           <L10nField label="Title" value={p[key].title} onChange={(v) => mutate((d) => void (d.pages[key].title = v))} />
           <L10nField label="Text" value={p[key].body} onChange={(v) => mutate((d) => void (d.pages[key].body = v))} multiline />
           {key === "about" && (
@@ -464,7 +501,7 @@ function PagesSection({ doc, mutate }: SectionProps) {
       ))}
       {(["contact", "brandsIndex", "servicesIndex"] as const).map((key) => (
         <div key={key} className="flex flex-col gap-4 border-t border-border pt-5">
-          <SectionTitle title={{ contact: "Contact page", brandsIndex: "Brands directory", servicesIndex: "Services directory" }[key]} />
+          <SectionTitle title={{ contact: "Contact page", brandsIndex: "Brands directory", servicesIndex: "Services directory" }[key]} record={key} />
           <L10nField label="Title" value={p[key].title} onChange={(v) => mutate((d) => void (d.pages[key].title = v))} />
           <L10nField label="Intro" value={p[key].intro} onChange={(v) => mutate((d) => void (d.pages[key].intro = v))} multiline />
           <SeoEditor value={p[key].seo} media={doc.media} onChange={(v) => mutate((d) => void (d.pages[key].seo = v))} />
@@ -476,8 +513,10 @@ function PagesSection({ doc, mutate }: SectionProps) {
 
 /* --------------------------------- Brands --------------------------------- */
 
-function BrandsSection({ doc, mutate }: SectionProps) {
-  const [sel, setSel] = useState(doc.brands[0]?.id ?? "")
+function BrandsSection({ doc, mutate, focusId }: SectionProps & { focusId?: string }) {
+  const [sel, setSel] = useState(
+    focusId && doc.brands.some((b) => b.id === focusId) ? focusId : (doc.brands[0]?.id ?? ""),
+  )
   const i = doc.brands.findIndex((b) => b.id === sel)
   const b = doc.brands[i]
   const set = (fn: (x: (typeof doc.brands)[number]) => void) => mutate((d) => fn(d.brands[i]))
@@ -585,8 +624,10 @@ function BrandsSection({ doc, mutate }: SectionProps) {
 
 /* -------------------------------- Services -------------------------------- */
 
-function ServicesSection({ doc, mutate }: SectionProps) {
-  const [sel, setSel] = useState(doc.services[0]?.id ?? "")
+function ServicesSection({ doc, mutate, focusId }: SectionProps & { focusId?: string }) {
+  const [sel, setSel] = useState(
+    focusId && doc.services.some((x) => x.id === focusId) ? focusId : (doc.services[0]?.id ?? ""),
+  )
   const i = doc.services.findIndex((s) => s.id === sel)
   const s = doc.services[i]
   const set = (fn: (x: (typeof doc.services)[number]) => void) => mutate((d) => fn(d.services[i]))

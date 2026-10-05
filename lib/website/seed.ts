@@ -1,4 +1,4 @@
-import type { MediaAsset, SeoFields, WebsiteDocument } from "./types"
+import type { MediaAsset, SeoFields, TeamMember, TeamPage, WebsiteDocument } from "./types"
 import { seedBrands, t } from "./seed-brands"
 import { seedServices } from "./seed-services"
 import { DEFAULT_ANALYTICS } from "./analytics"
@@ -9,6 +9,45 @@ const pageSeo = (titleEn: string, titleAr: string, descEn: string, descAr: strin
   ogImageId: null,
   noindex: false,
 })
+
+export const TEAM_SCAFFOLD_SIZE = 18
+export const TEAM_NAV_HEADER = { id: "nav-team", label: t("Team", "فريقنا"), href: "/team", visible: true }
+export const TEAM_NAV_FOOTER = { id: "ft-team", label: t("Our team", "فريق العمل"), href: "/team", visible: true }
+
+/** Empty, hidden draft slot. Holds no identity until the owner fills it in. */
+export function blankTeamMember(id: string, sortOrder: number): TeamMember {
+  return {
+    id,
+    name: t("", ""),
+    jobTitle: t("", ""),
+    bio: t("", ""),
+    department: t("", ""),
+    photoId: null,
+    visible: false,
+    archived: false,
+    sortOrder,
+  }
+}
+
+export function seedTeamPage(): TeamPage {
+  return {
+    visible: true,
+    title: t("Our team", "فريقنا"),
+    intro: t(
+      "The people who inspect, quote, repair and hand back your car at SHWURX.",
+      "الأشخاص الذين يفحصون سيارتك ويقدّمون عرض السعر ويصلحونها ويسلّمونها لك في شوركس.",
+    ),
+    members: Array.from({ length: TEAM_SCAFFOLD_SIZE }, (_, i) =>
+      blankTeamMember(`team-slot-${String(i + 1).padStart(2, "0")}`, i),
+    ),
+    seo: pageSeo(
+      "Our Team — SHWURX Auto Service Center",
+      "فريقنا — مركز شوركس لخدمة السيارات",
+      "Meet the SHWURX team in Al Quoz Industrial Area 2, Dubai.",
+      "تعرّف على فريق شوركس في القوز الصناعية 2، دبي.",
+    ),
+  }
+}
 
 const LOGOS: [string, string][] = [
   ["porsche", "Porsche"],
@@ -85,12 +124,14 @@ export function seedDocument(): WebsiteDocument {
         { id: "nav-brands", label: t("Brands", "العلامات"), href: "/brands", visible: true },
         { id: "nav-services", label: t("Services", "الخدمات"), href: "/services", visible: true },
         { id: "nav-about", label: t("About", "من نحن"), href: "/about", visible: true },
+        TEAM_NAV_HEADER,
         { id: "nav-blog", label: t("Blog", "المدونة"), href: "/blog", visible: true },
         { id: "nav-contact", label: t("Contact", "تواصل معنا"), href: "/contact", visible: true },
       ],
       footer: [
         { id: "ft-brands", label: t("All brands", "جميع العلامات"), href: "/brands", visible: true },
         { id: "ft-services", label: t("All services", "جميع الخدمات"), href: "/services", visible: true },
+        TEAM_NAV_FOOTER,
         { id: "ft-contact", label: t("Contact", "تواصل معنا"), href: "/contact", visible: true },
         { id: "ft-privacy", label: t("Privacy", "الخصوصية"), href: "/privacy", visible: true },
       ],
@@ -180,6 +221,7 @@ export function seedDocument(): WebsiteDocument {
         ),
         seo: pageSeo("Privacy — SHWURX", "الخصوصية — شوركس", "How SHWURX handles enquiry data.", "كيف تتعامل شوركس مع بيانات الاستفسارات."),
       },
+      team: seedTeamPage(),
       process: [
         { id: "p1", title: t("Tell us about the car", "أخبرنا عن السيارة"), body: t("Brand, model, year and what you notice — by form, call or WhatsApp.", "العلامة والموديل والسنة وما تلاحظه — عبر النموذج أو الاتصال أو واتساب.") },
         { id: "p2", title: t("Inspection", "الفحص"), body: t("We confirm the complaint and inspect the vehicle at our Al Quoz workshop.", "نتأكد من الشكوى ونفحص السيارة في ورشتنا بالقوز.") },

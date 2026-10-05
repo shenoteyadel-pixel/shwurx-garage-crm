@@ -4,7 +4,8 @@ import { useRef, useState, useTransition } from "react"
 import Image from "next/image"
 import { Card, Button, Input, Label, Textarea, Badge } from "@/components/ui"
 import { MarketingForm } from "@/components/marketing-form"
-import { WebsiteBuilder } from "@/components/website-builder/website-builder"
+import { WebsiteBuilder, type BuilderOpenRequest } from "@/components/website-builder/website-builder"
+import { WebsiteOverview, type OverviewAction } from "@/components/website-builder/website-overview"
 import { AnalyticsEditor } from "@/components/website-builder/analytics-editor"
 import { SITE_CONTENT_GROUPS, SITE_IMAGE_SLOTS } from "@/lib/site-content-fields"
 import type { BlogPost } from "@/lib/blog"
@@ -28,10 +29,11 @@ import {
   Plus,
   Pencil,
   Globe,
+  LayoutDashboard,
 } from "lucide-react"
 
 type Locale = "en" | "ar"
-type TabKey = "builder" | "content" | "images" | "blog" | "analytics" | "tracking"
+type TabKey = "overview" | "builder" | "content" | "images" | "blog" | "analytics" | "tracking"
 
 interface FieldMaps {
   en: Record<string, string>
@@ -58,6 +60,9 @@ export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
   const analytics = data.analytics
   const legacyTracking = canViewMarketing && !analytics?.managed
   const tabs: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    ...(canManageWebsite && editorState?.initialised
+      ? ([{ key: "overview", label: "Overview", icon: LayoutDashboard }] as const)
+      : []),
     ...(canManageWebsite && editorState ? ([{ key: "builder", label: "Site builder", icon: Globe }] as const) : []),
     ...(legacyContent
       ? ([
@@ -71,6 +76,27 @@ export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
   ]
 
   const [tab, setTab] = useState<TabKey>(() => tabs[0]?.key ?? "content")
+  const [builderOpen, setBuilderOpen] = useState<BuilderOpenRequest | null>(null)
+  const [blogOpen, setBlogOpen] = useState<{ postId?: string; nonce: number } | null>(null)
+
+  const onOverviewAction = (a: OverviewAction) => {
+    const nonce = Date.now()
+    if (a.kind === "analytics") return setTab("analytics")
+    if (a.kind === "add-member") {
+      setBuilderOpen({ section: "team", addTeamMember: true, nonce })
+      return setTab("builder")
+    }
+    if (a.kind === "add-page") {
+      setBuilderOpen({ section: "custom", nonce })
+      return setTab("builder")
+    }
+    if (a.target.kind === "blog") {
+      setBlogOpen({ postId: a.target.postId, nonce })
+      return setTab("blog")
+    }
+    setBuilderOpen({ section: a.target.section, recordId: a.target.recordId, nonce })
+    setTab("builder")
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -96,10 +122,19 @@ export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
         })}
       </div>
 
+      {tab === "overview" && website && editorState?.initialised && (
+        <WebsiteOverview
+          overview={website.overview}
+          draftVersion={editorState.draftVersion}
+          hasUnpublished={editorState.hasUnpublished}
+          canAnalytics={canViewMarketing && !!analytics}
+          onAction={onOverviewAction}
+        />
+      )}
       {/* Stays mounted while hidden so unsaved builder edits survive switching tabs. */}
       {canManageWebsite && editorState && (
         <div hidden={tab !== "builder"}>
-          <WebsiteBuilder state={editorState} />
+          <WebsiteBuilder state={editorState} open={builderOpen} />
         </div>
       )}
       {/* Same as the builder: hidden, not unmounted, so pending analytics edits survive tab switches. */}
@@ -112,7 +147,9 @@ export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
         <ContentEditor fieldValues={fieldValues} fieldDefaults={fieldDefaults} canManage={canManageWebsite} />
       )}
       {tab === "images" && legacyContent && <ImageManager images={images} canManage={canManageWebsite} />}
-      {tab === "blog" && <BlogManager posts={posts} canManage={canManageWebsite} />}
+      {tab === "blog" && (
+        <BlogManager key={blogOpen?.nonce ?? "blog"} posts={posts} canManage={canManageWebsite} openPostId={blogOpen?.postId} />
+      )}
       {tab === "tracking" && tracking && legacyTracking && <MarketingForm settings={tracking} canManage={canManageMarketing} />}
     </div>
   )
@@ -357,8 +394,23 @@ type Draft = {
   status: "draft" | "published"
 }
 
-function BlogManager({ posts, canManage }: { posts: BlogPost[]; canManage: boolean }) {
-  const [editing, setEditing] = useState<Draft | null>(null)
+function toDraft(p: BlogPost): Draft {
+  return {
+    id: p.id,
+    slug: p.slug,
+    title: p.title,
+    excerpt: p.excerpt ?? "",
+    cover_url: p.cover_url ?? "",
+    body: p.body,
+    status: p.status,
+  }
+}
+
+function BlogManager({ posts, canManage, openPostId }: { posts: BlogPost[]; canManage: boolean; openPostId?: string }) {
+  const [editing, setEditing] = useState<Draft | null>(() => {
+    const p = canManage && openPostId ? posts.find((x) => x.id === openPostId) : undefined
+    return p ? toDraft(p) : null
+  })
 
   if (editing) {
     return <BlogEditor draft={editing} onClose={() => setEditing(null)} canManage={canManage} />

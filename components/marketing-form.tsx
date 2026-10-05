@@ -26,6 +26,13 @@ export function MarketingForm({ settings, canManage }: { settings: TrackingSetti
       }
       className="flex flex-col gap-5"
     >
+      <Card className="border-primary/30 bg-primary/5 p-4">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Legacy settings. Once tracking is configured in <strong>Website Builder → Analytics</strong> and published,
+          the site uses that versioned configuration and ignores these values.
+        </p>
+      </Card>
+
       <Card className="p-6">
         <div className="flex items-start justify-between gap-4">
           <div>

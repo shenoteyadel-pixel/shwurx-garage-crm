@@ -88,7 +88,7 @@ export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
         })}
       </div>
 
-      {tab === "builder" && editorState && <WebsiteBuilder state={editorState} />}
+      {tab === "builder" && editorState && <WebsiteBuilder state={editorState} canEditAnalytics={canManageMarketing} />}
       {tab === "content" && (
         <ContentEditor fieldValues={fieldValues} fieldDefaults={fieldDefaults} canManage={canManageWebsite} />
       )}

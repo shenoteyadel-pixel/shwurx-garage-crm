@@ -44,8 +44,20 @@ import {
   emptyL10n,
   uid,
 } from "./fields"
+import { AnalyticsSection } from "./analytics-section"
 
-type Section = "business" | "pages" | "brands" | "services" | "custom" | "nav" | "form" | "seo" | "media" | "history"
+type Section =
+  | "business"
+  | "pages"
+  | "brands"
+  | "services"
+  | "custom"
+  | "nav"
+  | "form"
+  | "seo"
+  | "media"
+  | "analytics"
+  | "history"
 
 const SECTIONS: { key: Section; label: string }[] = [
   { key: "business", label: "Business" },
@@ -57,12 +69,13 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: "form", label: "Enquiry form" },
   { key: "seo", label: "SEO & redirects" },
   { key: "media", label: "Media" },
+  { key: "analytics", label: "Analytics" },
   { key: "history", label: "History" },
 ]
 
 const emptySeo = () => ({ title: emptyL10n(), description: emptyL10n(), ogImageId: null, noindex: false })
 
-export function WebsiteBuilder({ state }: { state: EditorState }) {
+export function WebsiteBuilder({ state, canEditAnalytics = false }: { state: EditorState; canEditAnalytics?: boolean }) {
   const router = useRouter()
   const [doc, setDoc] = useState<WebsiteDocument>(state.draft)
   const [version, setVersion] = useState(state.draftVersion)
@@ -319,6 +332,7 @@ export function WebsiteBuilder({ state }: { state: EditorState }) {
         {section === "form" && <FormSection doc={doc} mutate={mutate} />}
         {section === "seo" && <SeoSection doc={doc} mutate={mutate} />}
         {section === "media" && <MediaSection doc={doc} mutate={mutate} />}
+        {section === "analytics" && <AnalyticsSection doc={doc} mutate={mutate} canEdit={canEditAnalytics} />}
         {section === "history" && (
           <HistorySection
             state={state}

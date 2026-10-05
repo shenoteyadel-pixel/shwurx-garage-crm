@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowRight, Award, Users, Timer } from "lucide-react"
+import { ArrowRight, ClipboardCheck, MessageSquare, ScanSearch } from "lucide-react"
 import { getPublicSiteInfo } from "@/lib/site-info"
 import { getServerI18n } from "@/lib/i18n/server"
 import { interpolate } from "@/lib/i18n/dictionaries"
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   description: "Meet the team behind SHWURX Auto Service Center — specialist technicians committed to honest, precise auto care.",
 }
 
-const STAT_ICONS = [Users, Award, Timer]
+const STAT_ICONS = [ScanSearch, ClipboardCheck, MessageSquare]
 
 export default async function AboutPage() {
   const [info, { dict }] = await Promise.all([getPublicSiteInfo(), getServerI18n()])

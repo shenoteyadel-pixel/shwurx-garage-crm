@@ -42,7 +42,7 @@ const en = {
   services: {
     "diagnostics-programming": {
       title: "Diagnostics & Programming",
-      summary: "Dealer level diagnostics for all premium brands.",
+      summary: "Fault diagnosis and module programming for premium brands.",
     },
     "scheduled-maintenance": {
       title: "Scheduled Maintenance",
@@ -50,11 +50,11 @@ const en = {
     },
     "mechanical-repair": {
       title: "Mechanical Repair",
-      summary: "Expert repair for all systems.",
+      summary: "Engine, gearbox, suspension, brakes and electrical repair.",
     },
     "parts-procurement": {
       title: "Parts & Procurement",
-      summary: "Genuine & OEM parts sourcing.",
+      summary: "Parts sourced and quoted for your approval.",
     },
     "body-paint": {
       title: "Body & Paint",
@@ -72,19 +72,19 @@ const en = {
     heroSubtitle1: "Diagnostics. Programming, Repair. Parts. Body & More.",
     heroSubtitle2: "All under one roof.",
     features: [
-      { title: "Expert Technicians", sub: "Factory Trained" },
-      { title: "Latest Technology", sub: "Dealer Level Diagnostics" },
+      { title: "Inspection First", sub: "Diagnosis before quotation" },
+      { title: "Your Approval", sub: "Nothing done without your OK" },
       { title: "All Premium Brands", sub: "One Garage. Limitless Solutions." },
     ],
     aboutEyebrow: "About SHWURX",
-    aboutTitle1: "Built on Expertise.",
-    aboutTitle2: "Driven by Passion.",
+    aboutTitle1: "Inspect. Explain.",
+    aboutTitle2: "Then Repair.",
     aboutBody:
-      "{company} is a modern, independent automotive center specialized in premium and luxury vehicles. We combine dealership-level capability with a personal, customer-focused experience.",
+      "{company} is a modern, independent automotive center specialized in premium and luxury vehicles. We inspect first, explain what we find, and quote before any work starts.",
     aboutPoints: [
       "Specialized in Premium Brands",
       "Advanced Diagnostics & Programming",
-      "Skilled & Certified Technicians",
+      "Written Quotation Before Work",
       "Transparent Process & Pricing",
       "Customer First Approach",
     ],
@@ -107,7 +107,7 @@ const en = {
   servicesPage: {
     title: "Our services",
     intro:
-      "One trusted workshop for everything your car needs — carried out by specialist technicians using genuine parts, with transparent quotes you approve before any work begins.",
+      "One workshop for everything your car needs, with an inspection first and a clear quote you approve before any work begins.",
     notSureTitle: "Not sure what you need?",
     notSureBody:
       "Book a visit and our advisors will diagnose the issue and walk you through the options — no pressure.",
@@ -121,15 +121,15 @@ const en = {
     published: "Published",
   },
   aboutPage: {
-    title: "Built on trust and craftsmanship",
+    title: "Transparent, careful car care",
     body1:
       "{company} was founded on a simple belief: looking after someone's car should be transparent, precise, and completely stress-free. From the moment your vehicle is checked in, you see exactly what's happening and approve every step.",
     body2:
-      "Our specialist technicians bring dealer-level experience to every job, backed by proper diagnostics and genuine parts — so your car leaves in the condition it deserves.",
+      "Every job starts with a proper diagnosis. We explain the cause, agree the repair plan with you, and keep you updated until the car is ready.",
     stats: [
-      { value: "Expert", label: "Specialist technicians" },
-      { value: "Genuine", label: "Parts & warranty-safe work" },
-      { value: "Live", label: "Real-time repair tracking" },
+      { value: "Inspect first", label: "We diagnose before we quote" },
+      { value: "You approve", label: "No extra work without your OK" },
+      { value: "Stay informed", label: "Updates as the job progresses" },
     ],
     bookWithUs: "Book with us",
   },
@@ -362,7 +362,7 @@ const ar: typeof en = {
   services: {
     "diagnostics-programming": {
       title: "التشخيص والبرمجة",
-      summary: "تشخيص بمستوى الوكالة لجميع الماركات الفاخرة.",
+      summary: "تشخيص الأعطال وبرمجة الوحدات للماركات الفاخرة.",
     },
     "scheduled-maintenance": {
       title: "الصيانة الدورية",
@@ -370,11 +370,11 @@ const ar: typeof en = {
     },
     "mechanical-repair": {
       title: "الإصلاح الميكانيكي",
-      summary: "إصلاح احترافي لجميع الأنظمة.",
+      summary: "إصلاح المحرك وناقل الحركة والتعليق والفرامل والكهرباء.",
     },
     "parts-procurement": {
       title: "قطع الغيار والتوريد",
-      summary: "توفير قطع غيار أصلية وOEM.",
+      summary: "توفير قطع الغيار وتسعيرها بعد موافقتك.",
     },
     "body-paint": {
       title: "الصناعة والطلاء",
@@ -392,19 +392,19 @@ const ar: typeof en = {
     heroSubtitle1: "تشخيص. برمجة. إصلاح. قطع غيار. صناعة وطلاء والمزيد.",
     heroSubtitle2: "كل ذلك تحت سقف واحد.",
     features: [
-      { title: "فنيون خبراء", sub: "مدرَّبون من المصنع" },
-      { title: "أحدث التقنيات", sub: "تشخيص بمستوى الوكالة" },
+      { title: "الفحص أولاً", sub: "التشخيص قبل عرض السعر" },
+      { title: "بموافقتك", sub: "لا شيء دون موافقتك" },
       { title: "جميع الماركات الفاخرة", sub: "مرآب واحد. حلول لا حدود لها." },
     ],
     aboutEyebrow: "عن SHWURX",
-    aboutTitle1: "مبنيّ على الخبرة.",
-    aboutTitle2: "مدفوع بالشغف.",
+    aboutTitle1: "نفحص. نشرح.",
+    aboutTitle2: "ثم نُصلح.",
     aboutBody:
-      "{company} مركز سيارات حديث ومستقل متخصص في المركبات الفاخرة والراقية. نجمع بين قدرات بمستوى الوكالة وتجربة شخصية تركّز على العميل.",
+      "{company} مركز سيارات حديث ومستقل متخصص في المركبات الفاخرة والراقية. نفحص أولاً، ونشرح ما نجده، ونقدّم عرض السعر قبل بدء أي عمل.",
     aboutPoints: [
-      "متخصصون في الم��ركات الفا��رة",
+      "متخصصون في الماركات الفاخرة",
       "تشخيص وبرمجة متقدمة",
-      "فني��ن مهرة ومعتمدون",
+      "عرض سعر مكتوب قبل العمل",
       "عملية وأسعار شفافة",
       "العميل أولاً",
     ],
@@ -427,7 +427,7 @@ const ar: typeof en = {
   servicesPage: {
     title: "خدماتنا",
     intro:
-      "ورشة واحدة موثوقة لكل ما تحتاجه سيارتك — ينفّذها فنيون متخصصون باستخدام قطع غيار أصلية، مع عروض أسعار شفافة توافق عليها قبل بدء أي عمل.",
+      "ورشة واحدة لكل ما تحتاجه سيارتك، تبدأ بالفحص ثم عرض سعر واضح توافق عليه قبل بدء أي عمل.",
     notSureTitle: "لست متأكداً مما تحتاجه؟",
     notSureBody: "احجز زيارة وسيقوم مستشارونا بتشخيص المشكلة وشرح الخيارات لك — دون أي ضغط.",
   },
@@ -440,15 +440,15 @@ const ar: typeof en = {
     published: "نُشر في",
   },
   aboutPage: {
-    title: "مبنيّ على الثقة والحرفية",
+    title: "عناية شفافة ودقيقة بسيارتك",
     body1:
-      "تأسس {company} على قناعة بسيطة: العناية بسيارة أحدهم يجب أن تكون شفا��ة ودقيقة وخالية من التوتر تماماً. منذ لحظة استلام مركبتك، ترى بالضبط ما يجري وتوافق على كل خطوة.",
+      "تأسس {company} على قناعة بسيطة: العناية بسيارة أحدهم يجب أن تكون شفافة ودقيقة وخالية من التوتر تماماً. منذ لحظة استلام مركبتك، ترى بالضبط ما يجري وتوافق على كل خطوة.",
     body2:
-      "يجلب فنيونا المتخصصون خبرة بمستوى الوكالة إلى كل مهمة، مدعومة بتشخيص سليم وقطع غيار أصلية — لتغادر سيارتك بالحالة التي تستحقها.",
+      "تبدأ كل مهمة بتشخيص سليم. نشرح السبب، ونتفق معك على خطة الإصلاح، ونبقيك على اطلاع حتى تجهز السيارة.",
     stats: [
-      { value: "خبراء", label: "فنيون متخصصون" },
-      { value: "أصلية", label: "قطع غيار وعمل آمن للضمان" },
-      { value: "مباشر", label: "تتبع الإصلاح لحظياً" },
+      { value: "الفحص أولاً", label: "نشخّص قبل أن نقدّم عرض السعر" },
+      { value: "بموافقتك", label: "لا أعمال إضافية دون موافقتك" },
+      { value: "على اطلاع", label: "تحديثات مع تقدّم العمل" },
     ],
     bookWithUs: "احجز معنا",
   },

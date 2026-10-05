@@ -55,7 +55,9 @@ export function LanguageToggle() {
         EN
       </Segment>
       <Segment active={lang === "ar"} onClick={set("ar")} label={dict.controls.arabic}>
-        عربي
+        <span lang="ar" style={{ fontFamily: "var(--font-arabic), system-ui, sans-serif" }}>
+          عربي
+        </span>
       </Segment>
     </Group>
   )

@@ -19,17 +19,20 @@ export function TrackingGate({
   firstParty,
   thirdParty,
   tagMode,
+  metaPixel = false,
 }: {
   firstParty: boolean
   thirdParty: boolean
   tagMode: "gtm" | "ga4" | "none"
+  /** a Meta Pixel is injected; it is a loaded tag even when no GTM/GA4 is set */
+  metaPixel?: boolean
 }) {
   // Assigned during render so child effects (which run first) already see it.
   if (typeof window !== "undefined") {
     window.__shwurxTrack = firstParty
     window.__shwurxThirdParty = thirdParty
     window.__shwurxTagMode = thirdParty ? tagMode : "none"
-    if (thirdParty && tagMode !== "none") window.__shwurxTagsLoaded = true
+    if (thirdParty && (tagMode !== "none" || metaPixel)) window.__shwurxTagsLoaded = true
   }
   const pathname = usePathname()
 

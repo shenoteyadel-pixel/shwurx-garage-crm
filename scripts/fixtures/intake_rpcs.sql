@@ -64,7 +64,22 @@ begin
 end; $function$;
 
 -- Intended rehearsal grants (unverified against production, see note above).
-REVOKE ALL ON FUNCTION public.submit_lead(text,text,text,text,text,text,jsonb) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.submit_appointment(text,text,text,text,text,text,text,text,date,text,text,text,jsonb) FROM PUBLIC;
+-- The app calls these RPCs only from server routes with the service-role client,
+-- so the intended ACL is service_role only. Supabase's default privileges grant
+-- EXECUTE to anon and authenticated explicitly, so REVOKE ... FROM PUBLIC alone
+-- leaves both able to call them; revoke them by name too.
+-- This fixture is for local rehearsal only. Do NOT apply it to production
+-- without reviewing the live grants first (see the verification query below).
+REVOKE ALL ON FUNCTION public.submit_lead(text,text,text,text,text,text,jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.submit_appointment(text,text,text,text,text,text,text,text,date,text,text,text,jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.submit_lead(text,text,text,text,text,text,jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.submit_appointment(text,text,text,text,text,text,text,text,date,text,text,text,jsonb) TO service_role;
+
+-- ACL verification (read-only). Expected after this fixture: only service_role
+-- (plus the owner) has EXECUTE; anon and authenticated must both be false.
+-- SELECT p.proname,
+--        has_function_privilege('anon', p.oid, 'EXECUTE')          AS anon_exec,
+--        has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_exec,
+--        has_function_privilege('service_role', p.oid, 'EXECUTE')  AS service_exec
+--   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--  WHERE n.nspname = 'public' AND p.proname IN ('submit_lead', 'submit_appointment');

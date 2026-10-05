@@ -100,7 +100,7 @@ export function EnquirySection({
               nextSteps={pick(f.nextSteps, lang)}
               brands={doc.brands
                 .filter((x) => x.visible)
-                .map((x) => ({ slug: x.slug, name: pick(x.name, lang), models: x.models.map((mo) => mo.name) }))}
+                .map((x) => ({ slug: x.slug, name: pick(x.name, lang), models: x.models.map((mo) => mo.name), serviceSlugs: x.serviceSlugs }))}
               services={doc.services.filter((x) => x.visible).map((x) => ({ slug: x.slug, name: pick(x.name, lang) }))}
               defaultBrand={brand?.visible ? brand.slug : null}
               defaultService={service?.visible ? service.slug : null}

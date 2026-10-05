@@ -24,7 +24,8 @@ declare global {
   }
 }
 
-const ATTR_KEY = "shwurx_attr_v2"
+const FIRST_KEY = "shwurx_touch_first_v3"
+const LATEST_KEY = "shwurx_touch_latest_v3"
 
 export interface Attribution {
   landingPath: string | null
@@ -62,24 +63,62 @@ function safePath(p: string): string {
   return isPublicSitePath(p) ? p.slice(0, 200) : "/"
 }
 
-/**
- * First-touch attribution for this browser session. Captured on the first
- * public page view; later UTM-tagged landings replace it (new campaign click).
- */
-export function captureAttribution(): Attribution {
-  const empty: Attribution = {
-    landingPath: null,
-    referrer: null,
-    utm_source: null,
-    utm_medium: null,
-    utm_campaign: null,
-    utm_content: null,
-    utm_term: null,
-    gclid: null,
-    gbraid: null,
-    wbraid: null,
-  }
+export interface TouchAttribution {
+  /** set once on the first public landing; never overwritten */
+  first: Attribution
+  /** replaced on every later campaign landing; equals first until then */
+  latest: Attribution
+}
+
+const EMPTY: Attribution = {
+  landingPath: null,
+  referrer: null,
+  utm_source: null,
+  utm_medium: null,
+  utm_campaign: null,
+  utm_content: null,
+  utm_term: null,
+  gclid: null,
+  gbraid: null,
+  wbraid: null,
+}
+
+function readTouch(store: Storage | null, key: string): Attribution | null {
   try {
+    const v = JSON.parse(store?.getItem(key) || "null") as Attribution | null
+    return v && typeof v === "object" ? v : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Records attribution for this page view. First touch is persisted once (across
+ * visits) and is immutable; latest touch moves only on a new campaign landing.
+ */
+export function captureAttribution(): TouchAttribution {
+  try {
+    const fresh = currentTouch()
+    const isCampaign = !!(fresh.utm_source || fresh.utm_campaign || fresh.gclid || fresh.gbraid || fresh.wbraid)
+    const store = markerStore()
+    let first = readTouch(store, FIRST_KEY)
+    if (!first) {
+      first = fresh
+      store?.setItem(FIRST_KEY, JSON.stringify(first))
+    }
+    let latest = readTouch(store, LATEST_KEY)
+    if (!latest || isCampaign) {
+      latest = fresh
+      store?.setItem(LATEST_KEY, JSON.stringify(latest))
+    }
+    return { first, latest }
+  } catch {
+    return { first: EMPTY, latest: EMPTY }
+  }
+}
+
+function currentTouch(): Attribution {
+  {
     const params = new URLSearchParams(window.location.search)
     const fresh: Attribution = {
       landingPath: safePath(window.location.pathname),
@@ -93,25 +132,15 @@ export function captureAttribution(): Attribution {
       gbraid: clip(params.get("gbraid"), 200),
       wbraid: clip(params.get("wbraid"), 200),
     }
-    const isCampaign = !!(fresh.utm_source || fresh.utm_campaign || fresh.gclid || fresh.gbraid || fresh.wbraid)
-    const stored = JSON.parse(sessionStorage.getItem(ATTR_KEY) || "null") as Attribution | null
-    if (!stored || isCampaign) {
-      sessionStorage.setItem(ATTR_KEY, JSON.stringify(fresh))
-      return fresh
-    }
-    return stored
-  } catch {
-    return empty
+    return fresh
   }
 }
 
-export function getAttribution(): Attribution {
-  try {
-    const stored = JSON.parse(sessionStorage.getItem(ATTR_KEY) || "null") as Attribution | null
-    return stored ?? captureAttribution()
-  } catch {
-    return captureAttribution()
-  }
+export function getAttribution(): TouchAttribution {
+  const store = markerStore()
+  const first = readTouch(store, FIRST_KEY)
+  const latest = readTouch(store, LATEST_KEY)
+  return first && latest ? { first, latest } : captureAttribution()
 }
 
 function device(): string {
@@ -130,7 +159,7 @@ export function track(eventType: string, metadata: Record<string, unknown> = {})
   try {
     if (typeof window === "undefined" || window.__shwurxTrack !== true) return
     if (!isPublicSitePath(window.location.pathname)) return
-    const attr = getAttribution()
+    const attr = getAttribution().latest
     const body = JSON.stringify({
       eventType,
       sessionId: sessionId(),
@@ -180,19 +209,28 @@ export function emitConversion(leadId: string, context: { form: string; brand?: 
     }
     if (window.__shwurxThirdParty !== true) return
     const key = `shwurx_conv3_${leadId}`
-    if (store?.getItem(key)) return
+    if (store?.getItem(key) || inFlight.has(key)) return
+    inFlight.add(key)
     dispatchThirdParty(key, context, 0)
   } catch {
     /* best-effort */
   }
 }
 
+/** Conversions waiting for a provider to become ready, keyed by durable lead id. */
+const inFlight = new Set<string>()
+
 /**
  * Sends generate_lead to exactly one provider, chosen by configuration (never
  * by whichever global happens to exist). Waits for the tag to be ready and only
- * marks the conversion as sent once a provider has accepted it.
+ * marks the conversion as sent once a provider has accepted it. Every attempt
+ * rechecks the durable marker, so another tab/caller that already sent it wins.
  */
 function dispatchThirdParty(key: string, context: { form: string; brand?: string | null; service?: string | null }, attempt: number) {
+  if (markerStore()?.getItem(key)) {
+    inFlight.delete(key)
+    return
+  }
   const mode = window.__shwurxTagMode ?? "none"
   let accepted = false
   if (mode === "gtm" && Array.isArray(window.dataLayer)) {
@@ -205,11 +243,15 @@ function dispatchThirdParty(key: string, context: { form: string; brand?: string
   }
   if (accepted) {
     markerStore()?.setItem(key, "1")
+    inFlight.delete(key)
     return
   }
   if (mode !== "none" && attempt < 20) {
     window.setTimeout(() => dispatchThirdParty(key, context, attempt + 1), 500)
+    return
   }
+  // Gave up; a later emitConversion (e.g. after reload) may try again.
+  inFlight.delete(key)
 }
 
 /** "received" always carries the persisted record id; "dry_run" never does. */

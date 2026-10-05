@@ -1,4 +1,4 @@
-import { createPublicClient } from "@/lib/supabase/public"
+import { createServiceClient } from "@/lib/supabase/server"
 import { preflight, jsonWithCors } from "@/lib/public-cors"
 import { notifyByPermission } from "@/lib/actions-notifications"
 import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     // Previews validate but never create production leads or staff alerts.
     if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
 
-    const supabase = createPublicClient()
+    const supabase = createServiceClient()
     const { data, error } = await supabase.rpc("submit_lead", {
       p_name: name || null,
       p_phone: phone || null,

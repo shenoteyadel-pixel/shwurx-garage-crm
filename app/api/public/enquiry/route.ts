@@ -1,5 +1,6 @@
-import { createPublicClient } from "@/lib/supabase/public"
 import { createServiceClient } from "@/lib/supabase/server"
+import { resolveEnquiryContext } from "@/lib/website/intake-context"
+import { validateVehicleYear } from "@/lib/website/intake-validate"
 import { preflight, jsonWithCors } from "@/lib/public-cors"
 import { notifyByPermission } from "@/lib/actions-notifications"
 import { getPublishedDocumentStrict } from "@/lib/website/store"
@@ -23,7 +24,6 @@ type Outcome = "received" | "duplicate" | "dry_run" | "invalid" | "rejected" | "
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SLUG = /^[a-z0-9-]{1,60}$/
 const MIN_FILL_MS = 2500
-export const MIN_VEHICLE_YEAR = 2016
 
 function str(v: unknown, max: number): string {
   // eslint-disable-next-line no-control-regex
@@ -116,10 +116,14 @@ export async function POST(request: Request) {
     const brandRaw = str(body.brand, 60)
     const serviceRaw = str(body.service, 60)
 
-    // The form id must name a real, published form context (never a free label).
-    const formRaw = body.formId === undefined || body.formId === null ? "enquiry" : body.formId
-    const formId = typeof formRaw === "string" && SLUG.test(formRaw) && formRaw in doc.forms ? formRaw : null
-    if (!formId) errors.form = "unknown"
+    // Configured form key and page context are separate; the context must be a real published page.
+    const ctx = resolveEnquiryContext(doc, body)
+    if (!ctx.ok) {
+      if (ctx.reason === "disabled") return reply(request, "unavailable", 403)
+      errors[ctx.field] = "unknown"
+    }
+    const formKey = ctx.ok ? ctx.formKey : null
+    const pageContext = ctx.ok ? ctx.context.id : null
 
     const brand = brandRaw ? doc.brands.find((b) => b.slug === brandRaw && b.visible) : undefined
     const service = serviceRaw ? doc.services.find((s) => s.slug === serviceRaw && s.visible) : undefined
@@ -132,18 +136,9 @@ export async function POST(request: Request) {
     if (phoneDigits.length < 7 || phoneDigits.length > 15) errors.phone = "invalid"
 
     // Validate the RAW year before any normalization so "20160" is rejected, not truncated.
-    let year: number | null = null
-    const yearInput = body.year
-    if (yearInput !== undefined && yearInput !== null && yearInput !== "") {
-      const rawText = typeof yearInput === "number" ? String(yearInput) : typeof yearInput === "string" ? yearInput.trim() : null
-      const maxYear = new Date().getFullYear() + 1
-      if (rawText === null || !/^\d{4}$/.test(rawText)) {
-        errors.year = "invalid"
-      } else {
-        year = Number(rawText)
-        if (year < MIN_VEHICLE_YEAR || year > maxYear) errors.year = "out_of_range"
-      }
-    }
+    const yearCheck = validateVehicleYear(body.year)
+    const year = yearCheck.ok ? yearCheck.year : null
+    if (!yearCheck.ok) errors.year = yearCheck.error
     // A known service gives enough context; otherwise ask for a model or details.
     if (!service && !model && details.length < 5) errors.details = "required"
     if (Object.keys(errors).length) return reply(request, "invalid", 400, { fields: errors })
@@ -170,7 +165,8 @@ export async function POST(request: Request) {
     const metadata = {
       kind: "website_enquiry",
       submission_id: submissionId,
-      form_id: formId,
+      form_id: formKey,
+      page_context: pageContext,
       locale,
       phone_digits: phoneDigits,
       brand_slug: brand?.slug ?? null,
@@ -194,7 +190,8 @@ export async function POST(request: Request) {
       .filter(Boolean)
       .join("\n")
 
-    const { data, error } = await createPublicClient().rpc("submit_lead", {
+    // Server-only service-role call: matches the service_role-only EXECUTE contract.
+    const { data, error } = await svc.rpc("submit_lead", {
       p_name: name,
       p_phone: phone,
       p_email: null,

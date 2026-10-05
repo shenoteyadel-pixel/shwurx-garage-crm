@@ -61,10 +61,50 @@ function isPublicPath(path: string): boolean {
 // default, so Node globals and heavier deps (@supabase/ssr) are fully supported.
 // Public website pages that exist in both languages. English is unprefixed;
 // Arabic lives under /ar and is rewritten to the same page with a locale header.
-function withLocale(request: NextRequest, locale: "en" | "ar") {
+const LOCALE_PROOF = "x-site-locale-proof"
+
+function localeSecret(): string | null {
+  return process.env.SITE_LOCALE_SECRET || process.env.SUPABASE_JWT_SECRET || null
+}
+
+async function signLocale(value: string): Promise<string | null> {
+  const secret = localeSecret()
+  if (!secret) return null
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`site-locale:${value}`))
+  return Buffer.from(mac).toString("base64url")
+}
+
+/**
+ * When Next resolves a locale rewrite as a separate origin it re-requests the
+ * target path, so this proxy runs again on the unprefixed path. The signed proof
+ * lets that second pass keep Arabic; any client-supplied locale headers are discarded.
+ */
+async function reenteredArabicPath(request: NextRequest): Promise<string | null> {
+  const proof = request.headers.get(LOCALE_PROOF)
+  const original = request.headers.get("x-site-path")
+  if (!proof || !original || request.headers.get("x-site-locale") !== "ar") return null
+  const expected = await signLocale(`ar:${original}:${request.nextUrl.pathname}`)
+  return expected && expected === proof ? original : null
+}
+
+/** CRM requests: language comes from the saved cookie, never from client-sent site headers. */
+function crmNext(request: NextRequest) {
   const headers = new Headers(request.headers)
+  // Next's request override does not drop removed keys, so overwrite with inert values.
+  for (const h of ["x-site-locale", "x-site-path", LOCALE_PROOF]) headers.set(h, "")
+  return NextResponse.next({ request: { headers } })
+}
+
+async function withLocale(request: NextRequest, locale: "en" | "ar", originalPath = request.nextUrl.pathname, targetPath?: string) {
+  const headers = new Headers(request.headers)
+  headers.set(LOCALE_PROOF, "")
   headers.set("x-site-locale", locale)
-  headers.set("x-site-path", request.nextUrl.pathname)
+  headers.set("x-site-path", originalPath)
+  if (locale === "ar" && targetPath) {
+    const proof = await signLocale(`ar:${originalPath}:${targetPath}`)
+    if (proof) headers.set(LOCALE_PROOF, proof)
+  }
   return headers
 }
 
@@ -87,10 +127,15 @@ export async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone()
     // Unknown /ar/* paths must 404 rather than expose CRM routes under /ar.
     url.pathname = isSitePath(rest) ? rest : "/pages/__not-found"
-    return siteHeaders(request, NextResponse.rewrite(url, { request: { headers: withLocale(request, "ar") } }))
+    const headers = await withLocale(request, "ar", path, url.pathname)
+    return siteHeaders(request, NextResponse.rewrite(url, { request: { headers } }))
   }
   if (isSitePath(path)) {
-    return siteHeaders(request, NextResponse.next({ request: { headers: withLocale(request, "en") } }))
+    const arabicOriginal = await reenteredArabicPath(request)
+    const headers = arabicOriginal
+      ? await withLocale(request, "ar", arabicOriginal, path)
+      : await withLocale(request, "en")
+    return siteHeaders(request, NextResponse.next({ request: { headers } }))
   }
 
   const isPublic = isPublicPath(path)
@@ -101,13 +146,13 @@ export async function proxy(request: NextRequest) {
   // If Supabase env is somehow unavailable, never crash the request.
   // Allow public routes through and send everything else to login.
   if (!supabaseUrl || !supabaseKey) {
-    if (isPublic) return NextResponse.next({ request })
+    if (isPublic) return crmNext(request)
     const url = request.nextUrl.clone()
     url.pathname = "/auth/login"
     return NextResponse.redirect(url)
   }
 
-  let supabaseResponse = NextResponse.next({ request })
+  let supabaseResponse = crmNext(request)
 
   try {
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
@@ -117,7 +162,7 @@ export async function proxy(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
+          supabaseResponse = crmNext(request)
           cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options))
         },
       },

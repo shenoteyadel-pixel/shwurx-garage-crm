@@ -4,6 +4,8 @@ import Link from "next/link"
 import { useId, useRef, useState } from "react"
 import { CheckCircle2, Loader2 } from "lucide-react"
 import { emitConversion, getAttribution, track } from "@/lib/site-track"
+import { buildEnquiryPayload } from "@/lib/website/intake-context"
+import { servicesForBrand, validateVehicleYear } from "@/lib/website/intake-validate"
 
 export interface EnquiryFormProps {
   lang: "en" | "ar"
@@ -16,7 +18,7 @@ export interface EnquiryFormProps {
   successTitle: string
   successBody: string
   nextSteps: string
-  brands: { slug: string; name: string; models: string[] }[]
+  brands: { slug: string; name: string; models: string[]; serviceSlugs: string[] }[]
   services: { slug: string; name: string }[]
   defaultBrand?: string | null
   defaultService?: string | null
@@ -76,13 +78,26 @@ export function EnquiryForm(p: EnquiryFormProps) {
   const started = useRef(false)
 
   const [brand, setBrand] = useState(p.defaultBrand ?? "")
-  const [service, setService] = useState(p.defaultService ?? "")
+  const [service, setService] = useState(() => {
+    const db = p.brands.find((b) => b.slug === p.defaultBrand)
+    const ds = p.defaultService ?? ""
+    return ds && db && !db.serviceSlugs.includes(ds) ? "" : ds
+  })
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [status, setStatus] = useState<"idle" | "sending" | "done">("idle")
   const [notice, setNotice] = useState<string | null>(null)
 
-  const models = p.brands.find((b) => b.slug === brand)?.models ?? []
+  const selectedBrand = p.brands.find((b) => b.slug === brand)
+  const models = selectedBrand?.models ?? []
+  const serviceOptions = servicesForBrand(p.services, selectedBrand)
+
+  function onBrandChange(next: string) {
+    setBrand(next)
+    const nb = p.brands.find((b) => b.slug === next)
+    // A service the newly chosen brand does not offer would be rejected by the server.
+    if (service && nb && !nb.serviceSlugs.includes(service)) setService("")
+  }
   const id = (f: string) => `${uid}-${f}`
 
   function onFirstInput() {
@@ -99,8 +114,7 @@ export function EnquiryForm(p: EnquiryFormProps) {
     const next: Partial<Record<Field, string>> = {}
     if (v("name").length < 2) next.name = m.required
     if (v("phone").replace(/\D/g, "").length < 7) next.phone = m.phone
-    const yr = Number(v("year"))
-    if (v("year") && (!/^\d{4}$/.test(v("year")) || yr < 2016 || yr > new Date().getFullYear() + 1)) next.year = m.year
+    if (!validateVehicleYear(v("year")).ok) next.year = m.year
     if (!v("model") && !v("details") && !service) next.details = m.details
     setErrors(next)
     setFormError(null)
@@ -120,22 +134,24 @@ export function EnquiryForm(p: EnquiryFormProps) {
       const res = await fetch("/api/public/enquiry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          submissionId: submissionId.current,
-          startedAt: startedAt.current,
-          website: v("website"),
-          formId: p.formId,
-          locale: p.lang,
-          name: v("name"),
-          phone: v("phone"),
-          brand: brand || null,
-          model: v("model"),
-          year: v("year"),
-          service: service || null,
-          details: v("details"),
-          submitPath: window.location.pathname,
-          attribution: getAttribution(),
-        }),
+        body: JSON.stringify(
+          buildEnquiryPayload({
+            submissionId: submissionId.current,
+            startedAt: startedAt.current,
+            honeypot: v("website"),
+            context: p.formId,
+            lang: p.lang,
+            name: v("name"),
+            phone: v("phone"),
+            brand: brand || null,
+            model: v("model"),
+            year: v("year"),
+            service: service || null,
+            details: v("details"),
+            submitPath: window.location.pathname,
+            attribution: getAttribution(),
+          }),
+        ),
       })
       const json = (await res.json().catch(() => ({}))) as {
         outcome?: string
@@ -260,7 +276,7 @@ export function EnquiryForm(p: EnquiryFormProps) {
           <label htmlFor={id("brand")} className={label}>
             {p.labels.brand}
           </label>
-          <select id={id("brand")} value={brand} onChange={(e) => setBrand(e.target.value)} className={input}>
+          <select id={id("brand")} value={brand} onChange={(e) => onBrandChange(e.target.value)} className={input}>
             <option value="">{m.other}</option>
             {p.brands.map((b) => (
               <option key={b.slug} value={b.slug}>
@@ -275,7 +291,7 @@ export function EnquiryForm(p: EnquiryFormProps) {
           </label>
           <select id={id("service")} value={service} onChange={(e) => setService(e.target.value)} className={input}>
             <option value="">{m.other}</option>
-            {p.services.map((s) => (
+            {serviceOptions.map((s) => (
               <option key={s.slug} value={s.slug}>
                 {s.name}
               </option>

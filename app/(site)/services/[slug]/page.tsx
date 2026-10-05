@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { EnquirySection } from "@/components/site/enquiry-section"
 import { notFound } from "next/navigation"
 import { ArrowRight } from "lucide-react"
 import { buildMetadata, localePath, pick, siteContext } from "@/lib/website/render"
@@ -30,13 +31,15 @@ export default async function ServicePage({ params }: { params: Promise<{ slug: 
   if (!service) notFound()
   const u = UI[lang]
   const brands = doc.brands.filter((b) => b.visible && b.serviceSlugs.includes(service.slug))
+  const { preview } = await siteContext()
 
   return (
+    <>
     <div className="mx-auto max-w-5xl px-4 py-16 lg:px-8">
       <h1 className="text-balance text-4xl font-bold tracking-tight md:text-5xl">{pick(service.name, lang)}</h1>
       <p className="mt-5 max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground">{pick(service.intro, lang)}</p>
       <Link
-        href={localePath(lang, `/appointment?service=${encodeURIComponent(service.slug)}`)}
+        href="#enquire"
         className="mt-8 inline-flex h-12 items-center gap-2 rounded-lg bg-primary px-6 text-base font-semibold text-primary-foreground hover:opacity-90"
       >
         {u.cta} <ArrowRight className="h-5 w-5 rtl:rotate-180" />
@@ -95,5 +98,7 @@ export default async function ServicePage({ params }: { params: Promise<{ slug: 
         </section>
       )}
     </div>
+    <EnquirySection doc={doc} lang={lang} preview={preview} formId={`service-${service.slug}`} serviceSlug={service.slug} />
+    </>
   )
 }

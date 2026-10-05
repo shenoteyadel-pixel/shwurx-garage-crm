@@ -1,17 +1,42 @@
 import type React from "react"
-import { getPublicSiteInfo } from "@/lib/site-info"
+import { getSettings } from "@/lib/settings"
 import { SiteHeader } from "@/components/site/site-header"
 import { SiteFooter } from "@/components/site/site-footer"
-import { PageViewTracker } from "@/components/site/page-view-tracker"
+import { TrackingGate } from "@/components/site/tracking-gate"
+import { PreviewBar } from "@/components/site/preview-bar"
+import { SiteTracking } from "@/components/site-tracking"
+import { localePath, pick, siteContext } from "@/lib/website/render"
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
-  const info = await getPublicSiteInfo()
+  const [{ doc, lang, preview, previewLabel }, settings] = await Promise.all([siteContext(), getSettings()])
+  // Master switch covers first- and third-party events; editors previewing never count.
+  const firstParty = !!settings.tracking_enabled && !preview
+  const ar = lang === "ar"
+
   return (
-    <div className="flex min-h-svh flex-col bg-background text-foreground">
-      <PageViewTracker />
-      <SiteHeader info={info} />
-      <main className="flex-1">{children}</main>
-      <SiteFooter info={info} />
+    <div className="flex min-h-svh flex-col bg-background text-foreground" lang={lang} dir={ar ? "rtl" : "ltr"}>
+      <SiteTracking disabled={preview} />
+      <TrackingGate firstParty={firstParty} thirdParty={firstParty} />
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
+      >
+        {ar ? "انتقل إلى المحتوى" : "Skip to content"}
+      </a>
+      {preview && <PreviewBar label={previewLabel ?? "Draft"} />}
+      <SiteHeader
+        nav={doc.nav.header.filter((l) => l.visible).map((l) => ({ href: localePath(lang, l.href), label: pick(l.label, lang) }))}
+        homeHref={localePath(lang, "/")}
+        enquireHref={localePath(lang, "/contact#enquire")}
+        enquireLabel={ar ? "أرسل استفساراً" : "Send an enquiry"}
+        trackHref="/track"
+        trackLabel={ar ? "تتبع سيارتك" : "Track your car"}
+        menuLabel={ar ? "القائمة" : "Menu"}
+      />
+      <main id="main" className="flex-1">
+        {children}
+      </main>
+      <SiteFooter doc={doc} lang={lang} />
     </div>
   )
 }

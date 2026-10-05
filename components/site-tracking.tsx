@@ -1,17 +1,19 @@
 import Script from "next/script"
 import { getSettings } from "@/lib/settings"
 
-// Injects the marketing / analytics tags configured on the Marketing page into
-// every page. Nothing renders unless tracking is enabled AND the specific ID is
-// set, so an empty configuration adds zero scripts. IDs are sanitized on save.
-export async function SiteTracking() {
+// Marketing / analytics tags configured on the Marketing page. Mounted only in
+// the public website layout — never on CRM, auth, portal or tokenized customer
+// routes. Verification is independent of the tracking switch. When GTM is set,
+// GA4 is expected to be configured inside GTM, so the direct gtag snippet is
+// skipped to avoid double-counting. IDs are sanitized on save.
+export async function SiteTracking({ disabled = false }: { disabled?: boolean }) {
   const s = await getSettings()
-  if (!s.tracking_enabled) return null
-
-  const ga4 = s.ga4_measurement_id
-  const gtm = s.gtm_container_id
-  const pixel = s.meta_pixel_id
   const verify = s.google_site_verification
+  const on = !!s.tracking_enabled && !disabled
+
+  const gtm = on ? s.gtm_container_id : null
+  const ga4 = on && !gtm ? s.ga4_measurement_id : null
+  const pixel = on ? s.meta_pixel_id : null
 
   return (
     <>

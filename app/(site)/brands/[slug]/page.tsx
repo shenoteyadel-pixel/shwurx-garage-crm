@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { EnquirySection } from "@/components/site/enquiry-section"
 import Image from "next/image"
 import { notFound } from "next/navigation"
 import { ArrowRight } from "lucide-react"
@@ -57,7 +58,8 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
     .filter((s): s is NonNullable<typeof s> => !!s)
   const gallery = brand.galleryIds.map((id) => publicMedia(doc, id)).filter((m): m is NonNullable<typeof m> => !!m)
   const cases = brand.caseStudies.filter((c) => c.documented)
-  const enquire = localePath(lang, `/appointment?brand=${encodeURIComponent(brand.slug)}`)
+  const { preview } = await siteContext()
+  const enquire = "#enquire"
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -70,6 +72,7 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
   }
 
   return (
+    <>
     <div className="mx-auto max-w-6xl px-4 py-16 lg:px-8">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <header className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
@@ -166,7 +169,7 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
             {cases.map((c) => (
               <article key={c.id} className="rounded-2xl border border-border bg-card p-6">
                 <h3 className="font-semibold">{pick(c.title, lang)}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pick(c.summary, lang)}</p>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pick(c.body, lang)}</p>
               </article>
             ))}
           </div>
@@ -180,5 +183,7 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
         </section>
       )}
     </div>
+    <EnquirySection doc={doc} lang={lang} preview={preview} formId={`brand-${brand.slug}`} brandSlug={brand.slug} />
+    </>
   )
 }

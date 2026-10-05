@@ -1,0 +1,26 @@
+import type { MetadataRoute } from "next"
+import { getPublishedDocument } from "@/lib/website/store"
+import { SITE_URL, localePath } from "@/lib/website/render"
+
+export const revalidate = 3600
+
+/** Published content only — drafts and noindex pages are never listed. */
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const doc = await getPublishedDocument()
+  const now = new Date()
+  const paths: string[] = ["/", "/brands", "/services", "/about", "/contact", "/blog", "/privacy"]
+
+  for (const b of doc.brands) if (b.visible && !b.seo.noindex) paths.push(`/brands/${b.slug}`)
+  for (const s of doc.services) if (s.visible && !s.seo.noindex) paths.push(`/services/${s.slug}`)
+  for (const p of doc.pages.custom) if (p.visible && !p.seo.noindex) paths.push(`/pages/${p.slug}`)
+
+  return paths.map((p) => ({
+    url: `${SITE_URL}${localePath("en", p)}`,
+    lastModified: now,
+    changeFrequency: "weekly",
+    priority: p === "/" ? 1 : p.split("/").length > 2 ? 0.7 : 0.8,
+    alternates: {
+      languages: { en: `${SITE_URL}${localePath("en", p)}`, ar: `${SITE_URL}${localePath("ar", p)}` },
+    },
+  }))
+}

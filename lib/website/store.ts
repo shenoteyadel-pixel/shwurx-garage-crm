@@ -103,6 +103,11 @@ const getPublished = cache(async (): Promise<{ doc: WebsiteDocument; source: Doc
   return { doc: await legacyDocument(), source: "seed", available }
 })
 
+/** Published (or legacy) document only — never a draft. Used by public intake. */
+export async function getPublishedDocument(): Promise<WebsiteDocument> {
+  return (await getPublished()).doc
+}
+
 /**
  * Document for public rendering. An editor with `website.manage` who has
  * switched on preview sees the draft (or a chosen revision); everyone else —

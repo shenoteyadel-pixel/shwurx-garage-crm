@@ -4,7 +4,19 @@ import { getServerLocale } from "@/lib/i18n/server"
 import { getRenderDocument } from "./store"
 import type { L10n, Lang, MediaAsset, SeoFields, WebsiteDocument } from "./types"
 
-export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://swurxauto.com").replace(/\/$/, "")
+// Canonical origin. Falls back to the production domain when the env var is
+// unset or mis-entered (e.g. the variable NAME pasted as its value).
+function resolveSiteUrl(): string {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+  if (raw) {
+    try {
+      const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`)
+      if (u.hostname.includes(".") && !/localhost/i.test(u.hostname)) return u.origin
+    } catch {}
+  }
+  return "https://swurxauto.com"
+}
+export const SITE_URL = resolveSiteUrl()
 
 /** Arabic falls back to English only when the Arabic field is empty. */
 export function pick(v: L10n | undefined, lang: Lang): string {

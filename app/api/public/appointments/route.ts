@@ -1,6 +1,10 @@
-import { createPublicClient } from "@/lib/supabase/public"
+import { createServiceClient } from "@/lib/supabase/server"
 import { preflight, jsonWithCors } from "@/lib/public-cors"
 import { notifyByPermission } from "@/lib/actions-notifications"
+import { findBySubmission, intakeMetadata, SUBMISSION_UUID } from "@/lib/website/intake-dedupe"
+import { conversionToken } from "@/lib/website/conversion-token"
+import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
+import { submitOnce } from "@/lib/website/submit-once"
 
 export const runtime = "nodejs"
 
@@ -15,15 +19,31 @@ export function OPTIONS(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}))
+    const raw = await readBoundedJson(request)
+    if (!raw) return jsonWithCors(request, { ok: false, outcome: "rejected", error: "bad_request" }, 413)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = raw as any
     const name = String(body?.name ?? "").trim()
     const phone = String(body?.phone ?? "").trim()
 
-    if (!name) return jsonWithCors(request, { ok: false, error: "missing_name" }, 400)
-    if (!phone) return jsonWithCors(request, { ok: false, error: "missing_phone" }, 400)
+    if (!name) return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_name" }, 400)
+    if (!phone) return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_phone" }, 400)
 
-    const supabase = createPublicClient()
-    const { data, error } = await supabase.rpc("submit_appointment", {
+    // Previews validate but never create bookings, staff alerts or emails.
+    if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
+
+    // Durable once-per-submission: pre-select fast path, plus 23505 recovery
+    // against appointments_submission_id_uniq (scripts/060) for simultaneous submits.
+    const submissionId = typeof body.submissionId === "string" && SUBMISSION_UUID.test(body.submissionId) ? body.submissionId : null
+    const persisted = (outcome: "received" | "duplicate", id: string) =>
+      jsonWithCors(request, { ok: true, outcome, id, conversionToken: conversionToken("appointment", id) })
+
+    const supabase = createServiceClient()
+    const result = await submitOnce({
+      submissionId,
+      find: (sid) => findBySubmission("appointments", sid),
+      insert: async () => {
+        const { data, error } = await supabase.rpc("submit_appointment", {
       p_name: name,
       p_phone: phone,
       p_email: body?.email ?? null,
@@ -36,11 +56,18 @@ export async function POST(request: Request) {
       p_preferred_time: body?.preferredTime ?? body?.preferred_time ?? null,
       p_notes: body?.notes ?? null,
       p_source: body?.source ?? "website",
-      p_metadata: body?.metadata && typeof body.metadata === "object" ? body.metadata : {},
+      p_metadata: intakeMetadata(body, "appointment", submissionId, ["logistics"]),
+        })
+        if (error) return { ok: false, code: error.code ?? null, error: "not_persisted" }
+        if (!data?.ok || !data?.id) return { ok: false, error: data?.error ?? "not_persisted" }
+        return { ok: true, id: String(data.id) }
+      },
     })
 
-    if (error) return jsonWithCors(request, { ok: false, error: error.message }, 400)
-    if (!data?.ok) return jsonWithCors(request, data, 400)
+    if (result.outcome === "error") return jsonWithCors(request, { ok: false, outcome: "error", error: result.error }, 400)
+    // A concurrent duplicate already alerted staff via the winning request.
+    if (result.outcome === "duplicate") return persisted("duplicate", result.id)
+    const data = { id: result.id }
 
     const logisticsType = String(body?.metadata?.logistics?.type ?? "dropoff")
     const typeLabel =
@@ -82,7 +109,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return jsonWithCors(request, data)
+    return persisted("received", String(data.id))
   } catch {
     return jsonWithCors(request, { ok: false, error: "server_error" }, 500)
   }

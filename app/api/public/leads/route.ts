@@ -1,6 +1,9 @@
-import { createPublicClient } from "@/lib/supabase/public"
+import { createServiceClient } from "@/lib/supabase/server"
 import { preflight, jsonWithCors } from "@/lib/public-cors"
 import { notifyByPermission } from "@/lib/actions-notifications"
+import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
+import { findBySubmission, intakeMetadata, SUBMISSION_UUID } from "@/lib/website/intake-dedupe"
+import { conversionToken } from "@/lib/website/conversion-token"
 
 export const runtime = "nodejs"
 
@@ -15,16 +18,29 @@ export function OPTIONS(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}))
+    const body = await readBoundedJson(request)
+    if (!body) return jsonWithCors(request, { ok: false, outcome: "rejected", error: "bad_request" }, 413)
     const name = String(body?.name ?? "").trim()
     const phone = String(body?.phone ?? "").trim()
     const email = String(body?.email ?? "").trim()
 
     if (!phone && !email) {
-      return jsonWithCors(request, { ok: false, error: "missing_contact" }, 400)
+      return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_contact" }, 400)
     }
 
-    const supabase = createPublicClient()
+    // Previews validate but never create production leads or staff alerts.
+    if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
+
+    // A retry of the same browser submission returns the same record, never a second lead.
+    const submissionId = typeof body.submissionId === "string" && SUBMISSION_UUID.test(body.submissionId) ? body.submissionId : null
+    const persisted = (outcome: "received" | "duplicate", id: string) =>
+      jsonWithCors(request, { ok: true, outcome, id, conversionToken: conversionToken("lead", id) })
+    if (submissionId) {
+      const existing = await findBySubmission("leads", submissionId)
+      if (existing) return persisted("duplicate", existing)
+    }
+
+    const supabase = createServiceClient()
     const { data, error } = await supabase.rpc("submit_lead", {
       p_name: name || null,
       p_phone: phone || null,
@@ -32,11 +48,16 @@ export async function POST(request: Request) {
       p_message: body?.message ?? null,
       p_service_interest: body?.serviceInterest ?? body?.service_interest ?? null,
       p_source: body?.source ?? "website",
-      p_metadata: body?.metadata && typeof body.metadata === "object" ? body.metadata : {},
+      p_metadata: intakeMetadata(body, "contact", submissionId, []),
     })
 
-    if (error) return jsonWithCors(request, { ok: false, error: error.message }, 400)
-    if (!data?.ok) return jsonWithCors(request, data, 400)
+    if (error || !data?.ok) {
+      // Lost a race on the unique submission index: the other request's row is the answer.
+      const raced = submissionId ? await findBySubmission("leads", submissionId) : null
+      if (raced) return persisted("duplicate", raced)
+    }
+    if (error) return jsonWithCors(request, { ok: false, outcome: "error", error: "not_persisted" }, 400)
+    if (!data?.ok || !data?.id) return jsonWithCors(request, { ok: false, outcome: "error", error: data?.error ?? "not_persisted" }, 400)
 
     try {
       await notifyByPermission("leads.manage", {
@@ -49,7 +70,7 @@ export async function POST(request: Request) {
       /* notification is best-effort */
     }
 
-    return jsonWithCors(request, data)
+    return persisted("received", String(data.id))
   } catch {
     return jsonWithCors(request, { ok: false, error: "server_error" }, 500)
   }

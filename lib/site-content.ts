@@ -20,18 +20,28 @@ export type SiteContentOverrides = {
 
 const EMPTY: SiteContentOverrides = { en: {}, ar: {}, images: {} }
 
+/**
+ * Once the website CMS is published, overrides come from the published
+ * revision (or the editor's preview); before that, from site_content.
+ */
 export const getSiteContentOverrides = cache(async (): Promise<SiteContentOverrides> => {
   try {
-    const svc = createServiceClient()
-    const { data } = await svc.from("site_content").select("en, ar, images").eq("id", 1).maybeSingle()
-    if (!data) return EMPTY
-    return {
-      en: (data.en as Record<string, unknown>) ?? {},
-      ar: (data.ar as Record<string, unknown>) ?? {},
-      images: (data.images as Record<string, string>) ?? {},
-    }
+    const { getRenderDocument } = await import("@/lib/website/store")
+    const { doc } = await getRenderDocument()
+    return { en: doc.strings.en, ar: doc.strings.ar, images: doc.images }
   } catch {
-    return EMPTY
+    try {
+      const svc = createServiceClient()
+      const { data } = await svc.from("site_content").select("en, ar, images").eq("id", 1).maybeSingle()
+      if (!data) return EMPTY
+      return {
+        en: (data.en as Record<string, unknown>) ?? {},
+        ar: (data.ar as Record<string, unknown>) ?? {},
+        images: (data.images as Record<string, string>) ?? {},
+      }
+    } catch {
+      return EMPTY
+    }
   }
 })
 

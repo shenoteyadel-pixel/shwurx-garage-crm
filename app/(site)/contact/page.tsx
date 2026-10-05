@@ -1,17 +1,20 @@
 import type { Metadata } from "next"
 import { Phone, Mail, MapPin, MessageCircle, Clock, ArrowUpRight } from "lucide-react"
 import { ContactForm } from "@/components/site/contact-form"
-import { getPublicSiteInfo } from "@/lib/site-info"
+import { publicSiteInfo } from "@/lib/site-info"
 import { getServerI18n } from "@/lib/i18n/server"
+import { buildMetadata, pick, siteContext } from "@/lib/website/render"
 
-export const metadata: Metadata = {
-  title: "Contact — SHWURX Auto Service Center",
-  description: "Get in touch with SHWURX Auto Service Center. Call, email, or message us on WhatsApp.",
+export async function generateMetadata(): Promise<Metadata> {
+  const { doc, lang, preview } = await siteContext()
+  return buildMetadata(doc, lang, "/contact", doc.pages.contact.seo, preview)
 }
 
 export default async function ContactPage() {
-  const [info, { dict }] = await Promise.all([getPublicSiteInfo(), getServerI18n()])
+  const [{ doc, lang }, { dict }] = await Promise.all([siteContext(), getServerI18n()])
+  const info = publicSiteInfo(doc, lang)
   const t = dict.contactPage
+  const page = doc.pages.contact
   const waNumber = (info.whatsapp || "").replace(/[^\d]/g, "")
   const mapSrc = info.address
     ? `https://www.google.com/maps?q=${encodeURIComponent(info.address)}&output=embed`
@@ -29,9 +32,9 @@ export default async function ContactPage() {
           <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary">
             {t.kicker}
           </span>
-          <h1 className="mt-5 text-balance text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">{t.title}</h1>
+          <h1 className="mt-5 text-balance text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">{pick(page.title, lang) || t.title}</h1>
           <p className="mt-4 max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground md:text-lg">
-            {t.intro}
+            {pick(page.intro, lang) || t.intro}
           </p>
         </div>
       </section>

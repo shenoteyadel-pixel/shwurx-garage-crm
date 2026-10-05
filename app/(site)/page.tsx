@@ -1,5 +1,7 @@
+import type React from "react"
 import type { Metadata } from "next"
 import Image from "next/image"
+import Link from "next/link"
 import {
   ArrowRight,
   UserCog,
@@ -8,312 +10,442 @@ import {
   Star,
   ClipboardCheck,
   HeartHandshake,
+  Wrench,
+  ScanSearch,
+  Car,
+  PaintBucket,
+  HardDrive,
+  MapPin,
+  type LucideIcon,
 } from "lucide-react"
-import { SITE_SERVICES } from "@/lib/site-services"
-import { getPublicSiteInfo } from "@/lib/site-info"
+import { publicSiteInfo } from "@/lib/site-info"
 import { getServerI18n } from "@/lib/i18n/server"
-import { getSiteContentOverrides, resolveImage } from "@/lib/site-content"
+import { resolveImage } from "@/lib/site-content"
 import { interpolate } from "@/lib/i18n/dictionaries"
 import { TrackLink } from "@/components/site/track-link"
+import { listLiveArticles } from "@/lib/blog"
+import { illustrativeStripMembers, isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
+import { IllustrativeStrip } from "@/components/site/team-grid"
+import { buildMetadata, localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
+import type { HomeSection, HomeSectionKey, ServiceKind, WebsiteDocument, Lang } from "@/lib/website/types"
 
-export const metadata: Metadata = {
-  title: "SHWURX Auto Service Center — Premium & Luxury Vehicle Specialists",
-  description:
-    "More than a garage — a complete solution. Diagnostics, programming, repair, parts, body & paint for premium and luxury vehicles. One garage. Limitless solutions.",
+export async function generateMetadata(): Promise<Metadata> {
+  const { doc, lang, preview } = await siteContext()
+  return buildMetadata(doc, lang, "/", doc.pages.home.seo, preview)
 }
 
 const HERO_ICONS = [UserCog, Cpu, BadgeCheck]
 const WALL_WORDS = ["DIAGNOSE", "REPAIR", "PROGRAM", "MAINTAIN", "PERFORM"]
 const ABOUT_ICONS = [Star, Cpu, BadgeCheck, ClipboardCheck, HeartHandshake]
 
-const VEHICLES = [
-  { label: "Sedan", img: "/vehicles/sedan.png" },
-  { label: "SUV", img: "/vehicles/suv.png" },
-  { label: "Coupe", img: "/vehicles/coupe.png" },
-  { label: "Convertible", img: "/vehicles/convertible.png" },
-  { label: "Sports Car", img: "/vehicles/sports.png" },
-  { label: "4x4", img: "/vehicles/fourbyfour.png" },
-  { label: "Electric / Hybrid", img: "/vehicles/electric.png" },
-] as const
+const SERVICE_ICONS: Record<ServiceKind, LucideIcon> = {
+  mechanical: Wrench,
+  diagnostics: ScanSearch,
+  bodywork: Car,
+  painting: PaintBucket,
+  programming_online: Cpu,
+  programming_offline: HardDrive,
+}
 
-const BRANDS = [
-  { name: "Mercedes-Benz", file: "mercedes" },
-  { name: "BMW", file: "bmw" },
-  { name: "Audi", file: "audi" },
-  { name: "Porsche", file: "porsche" },
-  { name: "Land Rover", file: "landrover" },
-  { name: "Range Rover", file: "landrover" },
-  { name: "Bentley", file: "bentley" },
-  { name: "Ferrari", file: "ferrari" },
-  { name: "Lamborghini", file: "lamborghini" },
-  { name: "Maserati", file: "maserati" },
-  { name: "Volkswagen", file: "volkswagen" },
-  { name: "Jaguar", file: "jaguar" },
-  { name: "Rolls-Royce", file: "rollsroyce" },
-  { name: "Aston Martin", file: "astonmartin" },
-  { name: "McLaren", file: "mclaren" },
-]
+/** Bundled marks for brands that have no approved logo in the media library. */
+const BUNDLED_LOGOS = new Set([
+  "astonmartin", "audi", "bentley", "bmw", "ferrari", "jaguar", "lamborghini",
+  "landrover", "maserati", "mclaren", "mercedes", "porsche", "rollsroyce", "volkswagen", "chevrolet", "bugatti",
+])
+
+/** Model families use their maker's mark. */
+const LOGO_ALIASES: Record<string, string> = { chevroletcorvette: "chevrolet", rangerover: "landrover" }
+
+function SectionHeader({ id, section, lang, fallback, href, linkLabel }: {
+  id: string
+  section: HomeSection | undefined
+  lang: Lang
+  fallback: string
+  href?: string
+  linkLabel?: string
+}) {
+  const heading = (section && pick(section.heading, lang)) || fallback
+  const intro = section ? pick(section.intro, lang) : ""
+  return (
+    <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
+      <div className="max-w-2xl">
+        <h2 id={id} className="text-balance text-2xl font-black uppercase tracking-tight md:text-3xl">{heading}</h2>
+        {intro && <p className="mt-3 text-pretty text-sm leading-relaxed text-muted-foreground">{intro}</p>}
+      </div>
+      {href && linkLabel && (
+        <Link href={href} className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary hover:underline">
+          {linkLabel} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
+        </Link>
+      )}
+    </div>
+  )
+}
+
+function brandLogo(doc: WebsiteDocument, lang: Lang, b: WebsiteDocument["brands"][number]) {
+  const m = publicMedia(doc, b.logoId)
+  if (m) return { url: m.url, alt: pick(m.alt, lang) || `${pick(b.name, lang)} logo`, bundled: m.url.startsWith("/brands/") }
+  const raw = b.slug.replace(/-benz$/, "").replace(/[^a-z]/g, "")
+  const key = LOGO_ALIASES[raw] ?? raw
+  return BUNDLED_LOGOS.has(key) ? { url: `/brands/${key}.svg`, alt: `${pick(b.name, lang)} logo`, bundled: true } : null
+}
 
 export default async function HomePage() {
-  const [info, { dict }, overrides] = await Promise.all([
-    getPublicSiteInfo(),
-    getServerI18n(),
-    getSiteContentOverrides(),
-  ])
+  const [{ doc, lang }, { dict }] = await Promise.all([siteContext(), getServerI18n()])
+  const visibleKeys = new Set(doc.pages.home.sections.filter((s) => s.visible).map((s) => s.key))
+  const posts = visibleKeys.has("blog")
+    ? (await listLiveArticles(lang)).slice(0, 3).map((a) => ({ id: a.id, slug: a.slug, title: a.content[lang].title, excerpt: a.content[lang].excerpt }))
+    : []
+  const info = publicSiteInfo(doc, lang)
   const t = dict.home
-  const heroImg = resolveImage(overrides.images, "home.hero", "/site/hero-porsche.png")
-  const aboutImg = resolveImage(overrides.images, "home.about", "/site/about-tech.png")
+  const home = doc.pages.home
+  const heroMedia = publicMedia(doc, home.heroImageId)
+  const heroImg = heroMedia?.url ?? null
+  const heroAlt = (heroMedia && pick(heroMedia.alt, lang)) || "Porsche parked in the SHWURX Auto Service Center workshop"
+  const aboutMedia = publicMedia(doc, doc.pages.about.imageId)
+  const aboutImg = aboutMedia?.url ?? resolveImage(doc.images, "home.about", "/site/about-tech.png")
+  const services = doc.services.filter((s) => s.visible)
+  // Every visible brand page, including model families such as Corvette and Range Rover.
+  const brands = doc.brands.filter((b) => b.visible)
+  const lp = (p: string) => localePath(lang, p)
+  const heroVisible = visibleKeys.has("hero")
+  const sec = (key: HomeSectionKey) => home.sections.find((s) => s.key === key)
+  const highlights = home.highlights.filter((h) => pick(h.title, lang))
+  const heroIllustrative = isIllustrativeMedia(doc, heroMedia?.id)
+  const heroCaption = heroIllustrative && heroMedia ? pick(heroMedia.caption, lang) : ""
+  const teamPublic = isTeamPagePublic(doc)
+  const teamMembers = teamPublic
+    ? doc.pages.team.members.filter((m) => !m.archived && isPublicTeamMember(m)).slice(0, 4)
+    : []
+  const teamIllustrative =
+    teamMembers.length === 0
+      ? illustrativeStripMembers(doc)
+          .map((m) => publicMedia(doc, m.photoId))
+          .filter((p): p is NonNullable<typeof p> => !!p)
+          .slice(0, 6)
+      : []
+  const ctas = [
+    { cta: home.primaryCta, label: "hero primary", primary: true },
+    { cta: home.secondaryCta, label: "hero secondary", primary: false },
+  ].filter((c) => pick(c.cta.label, lang) && c.cta.href)
 
-  return (
-    <>
-      {/* ============ HERO ============ */}
-      <section className="relative isolate overflow-hidden border-b border-border bg-background">
-        {/* Desktop hero image bleeding to the right edge */}
-        <div className="absolute inset-y-0 right-0 z-0 hidden w-[62%] lg:block">
-          <Image
-            src={heroImg || "/placeholder.svg"}
-            alt="Porsche parked in the SHWURX Auto Service Center workshop"
-            fill
-            priority
-            className="object-cover object-center"
-          />
+  const sections: Partial<Record<HomeSectionKey, React.ReactNode>> = {
+    hero: (
+      <section key="hero" className="relative isolate overflow-hidden border-b border-border bg-background">
+        {heroImg && (
+        <div className="absolute inset-y-0 right-0 z-0 hidden w-[62%] lg:block rtl:left-0 rtl:right-auto">
+          <Image src={heroImg} alt={heroAlt} fill priority sizes="62vw" className="object-cover object-center" />
           <div className="absolute inset-0 bg-gradient-to-r from-background via-background/45 to-transparent rtl:bg-gradient-to-l" />
-          <div className="absolute inset-y-0 right-8 hidden flex-col justify-center gap-2 text-right xl:flex">
+          <div className="absolute inset-y-0 right-8 hidden flex-col justify-center gap-2 text-right xl:flex" aria-hidden="true">
             {WALL_WORDS.map((w) => (
-              <span key={w} className="text-3xl font-black uppercase tracking-wide text-foreground/[0.07]">
-                {w}
-              </span>
+              <span key={w} className="text-3xl font-black uppercase tracking-wide text-foreground/[0.07]">{w}</span>
             ))}
           </div>
+          {heroCaption && (
+            <p className="absolute bottom-3 right-4 z-10 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground rtl:left-4 rtl:right-auto">
+              {heroCaption}
+            </p>
+          )}
         </div>
+        )}
 
         <div className="relative z-10 mx-auto max-w-7xl px-4 lg:px-8">
           <div className="grid items-center gap-8 lg:grid-cols-2">
             <div className="py-14 lg:py-28">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">
-                {t.heroEyebrow}
-              </p>
-              <h1 className="mt-5 text-balance text-4xl font-black uppercase leading-[0.98] tracking-tight sm:text-5xl lg:text-6xl">
-                {t.heroTitle1}
-                <br />
-                <span className="text-primary">{t.heroTitle2}</span>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">{pick(home.eyebrow, lang)}</p>
+              <h1 className="mt-5 text-balance text-4xl font-black leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl">
+                {pick(home.title, lang)}
               </h1>
-              <p className="mt-5 max-w-md text-pretty text-base leading-relaxed text-muted-foreground">
-                {t.heroSubtitle1}
-                <br className="hidden sm:block" /> {t.heroSubtitle2}
-              </p>
+              <p className="mt-5 max-w-md text-pretty text-base leading-relaxed text-muted-foreground">{pick(home.subtitle, lang)}</p>
 
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <TrackLink
-                  href="/appointment"
-                  label="Book a Service — hero"
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-7 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-                >
-                  {dict.cta.bookService} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
-                </TrackLink>
-                <TrackLink
-                  href="/contact"
-                  label="Get a Quote — hero"
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-border bg-card/60 px-7 text-sm font-semibold text-foreground backdrop-blur transition hover:border-primary/60 hover:bg-accent"
-                >
-                  {dict.cta.getQuote}
-                </TrackLink>
-              </div>
+              {ctas.length > 0 && (
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                  {ctas.map(({ cta, label, primary }) => (
+                    <TrackLink
+                      key={label}
+                      href={lp(cta.href)}
+                      label={`${pick(cta.label, "en")} — ${label}`}
+                      className={
+                        primary
+                          ? "inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-7 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+                          : "inline-flex h-12 items-center justify-center gap-2 rounded-md border border-border bg-card/60 px-7 text-sm font-semibold text-foreground backdrop-blur transition hover:border-primary/60 hover:bg-accent"
+                      }
+                    >
+                      {pick(cta.label, lang)}
+                      {primary && <ArrowRight className="h-4 w-4 rtl:rotate-180" />}
+                    </TrackLink>
+                  ))}
+                </div>
+              )}
 
-              <div className="mt-12 grid max-w-lg grid-cols-1 gap-6 sm:grid-cols-3">
-                {t.features.map((f, i) => {
-                  const Icon = HERO_ICONS[i]
-                  return (
-                    <div key={f.title} className="flex items-start gap-3">
-                      <Icon className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
-                      <div>
-                        <p className="text-sm font-bold leading-tight">{f.title}</p>
-                        <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{f.sub}</p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+              {highlights.length > 0 && (
+                <ul className="mt-12 grid max-w-lg grid-cols-1 gap-6 sm:grid-cols-3">
+                  {highlights.map((h, i) => {
+                    const Icon = HERO_ICONS[i] ?? BadgeCheck
+                    return (
+                      <li key={h.id} className="flex items-start gap-3">
+                        <Icon className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
+                        <div>
+                          <p className="text-sm font-bold leading-tight">{pick(h.title, lang)}</p>
+                          {pick(h.body, lang) && <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{pick(h.body, lang)}</p>}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
             </div>
 
-            {/* Mobile hero image */}
-            <div className="relative -mx-4 h-64 sm:h-80 lg:hidden">
-              <Image
-                src={heroImg || "/placeholder.svg"}
-                alt="Porsche parked in the SHWURX Auto Service Center workshop"
-                fill
-                priority
-                className="object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
-            </div>
+            {heroImg && (
+              <div className="relative -mx-4 h-64 sm:h-80 lg:hidden">
+                <Image src={heroImg} alt={heroAlt} fill priority sizes="100vw" className="object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+                {heroCaption && (
+                  <p className="absolute bottom-2 left-4 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground rtl:left-auto rtl:right-4">
+                    {heroCaption}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </section>
+    ),
 
-      {/* ============ SERVICES ============ */}
-      <section className="relative z-20 bg-background">
-        <div className="mx-auto max-w-7xl px-4 lg:px-8">
-          <div className="-mt-10 grid grid-cols-2 gap-4 md:grid-cols-3 lg:-mt-16 lg:grid-cols-6">
-            {SITE_SERVICES.map((s) => {
-              const st = dict.services[s.slug as keyof typeof dict.services]
+    services: services.length > 0 && (
+      <section key="services" className="bg-background" aria-labelledby="home-services">
+        <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
+          <SectionHeader
+            id="home-services"
+            section={sec("services")}
+            lang={lang}
+            fallback={pick(doc.pages.servicesIndex.title, lang)}
+            href={lp("/services")}
+            linkLabel={dict.cta.learnMore}
+          />
+          <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+            {services.map((s) => {
+              const Icon = SERVICE_ICONS[s.kind] ?? Wrench
               return (
-                <div
-                  key={s.slug}
-                  className="group rounded-lg border border-border bg-card p-5 transition hover:border-primary/50 hover:bg-card/80"
+                <Link
+                  key={s.id}
+                  href={lp(`/services/${s.slug}`)}
+                  className="group rounded-lg border border-border bg-card p-5 transition hover:border-primary/50"
                 >
-                  <s.icon className="h-7 w-7 text-foreground transition group-hover:text-primary" strokeWidth={1.5} />
-                  <h3 className="mt-4 text-sm font-bold leading-tight">{st.title}</h3>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{st.summary}</p>
-                </div>
+                  <Icon className="h-7 w-7 text-foreground transition group-hover:text-primary" strokeWidth={1.5} />
+                  <h3 className="mt-4 text-sm font-bold leading-tight">{pick(s.name, lang)}</h3>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{pick(s.summary, lang)}</p>
+                </Link>
               )
             })}
           </div>
         </div>
       </section>
+    ),
 
-      {/* ============ ABOUT ============ */}
-      <section className="mx-auto max-w-7xl px-4 py-20 lg:px-8 lg:py-24">
-        <div className="grid items-center gap-10 lg:grid-cols-3">
+    process: doc.pages.process.length > 0 && (
+      <section key="process" className="border-y border-border bg-card/40" aria-labelledby="home-process">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 lg:grid-cols-3 lg:px-8">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">{t.aboutEyebrow}</p>
-            <h2 className="mt-4 text-balance text-3xl font-black uppercase leading-[1.02] tracking-tight md:text-4xl">
-              {t.aboutTitle1}
-              <br />
-              <span className="text-primary">{t.aboutTitle2}</span>
+            <h2 id="home-process" className="mt-4 text-balance text-3xl font-black uppercase leading-[1.02] tracking-tight">
+              {pick(sec("process")?.heading, lang) || (
+                <>
+                  {t.aboutTitle1} <span className="text-primary">{t.aboutTitle2}</span>
+                </>
+              )}
             </h2>
             <p className="mt-5 text-pretty text-sm leading-relaxed text-muted-foreground">
-              {interpolate(t.aboutBody, { company: info.companyName })}
+              {pick(sec("process")?.intro, lang) || interpolate(t.aboutBody, { company: info.companyName })}
             </p>
-            <TrackLink
-              href="/about"
-              label="Learn More — about"
-              className="mt-7 inline-flex h-11 items-center gap-2 rounded-md border border-border px-5 text-sm font-semibold text-foreground transition hover:border-primary/60 hover:bg-accent"
-            >
-              {dict.cta.learnMore} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
-            </TrackLink>
+            <div className="relative mt-6 h-48 overflow-hidden rounded-xl border border-border">
+              <Image
+                src={aboutImg || "/placeholder.svg"}
+                alt={(aboutMedia && pick(aboutMedia.alt, lang)) || "SHWURX technician at work"}
+                fill
+                sizes="(min-width: 1024px) 33vw, 100vw"
+                className="object-cover"
+              />
+            </div>
           </div>
-
-          <div className="relative h-64 overflow-hidden rounded-xl border border-border lg:h-80">
-            <Image
-              src={aboutImg || "/placeholder.svg"}
-              alt="SHWURX technician running diagnostics on a luxury vehicle"
-              fill
-              className="object-cover"
-            />
-          </div>
-
-          <ul className="flex flex-col gap-4">
-            {t.aboutPoints.map((text, i) => {
-              const Icon = ABOUT_ICONS[i]
+          <ol className="grid gap-4 sm:grid-cols-2 lg:col-span-2">
+            {doc.pages.process.map((p, i) => {
+              const Icon = ABOUT_ICONS[i] ?? ClipboardCheck
               return (
-                <li key={text} className="flex items-center gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card">
-                    <Icon className="h-4 w-4 text-primary" />
+                <li key={p.id} className="flex gap-4 rounded-xl border border-border bg-background p-5">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-card">
+                    <Icon className="h-5 w-5 text-primary" />
                   </span>
-                  <span className="text-sm font-medium">{text}</span>
+                  <div>
+                    <h3 className="text-sm font-bold">{pick(p.title, lang)}</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{pick(p.body, lang)}</p>
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
+        </div>
+      </section>
+    ),
+
+    brands: brands.length > 0 && (
+      <section key="brands" id="brands" className="scroll-mt-24 bg-muted dark:bg-[radial-gradient(ellipse_at_top,oklch(0.2_0_0),oklch(0.11_0_0))]">
+        <div className="mx-auto max-w-7xl px-4 py-20 lg:px-8">
+          <div className="text-center">
+            <h2 className="text-balance text-2xl font-black uppercase tracking-tight md:text-3xl">
+              {pick(sec("brands")?.heading, lang) || pick(doc.pages.brandsIndex.title, lang)}
+            </h2>
+            <p className="mx-auto mt-3 max-w-2xl text-pretty text-sm text-muted-foreground">
+              {pick(sec("brands")?.intro, lang) || pick(doc.pages.brandsIndex.intro, lang)}
+            </p>
+          </div>
+          <div className="mx-auto mt-12 grid max-w-6xl grid-cols-3 justify-items-center gap-x-6 gap-y-10 sm:grid-cols-5 lg:grid-cols-8">
+            {brands.map((b) => {
+              const logo = brandLogo(doc, lang, b)
+              return (
+                <Link key={b.id} href={lp(`/brands/${b.slug}`)} className="group flex w-full flex-col items-center gap-2">
+                  {logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={logo.url}
+                      alt={logo.alt}
+                      className={`h-10 w-16 object-contain opacity-80 transition group-hover:opacity-100 ${logo.bundled ? "brightness-0 dark:invert" : ""}`}
+                    />
+                  ) : (
+                    <span aria-hidden="true" className="flex h-10 w-10 items-center justify-center rounded-full border border-border text-xs font-bold">
+                      {pick(b.name, lang).slice(0, 1)}
+                    </span>
+                  )}
+                  <span className="text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground group-hover:text-foreground">
+                    {pick(b.name, lang)}
+                  </span>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+    ),
+
+    team: teamMembers.length === 0 && teamIllustrative.length > 0 ? (
+      <section key="team" className="bg-background" aria-labelledby="home-team">
+        <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
+          <SectionHeader
+            id="home-team"
+            section={sec("team")}
+            lang={lang}
+            fallback={pick(doc.pages.team.title, lang)}
+            href={lp("/team")}
+            linkLabel={dict.cta.learnMore}
+          />
+          <IllustrativeStrip photos={teamIllustrative} lang={lang} compact />
+        </div>
+      </section>
+    ) : teamMembers.length > 0 && (
+      <section key="team" className="bg-background" aria-labelledby="home-team">
+        <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
+          <SectionHeader
+            id="home-team"
+            section={sec("team")}
+            lang={lang}
+            fallback={pick(doc.pages.team.title, lang)}
+            href={lp("/team")}
+            linkLabel={dict.cta.learnMore}
+          />
+          <ul className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {teamMembers.map((m) => {
+              const photo = isIllustrativeMedia(doc, m.photoId) ? null : publicMedia(doc, m.photoId)
+              return (
+                <li key={m.id} className="overflow-hidden rounded-lg border border-border bg-card">
+                  <div className="relative aspect-[4/5] bg-muted">
+                    {photo ? (
+                      <Image
+                        src={photo.url || "/placeholder.svg"}
+                        alt={pick(photo.alt, lang) || pick(m.name, lang)}
+                        fill
+                        sizes="(min-width: 1024px) 25vw, 50vw"
+                        className="object-cover"
+                        style={{ objectPosition: `${photo.focalX ?? 50}% ${photo.focalY ?? 50}%` }}
+                      />
+                    ) : (
+                      <span className="absolute inset-0 flex items-center justify-center text-3xl font-black text-muted-foreground" aria-hidden="true">
+                        {pick(m.name, lang).slice(0, 1)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h3 className="text-sm font-bold leading-tight">{pick(m.name, lang)}</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">{pick(m.jobTitle, lang)}</p>
+                  </div>
                 </li>
               )
             })}
           </ul>
         </div>
       </section>
+    ),
 
-      {/* ============ VEHICLE TYPES ============ */}
-      <section className="mx-auto max-w-7xl px-4 pb-20 lg:px-8">
-        <div className="flex items-center gap-4">
-          <h2 className="shrink-0 text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-            {t.vehicleTypesHeading}
-          </h2>
-          <span className="h-px flex-1 bg-border" />
-        </div>
-        <div className="mt-10 grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-4 lg:grid-cols-7">
-          {VEHICLES.map((v) => (
-            <div key={v.label} className="flex flex-col items-center">
-              <div className="relative h-20 w-full">
-                <Image src={v.img} alt={t.vehicles[v.label]} fill className="object-contain" />
-              </div>
-              <span className="mt-3 text-center text-xs font-medium text-muted-foreground">{t.vehicles[v.label]}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ============ PREMIUM & LUXURY BRANDS ============ */}
-      <section
-        id="brands"
-        className="scroll-mt-24 border-y border-border bg-muted dark:bg-[radial-gradient(ellipse_at_top,oklch(0.2_0_0),oklch(0.11_0_0))]"
-      >
-        <div className="mx-auto max-w-7xl px-4 py-20 lg:px-8 lg:py-24">
-          <div className="text-center">
-            <h2 className="text-balance text-2xl font-black uppercase tracking-tight md:text-3xl">
-              {t.brandsHeading}
-            </h2>
-            <p className="mt-3 text-lg font-bold uppercase tracking-wide" dir="ltr">
-              ONE GARAGE. <span className="text-primary">LIMITLESS SOLUTIONS.</span>
-            </p>
-            <p className="mx-auto mt-3 max-w-2xl text-pretty text-sm text-muted-foreground">{t.brandsSub}</p>
-          </div>
-
-          <div className="mx-auto mt-14 grid max-w-6xl grid-cols-3 items-start justify-items-center gap-x-6 gap-y-10 sm:grid-cols-5 lg:grid-cols-9">
-            {BRANDS.map((b) => (
-              <div key={b.name} className="flex w-full flex-col items-center gap-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`/brands/${b.file}.svg`}
-                  alt={`${b.name} logo`}
-                  className="h-9 w-9 object-contain opacity-70 transition hover:opacity-100 dark:invert"
-                />
-                <span className="text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {b.name}
-                </span>
-              </div>
+    blog: posts.length > 0 && (
+      <section key="blog" className="border-t border-border bg-background" aria-labelledby="home-blog">
+        <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
+          <SectionHeader id="home-blog" section={sec("blog")} lang={lang} fallback="Blog" href="/blog" linkLabel={dict.cta.learnMore} />
+          <ul className="mt-8 grid gap-4 md:grid-cols-3">
+            {posts.map((post) => (
+              <li key={post.id}>
+                <Link href={localePath(lang, `/blog/${post.slug}`)} className="group flex h-full flex-col rounded-lg border border-border bg-card p-5 transition hover:border-primary/50">
+                  <h3 className="text-base font-bold leading-snug group-hover:text-primary">{post.title}</h3>
+                  {post.excerpt && <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted-foreground">{post.excerpt}</p>}
+                </Link>
+              </li>
             ))}
-          </div>
-
-          <div className="mt-16 flex flex-col items-center gap-5">
-            <span className="h-px w-full max-w-3xl bg-border" />
-            <div className="flex flex-col items-center gap-4 sm:flex-row">
-              <p className="text-sm text-muted-foreground">
-                {interpolate(t.brandsMissing, { company: info.companyName })}
-              </p>
-              <TrackLink
-                href="/contact"
-                label="Contact Us — brands"
-                className="inline-flex h-11 items-center gap-2 rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-              >
-                {dict.cta.contactUs} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
-              </TrackLink>
-            </div>
-          </div>
+          </ul>
         </div>
       </section>
+    ),
 
-      {/* ============ CTA BAR ============ */}
-      <section className="bg-card/40">
-        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-6 px-4 py-14 md:flex-row md:items-center lg:px-8">
-          <div>
-            <h2 className="text-xl font-black uppercase tracking-tight md:text-2xl">{t.ctaTitle}</h2>
-            <p className="mt-2 text-sm text-muted-foreground">{t.ctaSubtitle}</p>
+    location: pick(doc.business.address, lang) && (
+      <section key="location" className="mx-auto max-w-7xl px-4 py-16 lg:px-8" aria-labelledby="home-location">
+        <div className="flex flex-col items-start justify-between gap-6 rounded-2xl border border-border bg-card p-8 md:flex-row md:items-center">
+          <div className="flex items-start gap-4">
+            <MapPin className="mt-1 h-6 w-6 shrink-0 text-primary" />
+            <div>
+              <h2 id="home-location" className="text-xl font-black uppercase tracking-tight">{pick(sec("location")?.heading, lang) || t.ctaTitle}</h2>
+              {pick(sec("location")?.intro, lang) && (
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pick(sec("location")?.intro, lang)}</p>
+              )}
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pick(doc.business.address, lang)}</p>
+              {pick(doc.business.hours, lang) && (
+                <p className="mt-1 text-sm text-muted-foreground">{pick(doc.business.hours, lang)}</p>
+              )}
+            </div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
+            {doc.business.mapUrl && (
+              <a
+                href={doc.business.mapUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-12 items-center justify-center rounded-md border border-border px-6 text-sm font-semibold transition hover:border-primary/60"
+              >
+                {dict.contactPage.visitUs}
+              </a>
+            )}
             <TrackLink
-              href="/appointment"
-              label="Book a Service — cta bar"
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-border bg-background px-7 text-sm font-semibold text-foreground transition hover:border-primary/60 hover:bg-accent"
-            >
-              {dict.cta.bookService} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
-            </TrackLink>
-            <TrackLink
-              href="/contact"
-              label="Get a Quote — cta bar"
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-7 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+              href={lp("/contact")}
+              label="Get a Quote — location"
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
             >
               {dict.cta.getQuote} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
             </TrackLink>
           </div>
         </div>
       </section>
+    ),
+  }
+
+  return (
+    <>
+      {!heroVisible && <h1 className="sr-only">{pick(home.title, lang)}</h1>}
+      {home.sections.filter((s) => s.visible).map((s) => sections[s.key] || null)}
     </>
   )
 }

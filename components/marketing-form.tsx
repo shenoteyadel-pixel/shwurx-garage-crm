@@ -3,14 +3,14 @@
 import { useState, useTransition } from "react"
 import { Card, Button, Input, Label } from "@/components/ui"
 import { saveMarketingSettings } from "@/lib/actions-crm"
-import type { Settings } from "@/lib/settings"
+import type { TrackingSettingsDTO } from "@/lib/website/control-center-data"
 import { Check, Loader2, ShieldCheck, BarChart3, Tag, Facebook } from "lucide-react"
 
 // Marketing / website integrations dashboard. Non-technical staff (or an agency
 // user on the "marketing" role) paste the IDs their platforms give them; the
 // SiteTracking component injects the matching scripts on every page. No code,
 // no deploy required — just Save.
-export function MarketingForm({ settings, canManage }: { settings: Settings; canManage: boolean }) {
+export function MarketingForm({ settings, canManage }: { settings: TrackingSettingsDTO; canManage: boolean }) {
   const [pending, start] = useTransition()
   const [saved, setSaved] = useState(false)
   const [enabled, setEnabled] = useState(settings.tracking_enabled)
@@ -26,6 +26,13 @@ export function MarketingForm({ settings, canManage }: { settings: Settings; can
       }
       className="flex flex-col gap-5"
     >
+      <Card className="border-primary/30 bg-primary/5 p-4">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Legacy settings. Once tracking is configured in <strong>Website Builder → Analytics</strong> and published,
+          the site uses that versioned configuration and ignores these values.
+        </p>
+      </Card>
+
       <Card className="p-6">
         <div className="flex items-start justify-between gap-4">
           <div>

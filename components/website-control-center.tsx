@@ -4,16 +4,14 @@ import { useRef, useState, useTransition } from "react"
 import Image from "next/image"
 import { Card, Button, Input, Label, Textarea, Badge } from "@/components/ui"
 import { MarketingForm } from "@/components/marketing-form"
+import { WebsiteBuilder, type BuilderOpenRequest } from "@/components/website-builder/website-builder"
+import { WebsiteOverview, type OverviewAction } from "@/components/website-builder/website-overview"
+import { AnalyticsEditor } from "@/components/website-builder/analytics-editor"
 import { SITE_CONTENT_GROUPS, SITE_IMAGE_SLOTS } from "@/lib/site-content-fields"
-import type { Settings } from "@/lib/settings"
-import type { BlogPost } from "@/lib/blog"
-import {
-  saveSiteContent,
-  saveSiteImages,
-  uploadWebsiteImage,
-  saveBlogPost,
-  deleteBlogPost,
-} from "@/lib/actions-website"
+import type { Article } from "@/lib/article-model"
+import type { ControlCenterDTO } from "@/lib/website/control-center-data"
+import { ArticleManager } from "@/components/website-builder/article-manager"
+import { saveSiteContent, saveSiteImages, uploadWebsiteImage } from "@/lib/actions-website"
 import {
   Check,
   Loader2,
@@ -23,53 +21,76 @@ import {
   Newspaper,
   Upload,
   Trash2,
-  Plus,
-  Pencil,
   Globe,
+  LayoutDashboard,
 } from "lucide-react"
 
 type Locale = "en" | "ar"
-type TabKey = "content" | "images" | "blog" | "tracking"
+type TabKey = "overview" | "builder" | "content" | "images" | "blog" | "analytics" | "tracking"
 
 interface FieldMaps {
   en: Record<string, string>
   ar: Record<string, string>
 }
 
-export function WebsiteControlCenter({
-  settings,
-  canManageWebsite,
-  canManageMarketing,
-  canViewMarketing,
-  fieldValues,
-  fieldDefaults,
-  images,
-  posts,
-}: {
-  settings: Settings
-  canManageWebsite: boolean
-  canManageMarketing: boolean
-  canViewMarketing: boolean
-  fieldValues: FieldMaps
-  fieldDefaults: FieldMaps
-  images: Record<string, string>
-  posts: BlogPost[]
-}) {
+export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
+  const { access, website, tracking } = data
+  const canManageWebsite = access.canManageWebsite && website !== null
+  const canViewMarketing = access.canViewMarketing && tracking !== null
+  const canManageMarketing = access.canManageMarketing
+  const editorState = website?.editorState ?? null
+  const fieldValues = (website?.fieldValues ?? { en: {}, ar: {} }) as FieldMaps
+  const fieldDefaults = (website?.fieldDefaults ?? { en: {}, ar: {} }) as FieldMaps
+  const images = website?.images ?? {}
+  const posts: Article[] = website?.posts ?? []
   // Tabs are scoped strictly to the viewer's permissions so the two concerns
   // never overlap: website content/images/blog require website.manage, while
   // tracking & analytics require marketing.view (edit needs marketing.manage).
+  // Once the versioned site exists, public pages read only its draft/published
+  // documents, so the old Text/Images editors (which write site_content) are
+  // retired rather than left saving values nobody sees.
+  const legacyContent = canManageWebsite && !editorState?.initialised
+  const analytics = data.analytics
+  const legacyTracking = canViewMarketing && !analytics?.managed
   const tabs: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    ...(canManageWebsite
+    ...(canManageWebsite && editorState?.initialised
+      ? ([{ key: "overview", label: "Overview", icon: LayoutDashboard }] as const)
+      : []),
+    ...(canManageWebsite && editorState ? ([{ key: "builder", label: "Site builder", icon: Globe }] as const) : []),
+    ...(legacyContent
       ? ([
           { key: "content", label: "Text & Content", icon: Type },
           { key: "images", label: "Images", icon: ImageIcon },
-          { key: "blog", label: "Blog", icon: Newspaper },
         ] as const)
       : []),
-    ...(canViewMarketing ? ([{ key: "tracking", label: "Tracking & Analytics", icon: BarChart3 }] as const) : []),
+    ...(canManageWebsite ? ([{ key: "blog", label: "Blog", icon: Newspaper }] as const) : []),
+    ...(canViewMarketing && analytics ? ([{ key: "analytics", label: "Analytics", icon: BarChart3 }] as const) : []),
+    ...(legacyTracking ? ([{ key: "tracking", label: "Legacy tracking", icon: BarChart3 }] as const) : []),
   ]
 
   const [tab, setTab] = useState<TabKey>(() => tabs[0]?.key ?? "content")
+  const [builderOpen, setBuilderOpen] = useState<BuilderOpenRequest | null>(null)
+  const [blogOpen, setBlogOpen] = useState<{ postId?: string; nonce: number } | null>(null)
+
+  const onOverviewAction = (a: OverviewAction) => {
+    const nonce = Date.now()
+    if (a.kind === "analytics") return setTab("analytics")
+    if (a.kind === "add-member") {
+      setBuilderOpen({ section: "team", addTeamMember: true, nonce })
+      return setTab("builder")
+    }
+    if (a.kind === "add-page") {
+      setBuilderOpen({ section: "custom", nonce })
+      return setTab("builder")
+    }
+    if (a.target.kind === "none") return
+    if (a.target.kind === "blog") {
+      setBlogOpen({ postId: a.target.postId, nonce })
+      return setTab("blog")
+    }
+    setBuilderOpen({ section: a.target.section, recordId: a.target.recordId, nonce })
+    setTab("builder")
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -95,12 +116,41 @@ export function WebsiteControlCenter({
         })}
       </div>
 
-      {tab === "content" && (
+      {tab === "overview" && website && editorState?.initialised && (
+        <WebsiteOverview
+          overview={website.overview}
+          draftVersion={editorState.draftVersion}
+          hasUnpublished={editorState.hasUnpublished}
+          canAnalytics={canViewMarketing && !!analytics}
+          onAction={onOverviewAction}
+        />
+      )}
+      {/* Stays mounted while hidden so unsaved builder edits survive switching tabs. */}
+      {canManageWebsite && editorState && (
+        <div hidden={tab !== "builder"}>
+          <WebsiteBuilder state={editorState} open={builderOpen} />
+        </div>
+      )}
+      {/* Same as the builder: hidden, not unmounted, so pending analytics edits survive tab switches. */}
+      {canViewMarketing && analytics && (
+        <div hidden={tab !== "analytics"}>
+          <AnalyticsEditor data={analytics} canEdit={canManageMarketing} />
+        </div>
+      )}
+      {tab === "content" && legacyContent && (
         <ContentEditor fieldValues={fieldValues} fieldDefaults={fieldDefaults} canManage={canManageWebsite} />
       )}
-      {tab === "images" && <ImageManager images={images} canManage={canManageWebsite} />}
-      {tab === "blog" && <BlogManager posts={posts} canManage={canManageWebsite} />}
-      {tab === "tracking" && <MarketingForm settings={settings} canManage={canManageMarketing} />}
+      {tab === "images" && legacyContent && <ImageManager images={images} canManage={canManageWebsite} />}
+      {tab === "blog" && (
+        <ArticleManager
+          key={blogOpen?.nonce ?? "blog"}
+          posts={posts}
+          taxonomy={website?.taxonomy ?? { brands: [], services: [] }}
+          canManage={canManageWebsite}
+          openPostId={blogOpen?.postId}
+        />
+      )}
+      {tab === "tracking" && tracking && legacyTracking && <MarketingForm settings={tracking} canManage={canManageMarketing} />}
     </div>
   )
 }
@@ -331,218 +381,3 @@ function UploadButton({ onUploaded, label }: { onUploaded: (url: string) => void
   )
 }
 
-/* ------------------------------- Blog manager ----------------------------- */
-
-const emptyPost = { id: "", slug: "", title: "", excerpt: "", cover_url: "", body: "", status: "draft" as const }
-type Draft = {
-  id: string
-  slug: string
-  title: string
-  excerpt: string
-  cover_url: string
-  body: string
-  status: "draft" | "published"
-}
-
-function BlogManager({ posts, canManage }: { posts: BlogPost[]; canManage: boolean }) {
-  const [editing, setEditing] = useState<Draft | null>(null)
-
-  if (editing) {
-    return <BlogEditor draft={editing} onClose={() => setEditing(null)} canManage={canManage} />
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Write posts for the public <span className="font-medium text-foreground">/blog</span> page. Drafts stay hidden
-          until you publish them.
-        </p>
-        {canManage && (
-          <Button type="button" onClick={() => setEditing({ ...emptyPost })}>
-            <Plus className="h-4 w-4" /> New post
-          </Button>
-        )}
-      </div>
-
-      {posts.length === 0 ? (
-        <Card className="p-10 text-center text-sm text-muted-foreground">
-          No posts yet. Create your first article to start your blog.
-        </Card>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {posts.map((p) => (
-            <Card key={p.id} className="flex items-center justify-between gap-4 p-4">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-semibold">{p.title}</span>
-                  {p.status === "published" ? (
-                    <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-500">Published</Badge>
-                  ) : (
-                    <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-600">Draft</Badge>
-                  )}
-                </div>
-                <p className="truncate text-xs text-muted-foreground">/blog/{p.slug}</p>
-              </div>
-              {canManage && (
-                <div className="flex shrink-0 items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() =>
-                      setEditing({
-                        id: p.id,
-                        slug: p.slug,
-                        title: p.title,
-                        excerpt: p.excerpt ?? "",
-                        cover_url: p.cover_url ?? "",
-                        body: p.body,
-                        status: p.status,
-                      })
-                    }
-                  >
-                    <Pencil className="h-4 w-4" /> Edit
-                  </Button>
-                  <DeletePostButton id={p.id} />
-                </div>
-              )}
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function BlogEditor({ draft, onClose, canManage }: { draft: Draft; onClose: () => void; canManage: boolean }) {
-  const [pending, start] = useTransition()
-  const [cover, setCover] = useState(draft.cover_url)
-  const [status, setStatus] = useState<"draft" | "published">(draft.status)
-
-  return (
-    <form
-      action={(fd) =>
-        start(async () => {
-          fd.set("cover_url", cover)
-          fd.set("status", status)
-          await saveBlogPost(fd)
-          onClose()
-        })
-      }
-      className="flex flex-col gap-5"
-    >
-      <input type="hidden" name="id" value={draft.id} />
-
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold">{draft.id ? "Edit post" : "New post"}</h2>
-        <Button type="button" variant="ghost" onClick={onClose}>
-          Back to list
-        </Button>
-      </div>
-
-      <Card className="flex flex-col gap-4 p-6">
-        <div>
-          <Label htmlFor="title">Title</Label>
-          <Input id="title" name="title" defaultValue={draft.title} placeholder="How to prepare your car for summer" required disabled={!canManage} />
-        </div>
-        <div>
-          <Label htmlFor="slug">URL slug (optional)</Label>
-          <Input id="slug" name="slug" defaultValue={draft.slug} placeholder="auto-generated from the title" disabled={!canManage} />
-        </div>
-        <div>
-          <Label htmlFor="excerpt">Short summary</Label>
-          <Textarea id="excerpt" name="excerpt" defaultValue={draft.excerpt} rows={2} placeholder="One or two sentences shown on the blog list." disabled={!canManage} />
-        </div>
-
-        <div>
-          <Label>Cover image</Label>
-          <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-start">
-            <div className="relative h-28 w-full shrink-0 overflow-hidden rounded-lg border border-border bg-muted sm:w-48">
-              {cover ? (
-                <Image src={cover || "/placeholder.svg"} alt="Cover" fill className="object-cover" />
-              ) : (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No image</div>
-              )}
-            </div>
-            {canManage && (
-              <div className="flex flex-wrap items-center gap-2">
-                <UploadButton onUploaded={setCover} label="Upload cover" />
-                {cover && (
-                  <Button type="button" variant="ghost" onClick={() => setCover("")}>
-                    <Trash2 className="h-4 w-4" /> Remove
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <Label htmlFor="body">Content</Label>
-          <Textarea id="body" name="body" defaultValue={draft.body} rows={12} placeholder="Write your article here…" disabled={!canManage} />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Status:</span>
-          <div className="inline-flex rounded-lg border border-border p-1">
-            {(["draft", "published"] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setStatus(s)}
-                disabled={!canManage}
-                className={
-                  "rounded-md px-3 py-1.5 text-sm font-medium capitalize transition " +
-                  (status === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")
-                }
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-      </Card>
-
-      {canManage && (
-        <div className="flex items-center gap-3">
-          <Button type="submit" disabled={pending}>
-            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {status === "published" ? "Save & publish" : "Save draft"}
-          </Button>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
-      )}
-    </form>
-  )
-}
-
-function DeletePostButton({ id }: { id: string }) {
-  const [pending, start] = useTransition()
-  const [confirm, setConfirm] = useState(false)
-
-  if (confirm) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <Button
-          type="button"
-          variant="danger"
-          onClick={() => start(async () => { await deleteBlogPost(id) })}
-          disabled={pending}
-        >
-          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
-        </Button>
-        <Button type="button" variant="ghost" onClick={() => setConfirm(false)}>
-          Cancel
-        </Button>
-      </div>
-    )
-  }
-
-  return (
-    <Button type="button" variant="ghost" onClick={() => setConfirm(true)} aria-label="Delete post">
-      <Trash2 className="h-4 w-4" />
-    </Button>
-  )
-}

@@ -6,18 +6,13 @@ import { useState } from "react"
 import { Search, Menu, X, ArrowRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { track } from "@/lib/site-track"
-import type { PublicSiteInfo } from "@/lib/site-info"
-import { useI18n } from "@/lib/i18n/provider"
+import { stripLocale } from "@/lib/website/paths"
 import { SiteControls, SiteControlsStacked } from "@/components/site/site-controls"
 
-const NAV = [
-  { href: "/", key: "home" as const },
-  { href: "/services", key: "services" as const },
-  { href: "/blog", key: "blog" as const },
-  { href: "/#brands", key: "brands" as const },
-  { href: "/about", key: "about" as const },
-  { href: "/contact", key: "contact" as const },
-]
+export interface HeaderLink {
+  href: string
+  label: string
+}
 
 // The wordmark keeps the official English brand lock-up and slogan in every
 // language, as required by the brand guidelines.
@@ -34,32 +29,59 @@ function Wordmark() {
   )
 }
 
-export function SiteHeader({ info: _info }: { info: PublicSiteInfo }) {
+export function SiteHeader({
+  nav,
+  homeHref,
+  enquireHref,
+  enquireLabel,
+  trackHref,
+  trackLabel,
+  menuLabel,
+  logo = null,
+}: {
+  logo?: { url: string; alt: string } | null
+  nav: HeaderLink[]
+  homeHref: string
+  enquireHref: string
+  enquireLabel: string
+  trackHref: string
+  trackLabel: string
+  menuLabel: string
+}) {
   const pathname = usePathname()
+  const current = stripLocale(pathname).path
   const [open, setOpen] = useState(false)
-  const { dict } = useI18n()
+  const isActive = (href: string) => {
+    const p = stripLocale(href).path
+    return p === "/" ? current === "/" : current === p || current.startsWith(p + "/")
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur">
       <div className="mx-auto flex h-20 max-w-7xl items-center gap-4 px-4 lg:px-8">
-        <Link href="/" className="shrink-0" aria-label="SHWURX Auto Service Center">
-          <Wordmark />
+        <Link href={homeHref} className="shrink-0" aria-label="SHWURX Auto Service Center">
+          {logo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logo.url} alt={logo.alt} className="h-11 w-auto max-w-44 object-contain" />
+          ) : (
+            <Wordmark />
+          )}
         </Link>
 
-        <nav className="ms-auto hidden items-center gap-1 lg:flex">
-          {NAV.map((l) => {
-            const active =
-              l.href === "/" ? pathname === "/" : l.href.startsWith("/#") ? false : pathname.startsWith(l.href)
+        <nav aria-label="Main" className="ms-auto hidden items-center gap-1 lg:flex">
+          {nav.map((l) => {
+            const active = isActive(l.href)
             return (
               <Link
                 key={l.href}
                 href={l.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
                   "relative rounded-md px-3 py-2 text-sm font-medium transition",
                   active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {dict.nav[l.key]}
+                {l.label}
                 {active && <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-primary" />}
               </Link>
             )
@@ -69,31 +91,25 @@ export function SiteHeader({ info: _info }: { info: PublicSiteInfo }) {
         <div className="ms-auto flex items-center gap-2 lg:ms-4">
           <SiteControls className="hidden md:flex" />
           <Link
-            href="/track"
-            aria-label={dict.cta.trackCar}
-            onClick={() => track("cta_click", { label: "Search/Track — header" })}
+            href={trackHref}
+            aria-label={trackLabel}
             className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
           >
             <Search className="h-[18px] w-[18px]" />
           </Link>
           <Link
-            href="/appointment"
-            onClick={() => track("cta_click", { label: "Book a Service — header" })}
-            className="hidden h-10 items-center rounded-md border border-border px-4 text-sm font-semibold text-foreground transition hover:border-primary/60 hover:bg-accent xl:inline-flex"
-          >
-            {dict.cta.bookService}
-          </Link>
-          <Link
-            href="/contact"
-            onClick={() => track("cta_click", { label: "Get a Quote — header" })}
+            href={enquireHref}
+            onClick={() => track("cta_click", { label: "enquire_header" })}
             className="hidden h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 sm:inline-flex"
           >
-            {dict.cta.getQuote}
+            {enquireLabel}
           </Link>
           <button
+            type="button"
             className="text-muted-foreground lg:hidden"
             onClick={() => setOpen((v) => !v)}
-            aria-label="Toggle menu"
+            aria-expanded={open}
+            aria-label={menuLabel}
           >
             {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
@@ -102,39 +118,28 @@ export function SiteHeader({ info: _info }: { info: PublicSiteInfo }) {
 
       {open && (
         <div className="border-t border-border bg-background lg:hidden">
-          <nav className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-3">
-            {NAV.map((l) => (
+          <nav aria-label="Main" className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-3">
+            {nav.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
                 onClick={() => setOpen(false)}
+                aria-current={isActive(l.href) ? "page" : undefined}
                 className="rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
               >
-                {dict.nav[l.key]}
+                {l.label}
               </Link>
             ))}
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <Link
-                href="/appointment"
-                onClick={() => {
-                  setOpen(false)
-                  track("cta_click", { label: "Book a Service — mobile" })
-                }}
-                className="inline-flex h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-foreground"
-              >
-                {dict.cta.bookService}
-              </Link>
-              <Link
-                href="/contact"
-                onClick={() => {
-                  setOpen(false)
-                  track("cta_click", { label: "Get a Quote — mobile" })
-                }}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
-              >
-                {dict.cta.getQuote} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
-              </Link>
-            </div>
+            <Link
+              href={enquireHref}
+              onClick={() => {
+                setOpen(false)
+                track("cta_click", { label: "enquire_mobile" })
+              }}
+              className="mt-2 inline-flex h-11 items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
+            >
+              {enquireLabel} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
+            </Link>
             <div className="mt-4 border-t border-border pt-4">
               <SiteControlsStacked />
             </div>

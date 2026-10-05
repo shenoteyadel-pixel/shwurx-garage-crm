@@ -46,6 +46,8 @@ function Group({ children }: { children: React.ReactNode }) {
 
 export function LanguageToggle() {
   const { lang, setLang, dict } = useI18n()
+  // The provider navigates to the other-language URL on website pages and
+  // uses the cookie only inside the CRM.
   const set = (l: Locale) => () => setLang(l)
   return (
     <Group>
@@ -53,7 +55,9 @@ export function LanguageToggle() {
         EN
       </Segment>
       <Segment active={lang === "ar"} onClick={set("ar")} label={dict.controls.arabic}>
-        عربي
+        <span lang="ar" style={{ fontFamily: "var(--font-arabic), system-ui, sans-serif" }}>
+          عربي
+        </span>
       </Segment>
     </Group>
   )

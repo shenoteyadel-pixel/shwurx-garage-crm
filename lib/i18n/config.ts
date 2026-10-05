@@ -22,7 +22,7 @@ export function dirFor(locale: Locale): "ltr" | "rtl" {
  */
 export function isPublicPath(pathname: string): boolean {
   if (pathname === "/") return true
-  return ["/services", "/about", "/contact", "/appointment", "/track"].some(
+  return ["/services", "/about", "/team", "/contact", "/appointment", "/track"].some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
   )
 }

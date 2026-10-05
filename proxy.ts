@@ -1,5 +1,7 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { deploymentMode } from "@/lib/website/env"
+import { isSitePath } from "@/lib/website/paths"
 
 // Routes that must be reachable WITHOUT staff authentication.
 //
@@ -36,6 +38,7 @@ function isPublicPath(path: string): boolean {
   const publicSitePrefixes = [
     "/services",
     "/about",
+    "/team",
     "/appointment",
     "/contact",
     "/blog",
@@ -57,8 +60,49 @@ function isPublicPath(path: string): boolean {
 
 // Next.js 16 Proxy (formerly Middleware). Runs on the Node.js runtime by
 // default, so Node globals and heavier deps (@supabase/ssr) are fully supported.
+// Public website pages that exist in both languages. English is unprefixed;
+// Arabic lives under /ar and is rewritten to the same page with a locale header.
+/** CRM requests: language comes from the saved cookie, never from client-sent site headers. */
+function crmNext(request: NextRequest) {
+  const headers = new Headers(request.headers)
+  // Next's request override does not drop removed keys, so overwrite with inert values.
+  for (const h of ["x-site-locale", "x-site-path"]) headers.set(h, "")
+  return NextResponse.next({ request: { headers } })
+}
+
+/** The URL alone decides the site locale; client-sent locale headers are always overwritten. */
+function withLocale(request: NextRequest, locale: "en" | "ar", originalPath = request.nextUrl.pathname) {
+  const headers = new Headers(request.headers)
+  headers.set("x-site-locale", locale)
+  headers.set("x-site-path", originalPath)
+  return headers
+}
+
+// Draft/revision previews are never cached or indexed; neither is any
+// non-production deployment (robots.txt alone does not stop indexing).
+function siteHeaders(request: NextRequest, res: NextResponse) {
+  const previewing = !!request.cookies.get("shwurx_site_preview")?.value
+  if (previewing) res.headers.set("Cache-Control", "private, no-store, max-age=0")
+  if (previewing || deploymentMode() !== "production") res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+  return res
+}
+
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
+
+  if (path === "/robots.txt" || path === "/sitemap.xml") return NextResponse.next()
+
+  if (path === "/ar" || path.startsWith("/ar/")) {
+    const rest = path.slice(3) || "/"
+    const url = request.nextUrl.clone()
+    // Unknown /ar/* paths must 404 rather than expose CRM routes under /ar.
+    url.pathname = isSitePath(rest) ? rest : "/pages/__not-found"
+    return siteHeaders(request, NextResponse.rewrite(url, { request: { headers: withLocale(request, "ar", path) } }))
+  }
+  if (isSitePath(path)) {
+    return siteHeaders(request, NextResponse.next({ request: { headers: withLocale(request, "en") } }))
+  }
+
   const isPublic = isPublicPath(path)
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -67,13 +111,13 @@ export async function proxy(request: NextRequest) {
   // If Supabase env is somehow unavailable, never crash the request.
   // Allow public routes through and send everything else to login.
   if (!supabaseUrl || !supabaseKey) {
-    if (isPublic) return NextResponse.next({ request })
+    if (isPublic) return crmNext(request)
     const url = request.nextUrl.clone()
     url.pathname = "/auth/login"
     return NextResponse.redirect(url)
   }
 
-  let supabaseResponse = NextResponse.next({ request })
+  let supabaseResponse = crmNext(request)
 
   try {
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
@@ -83,7 +127,7 @@ export async function proxy(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
+          supabaseResponse = crmNext(request)
           cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options))
         },
       },

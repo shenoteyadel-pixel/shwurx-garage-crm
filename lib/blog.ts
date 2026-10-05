@@ -1,25 +1,12 @@
 import "server-only"
 import { createServiceClient } from "@/lib/supabase/server"
+import { rowToArticle, isLocaleLive, type Article, type ArticleLang } from "@/lib/article-model"
+import { draftRowToArticle, withPublishedSnapshot, type DraftRow } from "@/lib/article-drafts"
 
-export type BlogStatus = "draft" | "published"
+export type { Article } from "@/lib/article-model"
 
-export interface BlogPost {
-  id: string
-  slug: string
-  title: string
-  excerpt: string | null
-  cover_url: string | null
-  body: string
-  status: BlogStatus
-  published_at: string | null
-  created_at: string
-  updated_at: string
-  author: string | null
-}
-
-/** Published posts for the public blog, newest first. Uses the service client
- * so anonymous visitors can read despite RLS. */
-export async function listPublishedPosts(): Promise<BlogPost[]> {
+/** Published articles (any locale), newest first. Service client: anonymous readers bypass RLS. */
+export async function listPublishedArticles(): Promise<Article[]> {
   try {
     const svc = createServiceClient()
     const { data } = await svc
@@ -27,31 +14,42 @@ export async function listPublishedPosts(): Promise<BlogPost[]> {
       .select("*")
       .eq("status", "published")
       .order("published_at", { ascending: false })
-    return (data as BlogPost[]) ?? []
+    return (data ?? []).map((r) => rowToArticle(r as Record<string, unknown>))
   } catch {
     return []
   }
 }
 
-/** A single published post by slug (public). */
-export async function getPublishedPost(slug: string): Promise<BlogPost | null> {
+/** Published articles that are complete in `lang` — the only ones a reader of that locale sees. */
+export async function listLiveArticles(lang: ArticleLang): Promise<Article[]> {
+  return (await listPublishedArticles()).filter((a) => isLocaleLive(a, lang))
+}
+
+/** A published article by slug, or null. Locale availability is checked by the caller. */
+export async function getPublishedArticle(slug: string): Promise<Article | null> {
   try {
     const svc = createServiceClient()
-    const { data } = await svc
-      .from("blog_posts")
-      .select("*")
-      .eq("slug", slug)
-      .eq("status", "published")
-      .maybeSingle()
-    return (data as BlogPost) ?? null
+    const { data } = await svc.from("blog_posts").select("*").eq("slug", slug).eq("status", "published").maybeSingle()
+    return data ? rowToArticle(data as Record<string, unknown>) : null
   } catch {
     return null
   }
 }
 
-/** All posts (draft + published) for the admin control center. */
-export async function listAllPosts(): Promise<BlogPost[]> {
+/** Every private draft (briefs, drafts, approved, live) for the control center editor. */
+export async function listAllArticles(): Promise<Article[]> {
   const svc = createServiceClient()
-  const { data } = await svc.from("blog_posts").select("*").order("updated_at", { ascending: false })
-  return (data as BlogPost[]) ?? []
+  const [drafts, posts] = await Promise.all([
+    svc.from("article_drafts").select("*").order("updated_at", { ascending: false }),
+    svc.from("blog_posts").select("*").eq("status", "published"),
+  ])
+  if (drafts.error) throw drafts.error
+  if (posts.error) throw posts.error
+  const live = new Map((posts.data ?? []).map((row) => {
+    const article = rowToArticle(row as Record<string, unknown>)
+    return [article.key, article] as const
+  }))
+  return ((drafts.data ?? []) as DraftRow[]).map((row) =>
+    withPublishedSnapshot(draftRowToArticle(row), live.get(row.article_key) ?? null),
+  )
 }

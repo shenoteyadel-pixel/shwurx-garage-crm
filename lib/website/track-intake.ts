@@ -1,3 +1,4 @@
+import { looksLikeContactData } from "./contact-shape"
 import { isPublicSitePath } from "./paths"
 
 /**
@@ -75,6 +76,10 @@ export function normalizePublicPath(raw: unknown): string | null {
   } catch {
     return null
   }
+  // Encoded delimiters (%3F, %23) decode into a fake query/hash: drop it, and
+  // reject any remaining segment that still carries contact-shaped data.
+  p = p.split(/[?#]/)[0]
+  if (looksLikeContactData(p)) return null
   if (!p.startsWith("/") || p.startsWith("//") || /[\u0000-\u001f\\]/.test(p)) return null
   p = p.replace(/\/{2,}/g, "/")
   if (p.length > 1) p = p.replace(/\/+$/, "")
@@ -95,7 +100,8 @@ export function originOnly(raw: unknown): string | null {
 function campaignValue(raw: unknown): string | null {
   if (typeof raw !== "string") return null
   const v = raw.replace(/[\u0000-\u001f\u007f<>]/g, "").trim().slice(0, 100)
-  return v || null
+  if (!v || looksLikeContactData(v)) return null
+  return v
 }
 
 export function parseTrackBody(body: Record<string, unknown>, userAgent: string): TrackParse {

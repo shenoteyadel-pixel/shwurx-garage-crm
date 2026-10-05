@@ -45,3 +45,30 @@ test("referrer keeps only the origin; campaigns and metadata are bounded", () =>
   assert.equal(r.record.device, "mobile")
   assert.deepEqual(r.record.metadata, { placement: "hero" })
 })
+
+test("encoded query/hash delimiters are stripped after decoding; contact-shaped paths rejected", () => {
+  assert.equal(normalizePublicPath("/services/%3Femail%3Dsynthetic%40example.test"), "/services")
+  assert.equal(normalizePublicPath("/services%23phone%3D0501234567"), "/services")
+  assert.equal(normalizePublicPath("/services/%3F"), "/services")
+  assert.equal(normalizePublicPath("/brands/synthetic%40example.test"), null)
+  assert.equal(normalizePublicPath("/brands/0501234567"), null)
+})
+
+test("campaign fields drop email/phone/URL-shaped values but keep real campaign names", () => {
+  const p = (v: Record<string, string>) => {
+    const r = parseTrackBody({ eventType: "page_view", pagePath: "/", ...v }, "x")
+    assert.ok(r.ok)
+    return r.record
+  }
+  const bad = p({ source: "synthetic@example.test", medium: "+971 50 123 4567", campaign: "https://evil.example/x" })
+  assert.equal(bad.source, null)
+  assert.equal(bad.medium, null)
+  assert.equal(bad.campaign, null)
+  assert.equal(p({ campaign: "synthetic%40example.test" }).campaign, null)
+  assert.equal(p({ campaign: "050-123-4567" }).campaign, null)
+  const good = p({ source: "google", medium: "cpc", campaign: "spring_sale_20260510" })
+  assert.equal(good.source, "google")
+  assert.equal(good.medium, "cpc")
+  assert.equal(good.campaign, "spring_sale_20260510")
+  assert.equal(p({ campaign: "Porsche 911 Service | Q2" }).campaign, "Porsche 911 Service | Q2")
+})

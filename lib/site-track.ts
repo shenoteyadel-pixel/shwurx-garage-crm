@@ -12,6 +12,7 @@
  * URLs, customer identifiers or CRM tokens: only controlled enums and slugs.
  */
 import { effectiveConsent } from "@/lib/consent"
+import { looksLikeContactData } from "@/lib/website/contact-shape"
 import { isPublicSitePath } from "@/lib/website/paths"
 
 type ConversionKey = "lead" | "appointment" | "phone_click" | "whatsapp_click"
@@ -61,12 +62,11 @@ export function token(v: unknown): string | null {
   return TOKEN_RE.test(s) ? s : null
 }
 
-/** Looks like contact data (email, phone run, URL): never forwarded. */
-const CONTACT_RE = /@|https?:|www\.|\d[\d\s().-]{6,}\d/i
+/** Contact-shaped values (email, phone run, URL) are never forwarded. */
 function campaignValue(v: string | null): string | null {
   if (!v) return null
   const s = v.trim().slice(0, 100)
-  if (!s || CONTACT_RE.test(s)) return null
+  if (!s || looksLikeContactData(s)) return null
   return s.replace(/[^\p{L}\p{N} _.+:|/-]/gu, "") || null
 }
 const CLICK_ID_RE = /^[A-Za-z0-9_-]{8,200}$/
@@ -194,28 +194,59 @@ const GOOGLE_EVENTS = new Set([
   "gallery_open",
 ])
 
-/** Sends one envelope to the configured Google owner. Returns true when handed over. */
-function pushGoogle(env: Record<string, unknown>, ads?: { sendTo: string; transactionId: string | null }): boolean {
+/**
+ * Google destinations, each gated by its own consent:
+ *  - "gtm": the container owns consent mode and Ads tags; needs analytics OR ads.
+ *  - "ga4": direct GA4 event; needs analytics.
+ *  - "ads": direct Ads conversion (only when a send_to label exists); needs ads.
+ */
+export type Destination = "gtm" | "ga4" | "ads"
+
+/** Destinations allowed RIGHT NOW. Computed at emit time and never widened later. */
+function allowedDestinations(withAds: boolean): Destination[] {
   const mode = window.__shwurxTagMode ?? "none"
-  const consent = effectiveConsent()
-  if (!consent.analytics && !consent.ads) return false
-  if (mode === "gtm" && Array.isArray(window.dataLayer)) {
+  const c = effectiveConsent()
+  if (mode === "gtm") return c.analytics || c.ads ? ["gtm"] : []
+  if (mode !== "ga4") return []
+  const out: Destination[] = []
+  if (c.analytics) out.push("ga4")
+  if (withAds && c.ads) out.push("ads")
+  return out
+}
+
+function destinationReady(d: Destination): boolean {
+  return d === "gtm" ? Array.isArray(window.dataLayer) : typeof window.gtag === "function"
+}
+
+/**
+ * Hands the envelope to one destination. False when consent for it was
+ * withdrawn or the tag is not loaded yet; the caller decides whether to retry.
+ */
+function pushTo(d: Destination, env: Record<string, unknown>, ads?: { sendTo: string; transactionId: string | null }): boolean {
+  if (!allowedDestinations(!!ads).includes(d) || !destinationReady(d)) return false
+  if (d === "gtm") {
     // GTM maps the allowlisted event_name; Ads conversions are configured in the container.
-    window.dataLayer.push(env)
+    window.dataLayer!.push(env)
     return true
   }
-  if (mode === "ga4" && typeof window.gtag === "function") {
-    const { event: _e, event_name, schema_version: _v, ...params } = env
-    if (event_name === "page_view") {
-      Object.assign(params, { page_location: window.location.origin + String(env.page_path), page_title: document.title.slice(0, 120) })
-    }
-    window.gtag("event", String(event_name), params)
-    if (ads && consent.ads) {
-      window.gtag("event", "conversion", { send_to: ads.sendTo, ...(ads.transactionId ? { transaction_id: ads.transactionId } : {}) })
-    }
+  if (d === "ads") {
+    if (!ads) return false
+    window.gtag!("event", "conversion", { send_to: ads.sendTo, ...(ads.transactionId ? { transaction_id: ads.transactionId } : {}) })
     return true
   }
-  return false
+  const { event: _e, event_name, schema_version: _v, ...params } = env
+  if (event_name === "page_view") {
+    Object.assign(params, { page_location: window.location.origin + String(env.page_path), page_title: document.title.slice(0, 120) })
+  }
+  window.gtag!("event", String(event_name), params)
+  return true
+}
+
+/** Non-conversion delivery: each destination allowed at emit time, retried briefly while its tag loads. */
+function deliver(env: Record<string, unknown>, ads?: { sendTo: string; transactionId: string | null }) {
+  for (const d of allowedDestinations(!!ads)) {
+    if (!pushTo(d, env, ads)) queueUntilReady(d, env, ads)
+  }
 }
 
 /* -------------------------------------------------------------- attribution */
@@ -475,20 +506,22 @@ export function track(eventType: string, metadata: Record<string, unknown> = {})
     }
     const env = envelope(name, fields)
     sendFirstParty(name, env)
-    if (providersActive() && GOOGLE_EVENTS.has(name)) {
-      if (!pushGoogle(env)) queueUntilReady(env)
-    }
+    if (providersActive() && GOOGLE_EVENTS.has(name)) deliver(env)
   } catch {
     /* tracking is best-effort */
   }
 }
 
-/** Non-conversion events wait briefly for the owner tag, then are dropped. */
-function queueUntilReady(env: Record<string, unknown>, attempt = 0) {
+/**
+ * Non-conversion events wait briefly for the destination's tag, then are
+ * dropped. Retries only target a destination that was allowed at emit time,
+ * so a later consent grant never replays an earlier event.
+ */
+function queueUntilReady(d: Destination, env: Record<string, unknown>, ads?: { sendTo: string; transactionId: string | null }, attempt = 0) {
   if (attempt >= 10) return
   window.setTimeout(() => {
     if (!providersActive()) return
-    if (!pushGoogle(env)) queueUntilReady(env, attempt + 1)
+    if (!pushTo(d, env, ads)) queueUntilReady(d, env, ads, attempt + 1)
   }, 500)
 }
 
@@ -499,8 +532,7 @@ export function emitClick(kind: "phone_click" | "whatsapp_click", placement: str
     sendFirstParty(kind, env)
     if (!providersActive()) return
     const sendTo = adsTarget(kind)
-    const ads = sendTo ? { sendTo, transactionId: null } : undefined
-    if (!pushGoogle(env, ads)) queueUntilReady(env)
+    deliver(env, sendTo ? { sendTo, transactionId: null } : undefined)
   } catch {
     /* best-effort */
   }
@@ -514,18 +546,27 @@ export interface DeliveryRecord {
   outcome: "lead" | "appointment"
   state: DeliveryState
   at: string
+  destination?: Destination
   reason?: string
 }
 
-function record(key: string, outcome: "lead" | "appointment", state: DeliveryState, reason?: string) {
+function record(key: string, outcome: "lead" | "appointment", state: DeliveryState, reason?: string, destination?: Destination) {
   const log = (window.__shwurxDelivery ??= [])
-  log.push({ key, outcome, state, at: new Date().toISOString(), ...(reason ? { reason } : {}) })
+  log.push({ key, outcome, state, at: new Date().toISOString(), ...(destination ? { destination } : {}), ...(reason ? { reason } : {}) })
   if (log.length > 50) log.splice(0, log.length - 50)
 }
 
 const MARKER_TTL_MS = 400 * 86_400_000
-function markerKey(outcome: "lead" | "appointment", id: string) {
-  return `shwurx_conv4_${outcome}_${id}`
+function markerKey(dest: Destination, outcome: "lead" | "appointment", id: string) {
+  return `shwurx_conv4_${dest}_${outcome}_${id}`
+}
+/**
+ * Per-destination marker. The pre-split shared marker (`shwurx_conv4_<outcome>_<id>`)
+ * proves a GTM push or a GA4 event, but never that a direct Ads conversion was sent.
+ */
+function hasDestMarker(dest: Destination, outcome: "lead" | "appointment", id: string): boolean {
+  if (hasMarker(markerKey(dest, outcome, id))) return true
+  return dest !== "ads" && hasMarker(`shwurx_conv4_${outcome}_${id}`)
 }
 function hasMarker(key: string): boolean {
   try {
@@ -595,11 +636,16 @@ export function emitConversion(recordId: string, ctx: ConversionContext) {
       }
     }
     if (!providersActive()) return
-    const key = markerKey(outcome, recordId)
-    if (hasMarker(key) || inFlight.has(key)) return
-    record(key, outcome, "queued")
-    inFlight.set(key, 0)
-    dispatch(key, outcome, ctx, 0)
+    // Each destination is gated and deduped on its own. Only destinations
+    // allowed NOW are queued; an explicit later retry for the same record (for
+    // example after an Ads grant) fills in the missing destination only.
+    for (const dest of allowedDestinations(!!adsTarget(outcome))) {
+      const key = markerKey(dest, outcome, recordId)
+      if (hasDestMarker(dest, outcome, recordId) || inFlight.has(key)) continue
+      record(key, outcome, "queued", undefined, dest)
+      inFlight.set(key, 0)
+      dispatch(key, dest, outcome, recordId, ctx, 0)
+    }
   } catch {
     /* best-effort */
   }
@@ -611,16 +657,23 @@ export function emitConversion(recordId: string, ctx: ConversionContext) {
  * already sent it wins. "dispatched" means handed to the tag — not that Google
  * received or counted it.
  */
-function dispatch(key: string, outcome: "lead" | "appointment", ctx: ConversionContext, attempt: number) {
+function dispatch(
+  key: string,
+  dest: Destination,
+  outcome: "lead" | "appointment",
+  recordId: string,
+  ctx: ConversionContext,
+  attempt: number,
+) {
   if (!inFlight.has(key)) return
-  if (hasMarker(key)) {
+  if (hasDestMarker(dest, outcome, recordId)) {
     inFlight.delete(key)
-    record(key, outcome, "skipped", "already_sent")
+    record(key, outcome, "skipped", "already_sent", dest)
     return
   }
-  if (!providersActive()) {
+  if (!providersActive() || !allowedDestinations(dest === "ads").includes(dest)) {
     inFlight.delete(key)
-    record(key, outcome, "abandoned", "ineligible")
+    record(key, outcome, "abandoned", "ineligible", dest)
     return
   }
   const env = envelope(eventName(outcome), {
@@ -631,19 +684,19 @@ function dispatch(key: string, outcome: "lead" | "appointment", ctx: ConversionC
     conversion_token: ctx.token ?? null,
   })
   const sendTo = adsTarget(outcome)
-  const ads = sendTo ? { sendTo, transactionId: env.conversion_token as string | null } : undefined
-  if (pushGoogle(env, ads)) {
+  const ads = dest === "ads" && sendTo ? { sendTo, transactionId: env.conversion_token as string | null } : undefined
+  if (pushTo(dest, env, ads)) {
     setMarker(key)
     inFlight.delete(key)
-    record(key, outcome, "dispatched")
+    record(key, outcome, "dispatched", undefined, dest)
     return
   }
   if (attempt < 20) {
-    inFlight.set(key, window.setTimeout(() => dispatch(key, outcome, ctx, attempt + 1), 500))
+    inFlight.set(key, window.setTimeout(() => dispatch(key, dest, outcome, recordId, ctx, attempt + 1), 500))
     return
   }
   inFlight.delete(key)
-  record(key, outcome, "abandoned", "provider_not_ready")
+  record(key, outcome, "abandoned", "provider_not_ready", dest)
 }
 
 /* -------------------------------------------------------------- intake */

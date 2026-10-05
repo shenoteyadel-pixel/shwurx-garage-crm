@@ -208,3 +208,84 @@ test("denied analytics stores no first-party conversion marker; a later eligible
   delete win.__shwurxConsentNeeded
   delete win.__shwurxConsent
 })
+
+function directOwner(consent: { analytics: boolean; ads: boolean }) {
+  win.__shwurxTrack = true
+  win.__shwurxThirdParty = true
+  win.__shwurxTagMode = "ga4"
+  win.__shwurxTags = {
+    events: { lead: "generate_lead", appointment: "appointment_request_received", phone_click: "phone_click", whatsapp_click: "whatsapp_click" },
+    adsId: "AW-123",
+    adsLabels: { lead: "LEADLBL", appointment: "APPTLBL", phone_click: "PHONELBL", whatsapp_click: "WALBL" },
+  }
+  requireConsent(consent)
+  const calls: unknown[][] = []
+  win.gtag = (...args: unknown[]) => calls.push(args)
+  visit("/contact")
+  return calls
+}
+function endDirect() {
+  delete win.__shwurxTags
+  delete win.__shwurxConsentNeeded
+  delete win.__shwurxConsent
+}
+
+test("direct owner: GA4-only lead, then an explicit same-record retry after Ads grant sends only the Ads conversion", async () => {
+  const track = await load()
+  local.clear()
+  try {
+    const calls = directOwner({ analytics: true, ads: false })
+    track.emitConversion("lead-split", { form: "enquiry", token: "tok_ABCDEFGHIJKLMNOP" })
+    assert.deepEqual(calls.map((c) => c[1]), ["generate_lead"], "no Ads conversion without ads consent")
+    assert.ok(local.getItem("shwurx_conv4_ga4_lead_lead-split"))
+    assert.equal(local.getItem("shwurx_conv4_ads_lead_lead-split"), null)
+
+    win.__shwurxConsent = { analytics: true, ads: true }
+    assert.equal(calls.length, 1, "granting Ads never replays the historical conversion")
+
+    track.emitConversion("lead-split", { form: "enquiry", token: "tok_ABCDEFGHIJKLMNOP" })
+    assert.equal(calls.length, 2)
+    assert.equal(calls[1][1], "conversion")
+    assert.deepEqual(calls[1][2], { send_to: "AW-123/LEADLBL", transaction_id: "tok_ABCDEFGHIJKLMNOP" })
+
+    track.emitConversion("lead-split", { form: "enquiry", token: "tok_ABCDEFGHIJKLMNOP" })
+    assert.equal(calls.length, 2, "both destinations now deduped")
+  } finally {
+    endDirect()
+  }
+})
+
+test("direct owner: Ads-only consent sends the Ads conversion without any GA4 event", async () => {
+  const track = await load()
+  local.clear()
+  try {
+    const calls = directOwner({ analytics: false, ads: true })
+    track.emitConversion("lead-ads", { form: "enquiry", token: "tok_ABCDEFGHIJKLMNOP" })
+    track.emitClick("phone_click", "header")
+    track.track("cta_click", { placement: "hero" })
+    track.track("navigation_click", { placement: "header" })
+    assert.deepEqual(calls.map((c) => c[1]), ["conversion", "conversion"])
+    assert.equal((calls[1][2] as { send_to: string }).send_to, "AW-123/PHONELBL")
+    assert.equal(local.getItem("shwurx_conv4_ga4_lead_lead-ads"), null)
+  } finally {
+    endDirect()
+  }
+})
+
+test("direct owner: a queued event is not replayed to a destination granted later", async () => {
+  const track = await load()
+  local.clear()
+  mock.timers.enable({ apis: ["setTimeout"] })
+  try {
+    const calls = directOwner({ analytics: false, ads: true })
+    delete win.gtag
+    track.track("navigation_click", { placement: "header" })
+    win.__shwurxConsent = { analytics: true, ads: true }
+    win.gtag = (...args: unknown[]) => calls.push(args)
+    mock.timers.tick(6000)
+    assert.equal(calls.length, 0)
+  } finally {
+    mock.timers.reset()
+    endDirect()
+  }
+})

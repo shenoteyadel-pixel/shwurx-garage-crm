@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
-import { ImagePlus, Loader2, X } from "lucide-react"
+import { Camera, ImagePlus, Loader2, X } from "lucide-react"
 
 export function PhotoUploader({
   value,
@@ -17,6 +17,7 @@ export function PhotoUploader({
   accentDamage?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
 
   async function handleFiles(files: FileList | null) {
@@ -39,7 +40,11 @@ export function PhotoUploader({
     onChange([...value, ...uploaded])
     setUploading(false)
     if (inputRef.current) inputRef.current.value = ""
+    if (cameraRef.current) cameraRef.current.value = ""
   }
+
+  const tileClass =
+    "flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-muted-foreground transition hover:border-primary hover:text-primary disabled:opacity-50"
 
   return (
     <div>
@@ -64,22 +69,39 @@ export function PhotoUploader({
         ))}
         <button
           type="button"
+          disabled={uploading}
+          onClick={() => cameraRef.current?.click()}
+          className={cn(tileClass, accentDamage ? "border-red-500/40" : "border-border")}
+        >
+          <Camera className="h-5 w-5" />
+          <span className="text-[10px]">Camera</span>
+        </button>
+        <button
+          type="button"
+          disabled={uploading}
           onClick={() => inputRef.current?.click()}
-          className={cn(
-            "flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-muted-foreground transition hover:border-primary hover:text-primary",
-            accentDamage ? "border-red-500/40" : "border-border",
-          )}
+          className={cn(tileClass, accentDamage ? "border-red-500/40" : "border-border")}
         >
           <ImagePlus className="h-5 w-5" />
-          <span className="text-[10px]">Add</span>
+          <span className="text-[10px]">Library</span>
         </button>
       </div>
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        aria-label={`${label}: take photo`}
+        onChange={(e) => handleFiles(e.target.files)}
+      />
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
         multiple
         className="hidden"
+        aria-label={`${label}: choose from library`}
         onChange={(e) => handleFiles(e.target.files)}
       />
     </div>

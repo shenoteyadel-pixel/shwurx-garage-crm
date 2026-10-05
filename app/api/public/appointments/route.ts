@@ -4,6 +4,7 @@ import { notifyByPermission } from "@/lib/actions-notifications"
 import { findBySubmission, intakeMetadata, SUBMISSION_UUID } from "@/lib/website/intake-dedupe"
 import { conversionToken } from "@/lib/website/conversion-token"
 import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
+import { submitOnce } from "@/lib/website/submit-once"
 
 export const runtime = "nodejs"
 
@@ -31,18 +32,18 @@ export async function POST(request: Request) {
     // Previews validate but never create bookings, staff alerts or emails.
     if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
 
-    // Best-effort retry dedupe. appointments has no unique submission index yet, so a
-    // truly simultaneous double submit can still create two rows (see scripts gap note).
+    // Durable once-per-submission: pre-select fast path, plus 23505 recovery
+    // against appointments_submission_id_uniq (scripts/060) for simultaneous submits.
     const submissionId = typeof body.submissionId === "string" && SUBMISSION_UUID.test(body.submissionId) ? body.submissionId : null
     const persisted = (outcome: "received" | "duplicate", id: string) =>
       jsonWithCors(request, { ok: true, outcome, id, conversionToken: conversionToken("appointment", id) })
-    if (submissionId) {
-      const existing = await findBySubmission("appointments", submissionId)
-      if (existing) return persisted("duplicate", existing)
-    }
 
     const supabase = createServiceClient()
-    const { data, error } = await supabase.rpc("submit_appointment", {
+    const result = await submitOnce({
+      submissionId,
+      find: (sid) => findBySubmission("appointments", sid),
+      insert: async () => {
+        const { data, error } = await supabase.rpc("submit_appointment", {
       p_name: name,
       p_phone: phone,
       p_email: body?.email ?? null,
@@ -56,10 +57,17 @@ export async function POST(request: Request) {
       p_notes: body?.notes ?? null,
       p_source: body?.source ?? "website",
       p_metadata: intakeMetadata(body, "appointment", submissionId, ["logistics"]),
+        })
+        if (error) return { ok: false, code: error.code ?? null, error: "not_persisted" }
+        if (!data?.ok || !data?.id) return { ok: false, error: data?.error ?? "not_persisted" }
+        return { ok: true, id: String(data.id) }
+      },
     })
 
-    if (error) return jsonWithCors(request, { ok: false, outcome: "error", error: "not_persisted" }, 400)
-    if (!data?.ok || !data?.id) return jsonWithCors(request, { ok: false, outcome: "error", error: data?.error ?? "not_persisted" }, 400)
+    if (result.outcome === "error") return jsonWithCors(request, { ok: false, outcome: "error", error: result.error }, 400)
+    // A concurrent duplicate already alerted staff via the winning request.
+    if (result.outcome === "duplicate") return persisted("duplicate", result.id)
+    const data = { id: result.id }
 
     const logisticsType = String(body?.metadata?.logistics?.type ?? "dropoff")
     const typeLabel =

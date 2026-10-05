@@ -3,14 +3,14 @@
 import { useState, useTransition } from "react"
 import { Card, Button, Input, Label } from "@/components/ui"
 import { saveMarketingSettings } from "@/lib/actions-crm"
-import type { Settings } from "@/lib/settings"
+import type { TrackingSettingsDTO } from "@/lib/website/control-center-data"
 import { Check, Loader2, ShieldCheck, BarChart3, Tag, Facebook } from "lucide-react"
 
 // Marketing / website integrations dashboard. Non-technical staff (or an agency
 // user on the "marketing" role) paste the IDs their platforms give them; the
 // SiteTracking component injects the matching scripts on every page. No code,
 // no deploy required — just Save.
-export function MarketingForm({ settings, canManage }: { settings: Settings; canManage: boolean }) {
+export function MarketingForm({ settings, canManage }: { settings: TrackingSettingsDTO; canManage: boolean }) {
   const [pending, start] = useTransition()
   const [saved, setSaved] = useState(false)
   const [enabled, setEnabled] = useState(settings.tracking_enabled)

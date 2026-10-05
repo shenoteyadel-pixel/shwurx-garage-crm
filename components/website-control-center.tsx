@@ -5,10 +5,9 @@ import Image from "next/image"
 import { Card, Button, Input, Label, Textarea, Badge } from "@/components/ui"
 import { MarketingForm } from "@/components/marketing-form"
 import { WebsiteBuilder } from "@/components/website-builder/website-builder"
-import type { EditorState } from "@/lib/website/store"
 import { SITE_CONTENT_GROUPS, SITE_IMAGE_SLOTS } from "@/lib/site-content-fields"
-import type { Settings } from "@/lib/settings"
 import type { BlogPost } from "@/lib/blog"
+import type { ControlCenterDTO } from "@/lib/website/control-center-data"
 import {
   saveSiteContent,
   saveSiteImages,
@@ -38,27 +37,16 @@ interface FieldMaps {
   ar: Record<string, string>
 }
 
-export function WebsiteControlCenter({
-  settings,
-  canManageWebsite,
-  canManageMarketing,
-  canViewMarketing,
-  fieldValues,
-  fieldDefaults,
-  images,
-  posts,
-  editorState,
-}: {
-  editorState: EditorState | null
-  settings: Settings
-  canManageWebsite: boolean
-  canManageMarketing: boolean
-  canViewMarketing: boolean
-  fieldValues: FieldMaps
-  fieldDefaults: FieldMaps
-  images: Record<string, string>
-  posts: BlogPost[]
-}) {
+export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
+  const { access, website, tracking } = data
+  const canManageWebsite = access.canManageWebsite && website !== null
+  const canViewMarketing = access.canViewMarketing && tracking !== null
+  const canManageMarketing = access.canManageMarketing
+  const editorState = website?.editorState ?? null
+  const fieldValues = (website?.fieldValues ?? { en: {}, ar: {} }) as FieldMaps
+  const fieldDefaults = (website?.fieldDefaults ?? { en: {}, ar: {} }) as FieldMaps
+  const images = website?.images ?? {}
+  const posts: BlogPost[] = website?.posts ?? []
   // Tabs are scoped strictly to the viewer's permissions so the two concerns
   // never overlap: website content/images/blog require website.manage, while
   // tracking & analytics require marketing.view (edit needs marketing.manage).
@@ -106,7 +94,7 @@ export function WebsiteControlCenter({
       )}
       {tab === "images" && <ImageManager images={images} canManage={canManageWebsite} />}
       {tab === "blog" && <BlogManager posts={posts} canManage={canManageWebsite} />}
-      {tab === "tracking" && <MarketingForm settings={settings} canManage={canManageMarketing} />}
+      {tab === "tracking" && tracking && <MarketingForm settings={tracking} canManage={canManageMarketing} />}
     </div>
   )
 }

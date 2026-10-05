@@ -77,6 +77,9 @@ revoke all on public.article_drafts from public, anon, authenticated, service_ro
 revoke all on public.article_versions from public, anon, authenticated, service_role;
 grant select on public.article_drafts to service_role;
 grant select on public.article_versions to service_role;
+-- Identity values are drawn by the SECURITY DEFINER owner; no client role may
+-- call nextval/setval, even under permissive ambient default sequence grants.
+revoke all on sequence public.article_versions_id_seq from public, anon, authenticated, service_role;
 
 -- service_role bypasses RLS, so SELECT works without a policy; anon and
 -- authenticated have no privileges and no policies.

@@ -72,6 +72,17 @@ export function WebsiteBuilder({ state }: { state: EditorState }) {
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
   const [pending, start] = useTransition()
   const [note, setNote] = useState("")
+  const [syncedFrom, setSyncedFrom] = useState({ draft: state.draft, version: state.draftVersion })
+
+  // The builder stays mounted across router.refresh() (e.g. after Import), so
+  // adopt the server's latest draft/version instead of keeping stale state.
+  if (syncedFrom.draft !== state.draft || syncedFrom.version !== state.draftVersion) {
+    setSyncedFrom({ draft: state.draft, version: state.draftVersion })
+    if (!dirty) {
+      setDoc(state.draft)
+      setVersion(state.draftVersion)
+    }
+  }
 
   const mutate = (fn: (d: WebsiteDocument) => void) => {
     setDoc((prev) => {

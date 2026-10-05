@@ -11,8 +11,9 @@ type Props = {
   doc: WebsiteDocument
   mutate: (fn: (d: WebsiteDocument) => void) => void
   /** set by the overview's "Add member" so the editor opens with a fresh draft */
-  autoAdd?: boolean
-  onAutoAdded?: () => void
+  /** nonce of a pending Overview "Add team member" request */
+  addRequest?: number | null
+  onAddHandled?: (nonce: number) => void
 }
 
 export function memberStatus(m: TeamMember): { label: string; tone: "live" | "draft" | "hidden" | "archived" } {
@@ -49,7 +50,7 @@ export function newTeamMember(sortOrder: number): TeamMember {
   }
 }
 
-export function TeamSection({ doc, mutate, autoAdd, onAutoAdded }: Props) {
+export function TeamSection({ doc, mutate, addRequest, onAddHandled }: Props) {
   const page = doc.pages.team
   const ordered = [...page.members].sort((a, b) => a.sortOrder - b.sortOrder)
   const [showArchived, setShowArchived] = useState(false)
@@ -82,16 +83,17 @@ export function TeamSection({ doc, mutate, autoAdd, onAutoAdded }: Props) {
     setFocusId(m.id)
   }
 
-  const autoAddDone = useRef(false)
+  // Each Overview "Add team member" carries a nonce; it is handled exactly once,
+  // and the section is never remounted for it, so the new slot stays selected.
+  const handledAdd = useRef<number | null>(null)
   useEffect(() => {
-    if (autoAdd && !autoAddDone.current) {
-      autoAddDone.current = true
-      add()
-      onAutoAdded?.()
-    }
-    // add() is intentionally run once per overview request
+    if (addRequest == null || handledAdd.current === addRequest) return
+    handledAdd.current = addRequest
+    add()
+    onAddHandled?.(addRequest)
+    // add() is intentionally run once per request nonce
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoAdd])
+  }, [addRequest])
 
   const duplicate = (id: string) => {
     const copy = { ...structuredClone(page.members.find((m) => m.id === id)!), id: uid("team"), visible: false, archived: false }
@@ -133,7 +135,11 @@ export function TeamSection({ doc, mutate, autoAdd, onAutoAdded }: Props) {
           {publicCount} public · {page.members.filter((m) => !m.archived).length} total
         </span>
         <Badge className={isTeamPagePublic(doc) ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}>
-          {isTeamPagePublic(doc) ? "Page will be live when published" : "Page and nav link hidden until a member is public"}
+          {!isTeamPagePublic(doc)
+            ? "Page and nav link hidden"
+            : publicCount > 0
+              ? "Page will be live when published"
+              : "Page goes live with intro and contact invitation; no member cards yet"}
         </Badge>
       </div>
 

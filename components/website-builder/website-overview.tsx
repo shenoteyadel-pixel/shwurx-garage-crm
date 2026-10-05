@@ -108,6 +108,20 @@ export function WebsiteOverview({
       window.open(path, "_blank", "noopener")
     })
 
+  // The draft-preview cookie is shared by the whole host, so on the same host the
+  // "live" URL would still render the draft. End preview server-side first.
+  const openLive = (url: string) =>
+    start(async () => {
+      setError(null)
+      try {
+        const r = await setWebsitePreview("off")
+        if (!r.ok) return setError(r.error)
+      } catch (e) {
+        return setError(e instanceof Error ? e.message : "Could not end draft preview.")
+      }
+      window.open(url, "_blank", "noopener")
+    })
+
   return (
     <div className="flex flex-col gap-5">
       <Card className="flex flex-col gap-4 p-5">
@@ -119,6 +133,10 @@ export function WebsiteOverview({
                 href={overview.liveUrl}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={(e) => {
+                  e.preventDefault()
+                  openLive(overview.liveUrl!)
+                }}
                 className="inline-flex items-center gap-1.5 truncate text-lg font-semibold hover:text-primary"
               >
                 {overview.liveUrl.replace(/^https?:\/\//, "")}
@@ -145,7 +163,7 @@ export function WebsiteOverview({
         </div>
         <div className="flex flex-wrap gap-2">
           {overview.liveUrl && (
-            <Button size="sm" variant="outline" onClick={() => window.open(overview.liveUrl!, "_blank", "noopener")}>
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => openLive(overview.liveUrl!)}>
               <ExternalLink className="h-4 w-4" /> Open live site
             </Button>
           )}
@@ -266,6 +284,11 @@ function InventoryRow({
           <LangPill label="EN" ok={item.complete.en} />
           <LangPill label="AR" ok={item.complete.ar} />
         </div>
+        {item.edit.kind === "none" && (
+          <p id={`${item.key}-noedit`} className="text-xs text-muted-foreground">
+            {item.edit.reason}
+          </p>
+        )}
         {item.flags.length > 0 && (
           <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-amber-600">
             {item.flags.map((f) => (
@@ -277,9 +300,15 @@ function InventoryRow({
         )}
       </div>
       <div className="flex shrink-0 gap-2">
-        <Button size="sm" variant="outline" onClick={onEdit} aria-label={`Edit ${title}`}>
-          <Pencil className="h-3.5 w-3.5" /> Edit
-        </Button>
+        {item.edit.kind === "none" ? (
+          <Button size="sm" variant="outline" disabled aria-describedby={`${item.key}-noedit`}>
+            <Pencil className="h-3.5 w-3.5" /> Not editable
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={onEdit} aria-label={`Edit ${title}`}>
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </Button>
+        )}
         <Button size="sm" variant="ghost" disabled={disabled} onClick={onPreview} aria-label={`Preview ${title}`}>
           <Eye className="h-3.5 w-3.5" /> Preview
         </Button>

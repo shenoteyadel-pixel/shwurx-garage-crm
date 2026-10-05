@@ -90,6 +90,7 @@ export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
       setBuilderOpen({ section: "custom", nonce })
       return setTab("builder")
     }
+    if (a.target.kind === "none") return
     if (a.target.kind === "blog") {
       setBlogOpen({ postId: a.target.postId, nonce })
       return setTab("blog")

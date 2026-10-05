@@ -1,5 +1,5 @@
 import type { MediaSource, WebsiteDocument } from "./types"
-import { blankTeamMember, seedDocument, TEAM_NAV_FOOTER, TEAM_NAV_HEADER } from "./seed"
+import { blankTeamMember, HOME_SECTION_DEFAULTS, seedDocument, TEAM_NAV_FOOTER, TEAM_NAV_HEADER } from "./seed"
 import { analyticsIssues, sanitizeAnalytics } from "./analytics"
 
 const MAX_STR = 8000
@@ -253,8 +253,41 @@ export function normalizeDocument(input: unknown, drops?: string[]): WebsiteDocu
     }
   }
   migrateTeam(doc, clean)
+  migrateHomeSections(doc, clean)
   doc.schemaVersion = 1
   return doc
+}
+
+/**
+ * Keeps stored order/visibility. Sections saved before headings existed get the
+ * default copy for THEIR key (the generic shaper would copy the first item's),
+ * unknown or duplicate keys are dropped, and newly added bands are appended once.
+ */
+export function migrateHomeSections(doc: WebsiteDocument, clean: unknown) {
+  const rawHome = isObj(clean) ? (clean as { pages?: { home?: { sections?: unknown } } }).pages?.home : undefined
+  const rawSections = Array.isArray(rawHome?.sections) ? (rawHome!.sections as unknown[]).filter(isObj) : []
+  const defaults = new Map(HOME_SECTION_DEFAULTS.map((s) => [s.key, s]))
+  const seen = new Set<string>()
+  const out: WebsiteDocument["pages"]["home"]["sections"] = []
+  doc.pages.home.sections.forEach((s, i) => {
+    const def = defaults.get(s.key)
+    if (!def || seen.has(s.key)) return
+    seen.add(s.key)
+    const raw = (rawSections[i] ?? {}) as Record<string, unknown>
+    out.push({
+      key: s.key,
+      visible: s.visible,
+      heading: isObj(raw.heading) ? s.heading : structuredClone(def.heading),
+      intro: isObj(raw.intro) ? s.intro : structuredClone(def.intro),
+    })
+  })
+  for (const def of HOME_SECTION_DEFAULTS) {
+    if (seen.has(def.key)) continue
+    // insert new bands just before "location" so contact stays last
+    const at = out.findIndex((s) => s.key === "location")
+    out.splice(at < 0 ? out.length : at, 0, structuredClone(def))
+  }
+  doc.pages.home.sections = out
 }
 
 /**
@@ -298,8 +331,13 @@ export function publicTeamMembers(doc: WebsiteDocument) {
 }
 
 /** The /team route and its nav links exist only when there is someone to show. */
+/**
+ * The Team page is public whenever its page switch is on — even with no
+ * completed members it renders its intro and a contact invitation. Members
+ * are gated individually by isPublicTeamMember.
+ */
 export function isTeamPagePublic(doc: WebsiteDocument): boolean {
-  return doc.pages.team.visible && publicTeamMembers(doc).length > 0
+  return doc.pages.team.visible
 }
 
 function isObj(v: unknown): boolean {

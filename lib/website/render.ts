@@ -22,7 +22,7 @@ export function localePath(lang: Lang, path: string): string {
   return path === "/" ? "/ar" : `/ar${path}`
 }
 
-/** Visible nav links, dropping /team while no member is public (avoids a link to a 404). */
+/** Visible nav links, dropping /team while the Team page is switched off (avoids a link to a 404). */
 export function visibleNav(doc: WebsiteDocument, links: NavLink[]): NavLink[] {
   const teamPublic = isTeamPagePublic(doc)
   return links.filter((l) => l.visible && (teamPublic || (l.href !== "/team" && !l.href.startsWith("/team#"))))

@@ -17,6 +17,8 @@ export type InventoryEditTarget =
       recordId?: string
     }
   | { kind: "blog"; postId?: string }
+  /** the route exists but has no Website Center controls; `reason` is shown instead of Edit */
+  | { kind: "none"; reason: string }
 
 export interface InventoryItem {
   key: string
@@ -155,7 +157,7 @@ export function buildInventory(
     const ready = publicTeamMembers(draft)
     const flags: string[] = []
     const drafts = active.length - ready.length
-    if (ready.length === 0) flags.push("No complete visible members yet")
+    if (ready.length === 0) flags.push("No complete visible members yet — page shows intro and contact invitation")
     else if (drafts > 0) flags.push(`${drafts} member slot(s) still draft`)
     const noPhoto = ready.filter((m) => !m.photoId).length
     if (noPhoto) flags.push(`${noPhoto} public member(s) without a photo`)
@@ -176,22 +178,23 @@ export function buildInventory(
 
   core("contact", "/contact", p.contact.title)
 
-  {
-    const form = draft.forms.enquiry
-    const flags: string[] = []
-    if (!form.enabled) flags.push("Form switched off — only call/WhatsApp shown")
-    items.push({
-      key: "page:appointment",
-      type: "form",
-      title: { en: "Book an appointment", ar: "حجز موعد" },
-      path: "/appointment",
-      status: !form.enabled ? "hidden" : hasLive ? "published" : "draft",
-      changed: json(form) !== json(live?.forms.enquiry),
-      complete: allOf(form.heading, form.successTitle),
-      flags,
-      edit: { kind: "builder", section: "form" },
-    })
-  }
+  // /appointment always renders the built-in booking form with bundled EN/AR copy.
+  // It is not driven by forms.enquiry (that config belongs to the contact enquiry form),
+  // so it is reported as always public and not editable here — never "Hidden".
+  items.push({
+    key: "page:appointment",
+    type: "form",
+    title: { en: "Book an appointment", ar: "حجز موعد" },
+    path: "/appointment",
+    status: "published",
+    changed: false,
+    complete: { en: true, ar: true },
+    flags: [],
+    edit: {
+      kind: "none",
+      reason: "Built-in booking form, always public. Its text and fields are not editable in the Website Center yet.",
+    },
+  })
 
   items.push({
     key: "page:blog",

@@ -2,6 +2,48 @@ import type { MediaAsset, SeoFields, TeamMember, TeamPage, WebsiteDocument } fro
 import { seedBrands, t } from "./seed-brands"
 import { seedServices } from "./seed-services"
 import { DEFAULT_ANALYTICS } from "./analytics"
+import type { HomeSection } from "./types"
+
+/** Default homepage bands, in display order. Also used to backfill older documents. */
+export const HOME_SECTION_DEFAULTS: HomeSection[] = [
+  { key: "hero", visible: true, heading: t("", ""), intro: t("", "") },
+  {
+    key: "brands",
+    visible: true,
+    heading: t("Choose your marque", "اختر علامتك"),
+    intro: t("Brand-specific care for 2016+ models. Pick your car to see what we handle.", "عناية مخصصة لكل علامة لموديلات 2016 وأحدث. اختر سيارتك لترى ما نقدمه."),
+  },
+  {
+    key: "services",
+    visible: true,
+    heading: t("What we do", "ما نقدمه"),
+    intro: t("Six workshop disciplines under one roof in Al Quoz.", "ستة تخصصات تحت سقف واحد في القوز."),
+  },
+  {
+    key: "process",
+    visible: true,
+    heading: t("How a visit works", "كيف تتم الزيارة"),
+    intro: t("Inspect, explain, quote — then only the work you approve.", "نفحص ونشرح ونقدّم عرض السعر — ثم ننفذ ما توافق عليه فقط."),
+  },
+  {
+    key: "team",
+    visible: true,
+    heading: t("The people in the workshop", "الفريق في الورشة"),
+    intro: t("Meet the team that inspects, repairs and programmes your car.", "تعرّف على الفريق الذي يفحص سيارتك ويصلحها ويبرمجها."),
+  },
+  {
+    key: "blog",
+    visible: true,
+    heading: t("From the workshop", "من الورشة"),
+    intro: t("Recent articles and owner advice.", "أحدث المقالات ونصائح للملاك."),
+  },
+  {
+    key: "location",
+    visible: true,
+    heading: t("Visit or message us", "زرنا أو راسلنا"),
+    intro: t("Call, WhatsApp or send an enquiry — we reply with next steps.", "اتصل أو راسلنا عبر واتساب أو أرسل استفساراً — نرد عليك بالخطوات التالية."),
+  },
+]
 
 const pageSeo = (titleEn: string, titleAr: string, descEn: string, descAr: string): SeoFields => ({
   title: t(titleEn, titleAr),
@@ -145,14 +187,14 @@ export function seedDocument(): WebsiteDocument {
           "ميكانيكا وتشخيص وهيكل ودهان وبرمجة للسيارات الفاخرة والرياضية موديلات 2016 وأحدث. الفحص أولاً، عرض سعر مكتوب، ولا يُنفّذ شيء دون موافقتك.",
         ),
         heroImageId: "site-hero",
-        sections: [
-          { key: "hero", visible: true },
-          { key: "brands", visible: true },
-          { key: "services", visible: true },
-          { key: "process", visible: true },
-          { key: "location", visible: true },
-          { key: "blog", visible: true },
+        primaryCta: { label: t("Request a quote", "اطلب عرض سعر"), href: "/contact" },
+        secondaryCta: { label: t("Book an inspection", "احجز فحصاً"), href: "/appointment" },
+        highlights: [
+          { id: "h1", title: t("2016+ premium & sports", "فاخرة ورياضية 2016+"), body: t("Our focus models", "الموديلات التي نركز عليها") },
+          { id: "h2", title: t("Inspection first", "الفحص أولاً"), body: t("Diagnosis before quotation", "التشخيص قبل عرض السعر") },
+          { id: "h3", title: t("Your approval", "موافقتك"), body: t("Nothing done without your OK", "لا شيء يُنفّذ دون موافقتك") },
         ],
+        sections: HOME_SECTION_DEFAULTS.map((s) => structuredClone(s)),
         seo: pageSeo(
           "SHWURX — Premium Car Repair in Al Quoz, Dubai",
           "شوركس — إصلاح السيارات الفاخرة في القوز، دبي",

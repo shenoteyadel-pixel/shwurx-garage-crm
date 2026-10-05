@@ -23,8 +23,10 @@ import { getServerI18n } from "@/lib/i18n/server"
 import { resolveImage } from "@/lib/site-content"
 import { interpolate } from "@/lib/i18n/dictionaries"
 import { TrackLink } from "@/components/site/track-link"
+import { listPublishedPosts } from "@/lib/blog"
+import { isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
 import { buildMetadata, localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
-import type { HomeSectionKey, ServiceKind, WebsiteDocument, Lang } from "@/lib/website/types"
+import type { HomeSection, HomeSectionKey, ServiceKind, WebsiteDocument, Lang } from "@/lib/website/types"
 
 export async function generateMetadata(): Promise<Metadata> {
   const { doc, lang, preview } = await siteContext()
@@ -50,6 +52,31 @@ const BUNDLED_LOGOS = new Set([
   "landrover", "maserati", "mclaren", "mercedes", "porsche", "rollsroyce", "volkswagen",
 ])
 
+function SectionHeader({ id, section, lang, fallback, href, linkLabel }: {
+  id: string
+  section: HomeSection | undefined
+  lang: Lang
+  fallback: string
+  href?: string
+  linkLabel?: string
+}) {
+  const heading = (section && pick(section.heading, lang)) || fallback
+  const intro = section ? pick(section.intro, lang) : ""
+  return (
+    <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
+      <div className="max-w-2xl">
+        <h2 id={id} className="text-balance text-2xl font-black uppercase tracking-tight md:text-3xl">{heading}</h2>
+        {intro && <p className="mt-3 text-pretty text-sm leading-relaxed text-muted-foreground">{intro}</p>}
+      </div>
+      {href && linkLabel && (
+        <Link href={href} className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary hover:underline">
+          {linkLabel} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
+        </Link>
+      )}
+    </div>
+  )
+}
+
 function brandLogo(doc: WebsiteDocument, lang: Lang, b: WebsiteDocument["brands"][number]) {
   const m = publicMedia(doc, b.logoId)
   if (m) return { url: m.url, alt: pick(m.alt, lang) || `${pick(b.name, lang)} logo`, bundled: false }
@@ -59,6 +86,8 @@ function brandLogo(doc: WebsiteDocument, lang: Lang, b: WebsiteDocument["brands"
 
 export default async function HomePage() {
   const [{ doc, lang }, { dict }] = await Promise.all([siteContext(), getServerI18n()])
+  const visibleKeys = new Set(doc.pages.home.sections.filter((s) => s.visible).map((s) => s.key))
+  const posts = visibleKeys.has("blog") ? (await listPublishedPosts()).slice(0, 3) : []
   const info = publicSiteInfo(doc, lang)
   const t = dict.home
   const home = doc.pages.home
@@ -70,7 +99,16 @@ export default async function HomePage() {
   const services = doc.services.filter((s) => s.visible)
   const brands = doc.brands.filter((b) => b.visible && b.kind === "manufacturer")
   const lp = (p: string) => localePath(lang, p)
-  const heroVisible = home.sections.some((s) => s.key === "hero" && s.visible)
+  const heroVisible = visibleKeys.has("hero")
+  const sec = (key: HomeSectionKey) => home.sections.find((s) => s.key === key)
+  const highlights = home.highlights.filter((h) => pick(h.title, lang))
+  const teamMembers = isTeamPagePublic(doc)
+    ? doc.pages.team.members.filter((m) => !m.archived && isPublicTeamMember(m)).slice(0, 4)
+    : []
+  const ctas = [
+    { cta: home.primaryCta, label: "hero primary", primary: true },
+    { cta: home.secondaryCta, label: "hero secondary", primary: false },
+  ].filter((c) => pick(c.cta.label, lang) && c.cta.href)
 
   const sections: Partial<Record<HomeSectionKey, React.ReactNode>> = {
     hero: (
@@ -94,37 +132,42 @@ export default async function HomePage() {
               </h1>
               <p className="mt-5 max-w-md text-pretty text-base leading-relaxed text-muted-foreground">{pick(home.subtitle, lang)}</p>
 
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <TrackLink
-                  href={lp("/appointment")}
-                  label="Book a Service — hero"
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-7 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-                >
-                  {dict.cta.bookService} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
-                </TrackLink>
-                <TrackLink
-                  href={lp("/contact")}
-                  label="Get a Quote — hero"
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-border bg-card/60 px-7 text-sm font-semibold text-foreground backdrop-blur transition hover:border-primary/60 hover:bg-accent"
-                >
-                  {dict.cta.getQuote}
-                </TrackLink>
-              </div>
+              {ctas.length > 0 && (
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                  {ctas.map(({ cta, label, primary }) => (
+                    <TrackLink
+                      key={label}
+                      href={lp(cta.href)}
+                      label={`${pick(cta.label, "en")} — ${label}`}
+                      className={
+                        primary
+                          ? "inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-7 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+                          : "inline-flex h-12 items-center justify-center gap-2 rounded-md border border-border bg-card/60 px-7 text-sm font-semibold text-foreground backdrop-blur transition hover:border-primary/60 hover:bg-accent"
+                      }
+                    >
+                      {pick(cta.label, lang)}
+                      {primary && <ArrowRight className="h-4 w-4 rtl:rotate-180" />}
+                    </TrackLink>
+                  ))}
+                </div>
+              )}
 
-              <div className="mt-12 grid max-w-lg grid-cols-1 gap-6 sm:grid-cols-3">
-                {t.features.map((f, i) => {
-                  const Icon = HERO_ICONS[i] ?? BadgeCheck
-                  return (
-                    <div key={f.title} className="flex items-start gap-3">
-                      <Icon className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
-                      <div>
-                        <p className="text-sm font-bold leading-tight">{f.title}</p>
-                        <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{f.sub}</p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+              {highlights.length > 0 && (
+                <ul className="mt-12 grid max-w-lg grid-cols-1 gap-6 sm:grid-cols-3">
+                  {highlights.map((h, i) => {
+                    const Icon = HERO_ICONS[i] ?? BadgeCheck
+                    return (
+                      <li key={h.id} className="flex items-start gap-3">
+                        <Icon className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
+                        <div>
+                          <p className="text-sm font-bold leading-tight">{pick(h.title, lang)}</p>
+                          {pick(h.body, lang) && <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{pick(h.body, lang)}</p>}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
             </div>
 
             <div className="relative -mx-4 h-64 sm:h-80 lg:hidden">
@@ -139,12 +182,14 @@ export default async function HomePage() {
     services: services.length > 0 && (
       <section key="services" className="bg-background" aria-labelledby="home-services">
         <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
-          <div className="flex items-end justify-between gap-4">
-            <h2 id="home-services" className="text-2xl font-black uppercase tracking-tight md:text-3xl">{pick(doc.pages.servicesIndex.title, lang)}</h2>
-            <Link href={lp("/services")} className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">
-              {dict.cta.learnMore} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
-            </Link>
-          </div>
+          <SectionHeader
+            id="home-services"
+            section={sec("services")}
+            lang={lang}
+            fallback={pick(doc.pages.servicesIndex.title, lang)}
+            href={lp("/services")}
+            linkLabel={dict.cta.learnMore}
+          />
           <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
             {services.map((s) => {
               const Icon = SERVICE_ICONS[s.kind] ?? Wrench
@@ -165,16 +210,20 @@ export default async function HomePage() {
       </section>
     ),
 
-    process: home.sections.length > 0 && doc.pages.process.length > 0 && (
+    process: doc.pages.process.length > 0 && (
       <section key="process" className="border-y border-border bg-card/40" aria-labelledby="home-process">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 lg:grid-cols-3 lg:px-8">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">{t.aboutEyebrow}</p>
             <h2 id="home-process" className="mt-4 text-balance text-3xl font-black uppercase leading-[1.02] tracking-tight">
-              {t.aboutTitle1} <span className="text-primary">{t.aboutTitle2}</span>
+              {pick(sec("process")?.heading, lang) || (
+                <>
+                  {t.aboutTitle1} <span className="text-primary">{t.aboutTitle2}</span>
+                </>
+              )}
             </h2>
             <p className="mt-5 text-pretty text-sm leading-relaxed text-muted-foreground">
-              {interpolate(t.aboutBody, { company: info.companyName })}
+              {pick(sec("process")?.intro, lang) || interpolate(t.aboutBody, { company: info.companyName })}
             </p>
             <div className="relative mt-6 h-48 overflow-hidden rounded-xl border border-border">
               <Image
@@ -210,8 +259,12 @@ export default async function HomePage() {
       <section key="brands" id="brands" className="scroll-mt-24 bg-muted dark:bg-[radial-gradient(ellipse_at_top,oklch(0.2_0_0),oklch(0.11_0_0))]">
         <div className="mx-auto max-w-7xl px-4 py-20 lg:px-8">
           <div className="text-center">
-            <h2 className="text-balance text-2xl font-black uppercase tracking-tight md:text-3xl">{pick(doc.pages.brandsIndex.title, lang)}</h2>
-            <p className="mx-auto mt-3 max-w-2xl text-pretty text-sm text-muted-foreground">{pick(doc.pages.brandsIndex.intro, lang)}</p>
+            <h2 className="text-balance text-2xl font-black uppercase tracking-tight md:text-3xl">
+              {pick(sec("brands")?.heading, lang) || pick(doc.pages.brandsIndex.title, lang)}
+            </h2>
+            <p className="mx-auto mt-3 max-w-2xl text-pretty text-sm text-muted-foreground">
+              {pick(sec("brands")?.intro, lang) || pick(doc.pages.brandsIndex.intro, lang)}
+            </p>
           </div>
           <div className="mx-auto mt-12 grid max-w-6xl grid-cols-3 justify-items-center gap-x-6 gap-y-10 sm:grid-cols-5 lg:grid-cols-8">
             {brands.map((b) => {
@@ -241,13 +294,78 @@ export default async function HomePage() {
       </section>
     ),
 
+    team: teamMembers.length > 0 && (
+      <section key="team" className="bg-background" aria-labelledby="home-team">
+        <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
+          <SectionHeader
+            id="home-team"
+            section={sec("team")}
+            lang={lang}
+            fallback={pick(doc.pages.team.title, lang)}
+            href={lp("/team")}
+            linkLabel={dict.cta.learnMore}
+          />
+          <ul className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {teamMembers.map((m) => {
+              const photo = publicMedia(doc, m.photoId)
+              return (
+                <li key={m.id} className="overflow-hidden rounded-lg border border-border bg-card">
+                  <div className="relative aspect-[4/5] bg-muted">
+                    {photo ? (
+                      <Image
+                        src={photo.url || "/placeholder.svg"}
+                        alt={pick(photo.alt, lang) || pick(m.name, lang)}
+                        fill
+                        sizes="(min-width: 1024px) 25vw, 50vw"
+                        className="object-cover"
+                        style={{ objectPosition: `${photo.focalX ?? 50}% ${photo.focalY ?? 50}%` }}
+                      />
+                    ) : (
+                      <span className="absolute inset-0 flex items-center justify-center text-3xl font-black text-muted-foreground" aria-hidden="true">
+                        {pick(m.name, lang).slice(0, 1)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h3 className="text-sm font-bold leading-tight">{pick(m.name, lang)}</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">{pick(m.jobTitle, lang)}</p>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      </section>
+    ),
+
+    blog: posts.length > 0 && (
+      <section key="blog" className="border-t border-border bg-background" aria-labelledby="home-blog">
+        <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
+          <SectionHeader id="home-blog" section={sec("blog")} lang={lang} fallback="Blog" href="/blog" linkLabel={dict.cta.learnMore} />
+          <ul className="mt-8 grid gap-4 md:grid-cols-3">
+            {posts.map((post) => (
+              <li key={post.id}>
+                <Link href={`/blog/${post.slug}`} className="group flex h-full flex-col rounded-lg border border-border bg-card p-5 transition hover:border-primary/50">
+                  <h3 className="text-base font-bold leading-snug group-hover:text-primary">{post.title}</h3>
+                  {post.excerpt && <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted-foreground">{post.excerpt}</p>}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    ),
+
     location: pick(doc.business.address, lang) && (
       <section key="location" className="mx-auto max-w-7xl px-4 py-16 lg:px-8" aria-labelledby="home-location">
         <div className="flex flex-col items-start justify-between gap-6 rounded-2xl border border-border bg-card p-8 md:flex-row md:items-center">
           <div className="flex items-start gap-4">
             <MapPin className="mt-1 h-6 w-6 shrink-0 text-primary" />
             <div>
-              <h2 id="home-location" className="text-xl font-black uppercase tracking-tight">{t.ctaTitle}</h2>
+              <h2 id="home-location" className="text-xl font-black uppercase tracking-tight">{pick(sec("location")?.heading, lang) || t.ctaTitle}</h2>
+              {pick(sec("location")?.intro, lang) && (
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pick(sec("location")?.intro, lang)}</p>
+              )}
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pick(doc.business.address, lang)}</p>
               {pick(doc.business.hours, lang) && (
                 <p className="mt-1 text-sm text-muted-foreground">{pick(doc.business.hours, lang)}</p>

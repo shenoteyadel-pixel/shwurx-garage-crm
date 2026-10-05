@@ -152,11 +152,22 @@ export interface NavLink {
   visible: boolean
 }
 
-export type HomeSectionKey = "hero" | "brands" | "services" | "process" | "location" | "blog"
+export type HomeSectionKey = "hero" | "brands" | "services" | "process" | "team" | "blog" | "location"
 
+export const HOME_SECTION_KEYS: readonly HomeSectionKey[] = ["hero", "brands", "services", "process", "team", "blog", "location"]
+
+/** One homepage band. Array order is display order; heading/intro are owner-editable. */
 export interface HomeSection {
   key: HomeSectionKey
   visible: boolean
+  heading: L10n
+  intro: L10n
+}
+
+export interface HomeCta {
+  label: L10n
+  /** internal path WITHOUT locale prefix */
+  href: string
 }
 
 export type PageBlock =
@@ -210,6 +221,10 @@ export interface PagesContent {
     title: L10n
     subtitle: L10n
     heroImageId: string | null
+    primaryCta: HomeCta
+    secondaryCta: HomeCta
+    /** short proof points under the hero CTAs (facts only — no invented stats) */
+    highlights: TextItem[]
     sections: HomeSection[]
     seo: SeoFields
   }

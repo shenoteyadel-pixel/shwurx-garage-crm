@@ -6,6 +6,8 @@ import Image from "next/image"
 import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   CheckCircle2,
   Download,
   Eye,
@@ -32,7 +34,7 @@ import {
 } from "@/lib/actions-website-cms"
 import type { EditorState } from "@/lib/website/store"
 import type { ValidationIssue } from "@/lib/website/normalize"
-import type { CustomPage, MediaApproval, NavLink, PageBlock, WebsiteDocument } from "@/lib/website/types"
+import type { CustomPage, HomeSectionKey, MediaApproval, NavLink, PageBlock, WebsiteDocument } from "@/lib/website/types"
 import {
   FaqEditor,
   L10nField,
@@ -207,6 +209,9 @@ export function WebsiteBuilder({ state, open }: { state: EditorState; open?: Bui
     setVersion(r.version)
     // Edits typed while the request was in flight were not sent; keep them unsaved.
     setDirty(editCount.current !== sentAt)
+    // Refresh the server DTO so the Overview's version and inventory follow the save.
+    // Client state survives a refresh, so other editors' unsaved changes are kept.
+    router.refresh()
     return r.version
   }
 
@@ -360,11 +365,10 @@ export function WebsiteBuilder({ state, open }: { state: EditorState; open?: Bui
         {section === "pages" && <PagesSection doc={doc} mutate={mutate} />}
         {section === "team" && (
           <TeamSection
-            key={pendingTeamAdd ?? "team"}
             doc={doc}
             mutate={mutate}
-            autoAdd={pendingTeamAdd !== null}
-            onAutoAdded={() => setPendingTeamAdd(null)}
+            addRequest={pendingTeamAdd}
+            onAddHandled={(nonce) => setPendingTeamAdd((cur) => (cur === nonce ? null : cur))}
           />
         )}
         {section === "brands" && <BrandsSection key={focus?.nonce ?? "brands"} doc={doc} mutate={mutate} focusId={focus?.id} />}
@@ -462,6 +466,65 @@ function BusinessSection({ doc, mutate }: SectionProps) {
 
 /* ---------------------------------- Pages --------------------------------- */
 
+const HOME_SECTION_LABELS: Record<HomeSectionKey, string> = {
+  hero: "Hero (headings above)",
+  brands: "Brand pathways",
+  services: "Services overview",
+  process: "Process & about",
+  team: "Team preview",
+  blog: "Latest articles (only shown when published posts exist)",
+  location: "Contact & location",
+}
+
+function HomeSectionsEditor({ doc, mutate }: SectionProps) {
+  const sections = doc.pages.home.sections
+  const move = (i: number, dir: -1 | 1) =>
+    mutate((d) => {
+      const list = d.pages.home.sections
+      const j = i + dir
+      if (j < 0 || j >= list.length) return
+      ;[list[i], list[j]] = [list[j], list[i]]
+    })
+  return (
+    <div className="flex flex-col gap-3">
+      <Label>Home page bands (order, visibility, headings)</Label>
+      <ol className="flex flex-col gap-3">
+        {sections.map((s, i) => (
+          <li key={s.key} className="flex flex-col gap-3 rounded-lg border border-border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm font-semibold">
+                {i + 1}. {HOME_SECTION_LABELS[s.key]}
+              </span>
+              <div className="flex items-center gap-2">
+                <Toggle label="Shown" checked={s.visible} onChange={(v) => mutate((d) => void (d.pages.home.sections[i].visible = v))} />
+                <Button type="button" size="icon" variant="outline" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${s.key} up`}>
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  onClick={() => move(i, 1)}
+                  disabled={i === sections.length - 1}
+                  aria-label={`Move ${s.key} down`}
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            {s.key !== "hero" && (
+              <>
+                <L10nField label="Heading" value={s.heading} onChange={(v) => mutate((d) => void (d.pages.home.sections[i].heading = v))} />
+                <L10nField label="Intro" value={s.intro} onChange={(v) => mutate((d) => void (d.pages.home.sections[i].intro = v))} multiline />
+              </>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 function PagesSection({ doc, mutate }: SectionProps) {
   const p = doc.pages
   return (
@@ -471,19 +534,27 @@ function PagesSection({ doc, mutate }: SectionProps) {
       <L10nField label="Main heading" value={p.home.title} onChange={(v) => mutate((d) => void (d.pages.home.title = v))} />
       <L10nField label="Subtitle" value={p.home.subtitle} onChange={(v) => mutate((d) => void (d.pages.home.subtitle = v))} multiline />
       <MediaPicker label="Hero image" media={doc.media} value={p.home.heroImageId} onChange={(v) => mutate((d) => void (d.pages.home.heroImageId = v))} />
-      <div className="flex flex-col gap-2">
-        <Label>Sections shown on the home page</Label>
-        <div className="flex flex-wrap gap-4">
-          {p.home.sections.map((s, i) => (
-            <Toggle
-              key={s.key}
-              label={s.key}
-              checked={s.visible}
-              onChange={(v) => mutate((d) => void (d.pages.home.sections[i].visible = v))}
-            />
-          ))}
+      {(["primaryCta", "secondaryCta"] as const).map((k) => (
+        <div key={k} className="grid gap-3 md:grid-cols-2">
+          <L10nField
+            label={k === "primaryCta" ? "Main button label" : "Second button label"}
+            value={p.home[k].label}
+            onChange={(v) => mutate((d) => void (d.pages.home[k].label = v))}
+          />
+          <TextField
+            label="Button link (site path, e.g. /contact)"
+            value={p.home[k].href}
+            onChange={(v) => mutate((d) => void (d.pages.home[k].href = v))}
+            placeholder="/contact"
+          />
         </div>
-      </div>
+      ))}
+      <TextItemsEditor
+        title="Hero proof points (facts only)"
+        items={p.home.highlights}
+        onChange={(v) => mutate((d) => void (d.pages.home.highlights = v))}
+      />
+      <HomeSectionsEditor doc={doc} mutate={mutate} />
       <SeoEditor value={p.home.seo} media={doc.media} onChange={(v) => mutate((d) => void (d.pages.home.seo = v))} />
 
       <TextItemsEditor title="Our process (inspection → quote → approval)" items={p.process} onChange={(v) => mutate((d) => void (d.pages.process = v))} />

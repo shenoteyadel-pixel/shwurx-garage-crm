@@ -1,8 +1,12 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { notFound } from "next/navigation"
-import { buildMetadata, pick, publicMedia, siteContext } from "@/lib/website/render"
+import { ArrowRight } from "lucide-react"
+import { buildMetadata, localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
 import { isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
+import { publicSiteInfo } from "@/lib/site-info"
 import { TeamGrid, type TeamCard } from "@/components/site/team-grid"
+import { ContactActions } from "@/components/site/contact-actions"
 
 export async function generateMetadata(): Promise<Metadata> {
   const { doc, lang, preview } = await siteContext()
@@ -12,7 +16,8 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function TeamPage() {
   const { doc, lang, preview } = await siteContext()
   const page = doc.pages.team
-  // Live: only complete, visible members. Draft preview also shows unfinished slots, clearly marked.
+  // The page itself is gated only by its switch. Members are gated one by one:
+  // live shows complete visible members; draft preview also shows unfinished slots, marked as drafts.
   if (!preview && !isTeamPagePublic(doc)) notFound()
 
   const members = page.members.filter((m) => !m.archived && (preview || isPublicTeamMember(m)))
@@ -30,11 +35,13 @@ export default async function TeamPage() {
   })
   const intro = pick(page.intro, lang).split(/\n{2,}/).filter(Boolean)
   const ar = lang === "ar"
+  const info = publicSiteInfo(doc, lang)
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
       <header className="max-w-3xl">
-        <h1 className="text-balance text-4xl font-bold tracking-tight md:text-5xl">{pick(page.title, lang)}</h1>
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">{info.companyName}</p>
+        <h1 className="mt-3 text-balance text-4xl font-bold tracking-tight md:text-5xl">{pick(page.title, lang)}</h1>
         {intro.map((p, i) => (
           <p key={i} className="mt-4 text-pretty text-base leading-relaxed text-muted-foreground">{p}</p>
         ))}
@@ -44,7 +51,41 @@ export default async function TeamPage() {
           {ar ? "صفحة الفريق مخفية حالياً ولن تظهر للزوار." : "The Team page is switched off and is not shown to visitors."}
         </p>
       )}
-      <TeamGrid cards={cards} draftLabel={ar ? "مسودة — غير منشور" : "Draft — not public"} emptyName={ar ? "عضو بدون اسم" : "Unnamed member"} />
+
+      {cards.length > 0 && (
+        <TeamGrid cards={cards} draftLabel={ar ? "مسودة — غير منشور" : "Draft — not public"} emptyName={ar ? "عضو بدون اسم" : "Unnamed member"} />
+      )}
+
+      <section
+        aria-labelledby="team-contact"
+        className="mt-14 flex flex-col gap-6 rounded-2xl border border-border bg-card p-6 md:flex-row md:items-center md:justify-between md:p-8"
+      >
+        <div className="max-w-xl">
+          <h2 id="team-contact" className="text-xl font-bold tracking-tight">
+            {ar ? "تحدّث مع الورشة مباشرة" : "Talk to the workshop directly"}
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {ar
+              ? "أخبرنا عن سيارتك وما تلاحظه، وسيرد عليك أحد أفراد الفريق المختص."
+              : "Tell us about your car and what you are noticing, and the right person on the team will get back to you."}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <ContactActions
+            phone={info.phone ?? ""}
+            whatsapp={info.whatsapp ?? ""}
+            callLabel={ar ? "اتصل" : "Call"}
+            whatsappLabel={ar ? "واتساب" : "WhatsApp"}
+            context="team"
+          />
+          <Link
+            href={localePath(lang, "/contact")}
+            className="inline-flex h-12 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+          >
+            {ar ? "أرسل استفساراً" : "Send an enquiry"} <ArrowRight className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />
+          </Link>
+        </div>
+      </section>
     </div>
   )
 }

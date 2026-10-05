@@ -33,6 +33,7 @@ export type MediaSource =
   | "brand_mark" // manufacturer logo used only to identify the brand
   | "upload"
   | "ai_illustration" // generated concept artwork; must be captioned as illustrative, never shown as real staff/work
+  | "ai_generated" // AI composition from an owner-supplied reference; illustrative, never a real customer job
 
 export type MediaApproval = "approved" | "needs_review" | "rejected"
 
@@ -84,6 +85,8 @@ export interface Brand {
   /** extra collections such as "sports" — collections are NOT manufacturers */
   collections: string[]
   logoId: string | null
+  /** media id of the brand page hero; null = no hero */
+  heroImageId: string | null
   yearFrom: number
   models: ModelScope[]
   intro: L10n

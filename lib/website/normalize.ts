@@ -1,6 +1,9 @@
 import type { MediaSource, WebsiteDocument } from "./types"
+import { brandHeroId } from "./seed-brands"
 import {
   blankTeamMember,
+  BRAND_HERO_SEED,
+  brandHeroMedia,
   HERO_CONCEPT_ID,
   HOME_SECTION_DEFAULTS,
   ILLUSTRATIVE_SEED,
@@ -120,7 +123,7 @@ const ITEM_TEMPLATES: Record<string, unknown> = {
 
 const ENUMS: Record<string, readonly string[]> = {
   approval: ["approved", "needs_review", "rejected"],
-  source: ["workshop_original", "existing_site_asset", "brand_mark", "upload", "ai_illustration"] satisfies MediaSource[],
+  source: ["workshop_original", "existing_site_asset", "brand_mark", "upload", "ai_illustration", "ai_generated"] satisfies MediaSource[],
   template: ["standard", "landing"],
 }
 
@@ -267,6 +270,7 @@ export function normalizeDocument(input: unknown, drops?: string[]): WebsiteDocu
   migrateTeam(doc, clean)
   migrateHomeSections(doc, clean)
   applyIllustrativeSeed(doc, clean)
+  applyBrandHeroSeed(doc, clean)
   doc.schemaVersion = 1
   return doc
 }
@@ -372,9 +376,37 @@ export function applyIllustrativeSeed(doc: WebsiteDocument, clean: unknown) {
   doc.appliedSeeds.push(ILLUSTRATIVE_SEED)
 }
 
-/** True when the media item is generated concept artwork rather than a real photo. */
+/**
+ * Once-only merge of the 15 garage brand heroes. Media is appended by missing
+ * id; a brand's hero is bound only when the stored brand has no hero field yet
+ * (it predates this pack), so owner-chosen heroes and later deletions or
+ * clearing stick once the marker is recorded.
+ */
+export function applyBrandHeroSeed(doc: WebsiteDocument, clean: unknown) {
+  if (doc.appliedSeeds.includes(BRAND_HERO_SEED)) return
+  const ids = new Set(doc.media.map((m) => m.id))
+  for (const m of brandHeroMedia()) if (!ids.has(m.id)) doc.media.push(m)
+  const rawBrands = isObj(clean) ? (clean as { brands?: unknown }).brands : undefined
+  const rawBySlug = new Map<string, Record<string, unknown>>()
+  if (Array.isArray(rawBrands)) {
+    for (const b of rawBrands) if (isObj(b) && typeof (b as { slug?: unknown }).slug === "string") rawBySlug.set((b as { slug: string }).slug, b as Record<string, unknown>)
+  }
+  const seeded = new Set(brandHeroMedia().map((m) => m.id))
+  for (const b of doc.brands) {
+    const raw = rawBySlug.get(b.slug)
+    const hasOwnHero = !!raw && typeof raw.heroImageId === "string" && raw.heroImageId.trim() !== ""
+    if (!hasOwnHero && seeded.has(brandHeroId(b.slug))) b.heroImageId = brandHeroId(b.slug)
+  }
+  doc.appliedSeeds.push(BRAND_HERO_SEED)
+}
+
+/** True when the media item is generated artwork rather than a real photo. */
+export function isIllustrativeSource(source: MediaSource | undefined): boolean {
+  return source === "ai_illustration" || source === "ai_generated"
+}
+
 export function isIllustrativeMedia(doc: WebsiteDocument, id: string | null | undefined): boolean {
-  return !!id && doc.media.some((m) => m.id === id && m.source === "ai_illustration")
+  return !!id && doc.media.some((m) => m.id === id && isIllustrativeSource(m.source))
 }
 
 /** Complete (both languages), visible and not archived. Photo is optional. */

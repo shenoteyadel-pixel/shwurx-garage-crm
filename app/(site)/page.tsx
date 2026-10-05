@@ -110,8 +110,8 @@ export default async function HomePage() {
   const heroVisible = visibleKeys.has("hero")
   const sec = (key: HomeSectionKey) => home.sections.find((s) => s.key === key)
   const highlights = home.highlights.filter((h) => pick(h.title, lang))
-  const heroIllustrative = heroMedia?.source === "ai_illustration"
-  const heroCaption = heroIllustrative ? pick(heroMedia.caption, lang) : ""
+  const heroIllustrative = isIllustrativeMedia(doc, heroMedia?.id)
+  const heroCaption = heroIllustrative && heroMedia ? pick(heroMedia.caption, lang) : ""
   const teamPublic = isTeamPagePublic(doc)
   const teamMembers = teamPublic
     ? doc.pages.team.members.filter((m) => !m.archived && isPublicTeamMember(m)).slice(0, 4)

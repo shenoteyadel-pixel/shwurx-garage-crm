@@ -1,5 +1,6 @@
 import type { MediaAsset, SeoFields, TeamMember, TeamPage, WebsiteDocument } from "./types"
-import { seedBrands, t } from "./seed-brands"
+import { brandHeroId, seedBrands, t } from "./seed-brands"
+import brandHeroes from "@/data/editorial/brand-heroes-v2.json"
 import { seedServices } from "./seed-services"
 import { DEFAULT_ANALYTICS } from "./analytics"
 import type { HomeSection } from "./types"
@@ -102,6 +103,31 @@ export function illustrativeMedia(): MediaAsset[] {
   }))
   return [hero, ...portraits]
 }
+export const BRAND_HERO_SEED = "brand-garage-heroes-v2"
+
+/**
+ * AI compositions of each marque outside the SHWURX facade (beige corrugated
+ * exterior, purple trim, lime/black sign, open bay), generated from the owner's
+ * facade reference. Illustrative only — never presented as customer jobs.
+ */
+export function brandHeroMedia(): MediaAsset[] {
+  return brandHeroes.map((h) => ({
+    id: brandHeroId(h.brandSlug),
+    url: h.url,
+    source: "ai_generated" as const,
+    approval: "approved" as const,
+    alt: t(h.alt.en, h.alt.ar),
+    caption: t(h.caption.en, h.caption.ar),
+    tags: ["brand", "hero", "illustration", h.brandSlug],
+    width: h.width,
+    height: h.height,
+    focalX: h.focalX,
+    focalY: h.focalY,
+    publicSafe: true,
+    uploadedAt: "2026-10-05T00:00:00.000Z",
+  }))
+}
+
 export const TEAM_NAV_HEADER = { id: "nav-team", label: t("Team", "فريقنا"), href: "/team", visible: true }
 export const TEAM_NAV_FOOTER = { id: "ft-team", label: t("Our team", "فريق العمل"), href: "/team", visible: true }
 
@@ -195,7 +221,7 @@ function media(): MediaAsset[] {
     publicSafe: true,
     uploadedAt: now,
   }))
-  return [...logos, ...site, ...illustrativeMedia()]
+  return [...logos, ...site, ...illustrativeMedia(), ...brandHeroMedia()]
 }
 
 export function seedDocument(): WebsiteDocument {
@@ -373,6 +399,6 @@ export function seedDocument(): WebsiteDocument {
     analytics: structuredClone(DEFAULT_ANALYTICS),
     strings: { en: {}, ar: {} },
     images: {},
-    appliedSeeds: [ILLUSTRATIVE_SEED],
+    appliedSeeds: [ILLUSTRATIVE_SEED, BRAND_HERO_SEED],
   }
 }

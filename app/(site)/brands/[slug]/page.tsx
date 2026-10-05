@@ -9,6 +9,7 @@ import { FaqList } from "@/components/site/faq-list"
 import { MediaGallery } from "@/components/site/media-gallery"
 import { ArticleCard } from "@/components/site/article-card"
 import { listLiveArticles } from "@/lib/blog"
+import { isIllustrativeSource } from "@/lib/website/normalize"
 
 export const dynamic = "force-dynamic"
 
@@ -63,7 +64,13 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
   const services = brand.serviceSlugs
     .map((s) => doc.services.find((x) => x.slug === s && x.visible))
     .filter((s): s is NonNullable<typeof s> => !!s)
-  const gallery = brand.galleryIds.map((id) => publicMedia(doc, id)).filter((m): m is NonNullable<typeof m> => !!m)
+  const hero = publicMedia(doc, brand.heroImageId)
+  const heroIllustrative = !!hero && isIllustrativeSource(hero.source)
+  const heroCaption = hero ? pick(hero.caption, lang) : ""
+  const gallery = brand.galleryIds
+    .filter((id) => id !== brand.heroImageId)
+    .map((id) => publicMedia(doc, id))
+    .filter((m): m is NonNullable<typeof m> => !!m)
   const cases = brand.caseStudies.filter((c) => c.documented)
   const { preview } = await siteContext()
   const enquire = "#enquire"
@@ -105,6 +112,27 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
           </div>
         )}
       </header>
+
+      {hero && (
+        <figure className="mt-10">
+          <div className="relative aspect-[3/2] w-full overflow-hidden rounded-2xl border border-border bg-muted md:aspect-[16/9]">
+            <Image
+              src={hero.url || "/placeholder.svg"}
+              alt={pick(hero.alt, lang)}
+              fill
+              priority
+              sizes="(min-width: 1152px) 1088px, 100vw"
+              className="object-cover"
+              style={{ objectPosition: `${hero.focalX}% ${hero.focalY}%` }}
+            />
+          </div>
+          {(heroIllustrative || heroCaption) && (
+            <figcaption className="mt-3 text-pretty text-sm leading-relaxed text-muted-foreground">
+              {heroCaption || (lang === "ar" ? "صورة توضيحية مولّدة بالذكاء الاصطناعي" : "AI-generated illustration")}
+            </figcaption>
+          )}
+        </figure>
+      )}
 
       <section className="mt-14" aria-labelledby="models">
         <h2 id="models" className="text-xl font-semibold">{u.models}</h2>

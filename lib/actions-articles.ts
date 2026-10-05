@@ -13,7 +13,15 @@ import {
   type Article,
   type ArticleWorkflow,
 } from "@/lib/article-model"
+import {
+  editorialToArticle,
+  isEmptyBrief,
+  type DefaultCover,
+  type EditorialArticle,
+} from "@/lib/article-model"
 import matrix from "@/data/editorial/matrix-75.json"
+import editorial from "@/data/editorial/articles-75.json"
+import brandHeroes from "@/data/editorial/brand-heroes-v2.json"
 
 async function guard() {
   const ctx = await requirePermission("website.manage")
@@ -169,4 +177,66 @@ export async function importEditorialBriefs(): Promise<{ ok: boolean; created: n
   await logAction(ctx, "article_briefs_imported", "blog_post", String(rows.length))
   revalidatePath("/marketing")
   return { ok: true, created: rows.length, skipped }
+}
+
+/**
+ * Loads the 75 bilingual article bodies. New topics are inserted; topics that
+ * are still untouched briefs get their copy filled in. Anything an editor has
+ * already written, reviewed or published is left alone. Everything lands in
+ * review as an unpublished draft with the brand's garage hero as an
+ * illustrative default cover (an owner-set cover is kept).
+ */
+export async function importEditorialArticles(): Promise<{ ok: boolean; created: number; filled: number; skipped: string[]; error?: string }> {
+  const ctx = await guard()
+  const svc = createServiceClient()
+  const { data: existing, error: readError } = await svc.from("blog_posts").select("*")
+  if (readError) return { ok: false, created: 0, filled: 0, skipped: [], error: readError.message }
+
+  const rows = (existing ?? []).map((r) => rowToArticle(r as Record<string, unknown>))
+  const byKey = new Map(rows.filter((a) => a.key).map((a) => [a.key as string, a]))
+  const bySlug = new Map(rows.map((a) => [a.slug, a]))
+  const items = editorial as unknown as EditorialArticle[]
+  const slugToKey = new Map(items.map((e) => [e.slug, e.id]))
+  const covers = new Map<string, DefaultCover>(
+    (brandHeroes as { brandSlug: string; url: string; alt: DefaultCover["alt"]; caption: DefaultCover["caption"] }[]).map((h) => [
+      h.brandSlug,
+      { url: h.url, alt: h.alt, caption: h.caption },
+    ]),
+  )
+
+  const inserts: Record<string, unknown>[] = []
+  const skipped: string[] = []
+  let filled = 0
+  const now = new Date().toISOString()
+
+  for (const e of items) {
+    const base = byKey.get(e.id) ?? bySlug.get(e.slug) ?? null
+    const cover = covers.get(e.brandSlug) ?? null
+    if (!base) {
+      inserts.push({ ...articleToRow(editorialToArticle(e, slugToKey, cover, null)), author: ctx.name, updated_at: now })
+      continue
+    }
+    if (!isEmptyBrief(base) || (base.key && base.key !== e.id)) {
+      skipped.push(e.id)
+      continue
+    }
+    const next = editorialToArticle(e, slugToKey, cover, base)
+    const { data, error } = await svc
+      .from("blog_posts")
+      .update({ ...articleToRow(next), revision: base.revision + 1, updated_at: now })
+      .eq("id", base.id)
+      .eq("revision", base.revision)
+      .select("id")
+    if (error) return { ok: false, created: 0, filled, skipped, error: error.message }
+    if (data?.length) filled++
+    else skipped.push(e.id)
+  }
+
+  if (inserts.length) {
+    const { error } = await svc.from("blog_posts").insert(inserts)
+    if (error) return { ok: false, created: 0, filled, skipped, error: error.message }
+  }
+  await logAction(ctx, "article_bodies_imported", "blog_post", `${inserts.length} new, ${filled} filled`)
+  revalidatePath("/marketing")
+  return { ok: true, created: inserts.length, filled, skipped }
 }

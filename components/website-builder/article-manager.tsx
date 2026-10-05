@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { Card, Button, Input, Label, Textarea, Badge } from "@/components/ui"
 import { uploadWebsiteImage } from "@/lib/actions-website"
-import { saveArticle, deleteArticle, importEditorialBriefs, type ArticleIntent } from "@/lib/actions-articles"
+import { saveArticle, deleteArticle, importEditorialBriefs, importEditorialArticles, type ArticleIntent } from "@/lib/actions-articles"
 import {
   emptyCopy,
   localeIssues,
@@ -227,6 +227,30 @@ function ImportBriefsButton() {
       >
         {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
         Import briefs
+      </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={pending}
+        onClick={() =>
+          start(async () => {
+            try {
+              const r = await importEditorialArticles()
+              if (!r.ok) setMsg(r.error ?? "Import failed")
+              else
+                setMsg(
+                  `${r.created} added, ${r.filled} briefs filled for review` +
+                    (r.skipped.length ? `, ${r.skipped.length} kept (already edited)` : ""),
+                )
+              router.refresh()
+            } catch (e) {
+              setMsg(e instanceof Error ? e.message : "Import failed")
+            }
+          })
+        }
+      >
+        {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+        Import 75 articles
       </Button>
     </div>
   )

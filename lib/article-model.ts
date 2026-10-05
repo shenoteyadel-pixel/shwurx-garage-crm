@@ -327,6 +327,85 @@ export function matrixToRows(articles: MatrixArticle[]): Record<string, unknown>
   return articles.map((m) => briefToRow(m, byBrand.get(m.brand_slug) ?? []))
 }
 
+/* ---------------------------- Editorial bodies ----------------------------- */
+
+type Bi = { en: string; ar: string }
+
+export interface EditorialArticle {
+  id: string
+  slug: string
+  brandSlug: string
+  title: Bi
+  excerpt: Bi
+  seoTitle: Bi
+  seoDescription: Bi
+  body: Bi
+  serviceSlugs: string[]
+  relatedArticleSlugs: string[]
+  sources: { title: string; url: string; note?: string }[]
+  reviewedAt?: string
+}
+
+export interface DefaultCover {
+  url: string
+  alt: Bi
+  caption: Bi
+}
+
+/**
+ * Full bilingual copy from the editorial package. Lands in review (never
+ * published, `ready` unchecked) so a person signs off on both locales first.
+ * The brand's garage hero is used as an illustrative default cover.
+ */
+export function editorialToArticle(
+  e: EditorialArticle,
+  slugToKey: Map<string, string>,
+  cover: DefaultCover | null,
+  base: Article | null,
+): Article {
+  const copy = (l: ArticleLang): LocaleCopy => ({
+    ...(base?.content[l] ?? emptyCopy()),
+    title: e.title[l],
+    excerpt: e.excerpt[l],
+    body: e.body[l],
+    seoTitle: e.seoTitle[l],
+    seoDescription: e.seoDescription[l],
+    coverAlt: base?.coverUrl ? base.content[l].coverAlt : (cover?.alt[l] ?? ""),
+    coverCaption: base?.coverUrl ? base.content[l].coverCaption : (cover?.caption[l] ?? ""),
+    ready: false,
+  })
+  const keepCover = !!base?.coverUrl
+  return {
+    id: base?.id ?? "",
+    key: e.id,
+    slug: e.slug,
+    status: "draft",
+    workflow: "in_review",
+    brandSlug: e.brandSlug,
+    serviceSlugs: e.serviceSlugs,
+    relatedKeys: e.relatedArticleSlugs.map((s) => slugToKey.get(s)).filter((k): k is string => !!k),
+    coverUrl: keepCover ? base!.coverUrl : (cover?.url ?? null),
+    coverIllustrative: keepCover ? base!.coverIllustrative : !!cover,
+    content: { en: copy("en"), ar: copy("ar") },
+    sources: e.sources
+      .filter((s) => /^https:\/\//.test(s.url))
+      .map((s) => ({ title: s.title, url: s.url, supports: s.note ?? "", verifiedOn: e.reviewedAt ?? "" })),
+    brief: base?.brief ?? null,
+    reviewedBy: null,
+    reviewedAt: null,
+    author: base?.author ?? null,
+    publishedAt: null,
+    updatedAt: "",
+    revision: base?.revision ?? 1,
+    legacy: false,
+  }
+}
+
+/** True when an existing row is still an untouched brief (no body copy in either locale). */
+export function isEmptyBrief(a: Article): boolean {
+  return a.workflow === "brief" && !a.content.en.body.trim() && !a.content.ar.body.trim()
+}
+
 /** Paragraph/heading blocks from plain-text bodies: blank line = paragraph, "## " = heading. */
 export function bodyBlocks(body: string): { type: "h2" | "p"; text: string }[] {
   return body

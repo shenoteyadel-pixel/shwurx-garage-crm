@@ -35,7 +35,9 @@ const seo = (nameEn: string, nameAr: string, focusEn: string, focusAr: string): 
   noindex: false,
 })
 
-type BrandSeed = Omit<Brand, "id" | "galleryIds" | "caseStudies" | "visible" | "yearFrom" | "seo"> & {
+export const brandHeroId = (slug: string) => `brand-hero-${slug}`
+
+type BrandSeed = Omit<Brand, "id" | "heroImageId" | "galleryIds" | "caseStudies" | "visible" | "yearFrom" | "seo"> & {
   seo: [string, string]
 }
 
@@ -706,7 +708,7 @@ const SEEDS: BrandSeed[] = [
         "Do you handle paint correction?",
         "هل تقدمون تصحيح الطلاء؟",
         "Paint assessment and refinishing can be quoted after inspection.",
-        "يمكن تقديم عرض سعر لتقييم الطلاء وإعادة تشطيبه بعد الفحص.",
+        "��مكن تقديم عرض سعر لتقييم الطلاء وإعادة تشطيبه بعد الفحص.",
       ),
       f(
         "How do I start?",
@@ -888,6 +890,7 @@ export function seedBrands(): Brand[] {
   return SEEDS.map(({ seo: s, ...b }) => ({
     ...b,
     id: `brand-${b.slug}`,
+    heroImageId: brandHeroId(b.slug),
     yearFrom: 2016,
     galleryIds: [],
     caseStudies: [],

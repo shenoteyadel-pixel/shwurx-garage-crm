@@ -1,0 +1,332 @@
+[
+  {
+    "brandSlug": "porsche",
+    "url": "/site/brands/porsche-shwurx-garage.webp",
+    "sourceFile": "porsche-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "88fd87b789870b840d417176b4ae62a698a24a4ccfc69c55c63632e7cadb0af2",
+    "width": 1672,
+    "height": 941,
+    "bytes": 200068,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 46,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Porsche outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة بورش أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "bentley",
+    "url": "/site/brands/bentley-shwurx-garage.webp",
+    "sourceFile": "bentley-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "27c53d79b57d1ea7b7be2a65d3596b086b241bb74a8840d20f9d7fc51c7ebc5a",
+    "width": 1672,
+    "height": 941,
+    "bytes": 236876,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 52,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Bentley outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة بنتلي أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "rolls-royce",
+    "url": "/site/brands/rolls-royce-shwurx-garage.webp",
+    "sourceFile": "rolls-royce-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "7e6e5f4cdb4f83b86f5a98c72565d302731fa78096a7d983898805e1e3c5dae4",
+    "width": 1672,
+    "height": 941,
+    "bytes": 220670,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 58,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Rolls Royce outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة رولز رويس أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "lamborghini",
+    "url": "/site/brands/lamborghini-shwurx-garage.webp",
+    "sourceFile": "lamborghini-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "bbe214f4fca9f179f1125c414704038864d2e9a17c23df97b70d3ad836ce50de",
+    "width": 1672,
+    "height": 941,
+    "bytes": 202510,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 40,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Lamborghini outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة لامبورغيني أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "mercedes-benz",
+    "url": "/site/brands/mercedes-benz-shwurx-garage.webp",
+    "sourceFile": "mercedes-benz-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "86f4975254f7981ab479028fea22f4c42da9a06cd8cc25812486f2ab99b8a30f",
+    "width": 1672,
+    "height": 941,
+    "bytes": 231938,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 50,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Mercedes Benz outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة مرسيدس بنز أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "audi",
+    "url": "/site/brands/audi-shwurx-garage.webp",
+    "sourceFile": "audi-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "130a4def060b0c976c1d984160cbc68cc14bc63d2bad67045635a63002d76181",
+    "width": 1672,
+    "height": 941,
+    "bytes": 198496,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 60,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Audi outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة أودي أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "lotus",
+    "url": "/site/brands/lotus-shwurx-garage.webp",
+    "sourceFile": "lotus-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "0702ffe8a5e3b4e48a91cf9bc26f766489efcbcd509579c98b794764e2f3bdfe",
+    "width": 1672,
+    "height": 941,
+    "bytes": 199848,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 42,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Lotus outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة لوتس أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "mclaren",
+    "url": "/site/brands/mclaren-shwurx-garage.webp",
+    "sourceFile": "mclaren-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "1224ea17e80e1a6a6cee7eb2f1402104cfa0b130c3c0128be26666d617d9a111",
+    "width": 1672,
+    "height": 941,
+    "bytes": 204284,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 50,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Mclaren outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة ماكلارين أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "aston-martin",
+    "url": "/site/brands/aston-martin-shwurx-garage.webp",
+    "sourceFile": "aston-martin-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "fe93fac2c6f4abf57c84025f4a645b5dbc35e365a324d6a7828ba81bc9c2a89c",
+    "width": 1672,
+    "height": 941,
+    "bytes": 209962,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 60,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Aston Martin outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة أستون مارتن أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "ferrari",
+    "url": "/site/brands/ferrari-shwurx-garage.webp",
+    "sourceFile": "ferrari-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "91a08a86c0c2a0221ba8a1d7b1ed7c36d203428113f953132b719880abf06877",
+    "width": 1672,
+    "height": 941,
+    "bytes": 208788,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 50,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Ferrari outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة فيراري أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "maserati",
+    "url": "/site/brands/maserati-shwurx-garage.webp",
+    "sourceFile": "maserati-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "85be52f84161fed715089482026e165bdb05a7e890744447b3536c69f7791543",
+    "width": 1672,
+    "height": 941,
+    "bytes": 209474,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 50,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Maserati outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة مازيراتي أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "bugatti",
+    "url": "/site/brands/bugatti-shwurx-garage.webp",
+    "sourceFile": "bugatti-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "1eb5f3b938fc554f5da00d29d396be92ae2bedc91adbe1e6d088011bb513109b",
+    "width": 1672,
+    "height": 941,
+    "bytes": 208018,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 60,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Bugatti outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة بوغاتي أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "chevrolet-corvette",
+    "url": "/site/brands/chevrolet-corvette-shwurx-garage.webp",
+    "sourceFile": "chevrolet-corvette-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "38edace629e0163eec17ccf1f7ec34d62dfd0e60446a1ef00043c59cb4cbb5c9",
+    "width": 1672,
+    "height": 941,
+    "bytes": 208484,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 42,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Chevrolet Corvette outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة شيفروليه كورفيت أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "gmc",
+    "url": "/site/brands/gmc-shwurx-garage.webp",
+    "sourceFile": "gmc-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "e03dbd2eb526d9d60528669790c9b2d5b9df9ae6049dc5355a1a59164913815a",
+    "width": 1672,
+    "height": 941,
+    "bytes": 222602,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 50,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Gmc outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة جي إم سي أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  },
+  {
+    "brandSlug": "range-rover",
+    "url": "/site/brands/range-rover-shwurx-garage.webp",
+    "sourceFile": "range-rover-shwurx-garage-ai-illustration.png",
+    "sourceSha256": "ee6335a0cbe1879bf87c99dabdaaf92e94a68c56e091bfcb0c576a2a11918b52",
+    "width": 1672,
+    "height": 941,
+    "bytes": 202060,
+    "source": "ai_generated",
+    "illustrative": true,
+    "publicSafe": true,
+    "focalX": 58,
+    "focalY": 50,
+    "alt": {
+      "en": "AI illustration of a Range Rover outside the SHWURX-branded workshop facade",
+      "ar": "تصوّر بالذكاء الاصطناعي لسيارة رينج روفر أمام واجهة جراج شوركس"
+    },
+    "caption": {
+      "en": "AI-generated illustration based on our workshop concept; not a photograph of a customer vehicle.",
+      "ar": "صورة توضيحية مولّدة بالذكاء الاصطناعي مستوحاة من تصميم الورشة؛ ليست صورة لسيارة عميل."
+    }
+  }
+]

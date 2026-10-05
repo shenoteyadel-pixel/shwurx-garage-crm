@@ -244,6 +244,8 @@ export interface WebsiteDocument {
   media: MediaAsset[]
   seo: SeoSettings
   forms: { enquiry: EnquiryFormConfig }
+  /** GA4 / GTM / Ads / Meta / Search Console — Website Center only */
+  analytics: import("./analytics").AnalyticsConfig
   /** legacy dictionary overrides (previous site_content.en / .ar) */
   strings: { en: Record<string, unknown>; ar: Record<string, unknown> }
   /** legacy named image slots (previous site_content.images) */

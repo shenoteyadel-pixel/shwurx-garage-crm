@@ -4,10 +4,10 @@ import { revalidatePath } from "next/cache"
 import { cookies } from "next/headers"
 import { put } from "@vercel/blob"
 import { createServiceClient } from "@/lib/supabase/server"
-import { requirePermission, logAction } from "@/lib/rbac/context"
+import { ctxCan, requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import { normalizeDocument, parseDocument, validateDocument, type ValidationIssue } from "@/lib/website/normalize"
 import { canMutateCms, PREVIEW_MUTATION_MESSAGE } from "@/lib/website/env"
-import { legacyDocument, readDocumentRow, PREVIEW_COOKIE } from "@/lib/website/store"
+import { legacyDocument, readDocumentRow, readRevision, PREVIEW_COOKIE } from "@/lib/website/store"
 import type { MediaAsset, WebsiteDocument } from "@/lib/website/types"
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string; currentVersion?: number; issues?: ValidationIssue[] }
@@ -27,6 +27,33 @@ async function guard() {
 }
 
 class CmsBlocked extends Error {}
+
+const TRACKING_DENIED =
+  "Tracking settings changed. Changing, activating or rolling back analytics requires the \"Manage website tracking\" permission."
+
+/** Stable comparison of the analytics block; key order never matters. */
+function analyticsKey(doc: WebsiteDocument | null): string {
+  const a = normalizeDocument(doc ?? {}).analytics
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(sort)
+      : v && typeof v === "object"
+        ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, sort((v as Record<string, unknown>)[k])]))
+        : v
+  return JSON.stringify(sort(a))
+}
+
+/**
+ * website.manage alone may edit content but never change, activate or roll back
+ * marketing providers. Any difference in the analytics block needs marketing.manage.
+ */
+function trackingChangeAllowed(ctx: SessionContext, from: WebsiteDocument | null, to: WebsiteDocument | null): boolean {
+  return analyticsKey(from) === analyticsKey(to) || ctxCan(ctx, "marketing.manage")
+}
+
+async function publishedDoc(revisionId: number | null): Promise<WebsiteDocument | null> {
+  return revisionId ? await readRevision(revisionId) : null
+}
 
 /** Runs a mutation, turning the preview block into a normal error result. */
 async function mutation<T>(fn: () => Promise<Result<T>>): Promise<Result<T>> {
@@ -84,6 +111,7 @@ async function saveInner(input: unknown, expectedVersion: number): Promise<Resul
   const shape = parseDocument(input)
   if (!shape.ok) return { ok: false, error: "The draft has invalid structure.", issues: shape.issues }
   const doc = shape.doc
+  if (!trackingChangeAllowed(ctx, row.draft as WebsiteDocument, doc)) return { ok: false, error: TRACKING_DENIED }
   const svc = createServiceClient()
   const { data, error } = await svc.rpc("website_save_draft", {
     p_expected_version: expectedVersion,
@@ -126,6 +154,8 @@ async function publishInner(expectedVersion: number, note: string): Promise<Resu
   if (issues.some((i) => i.level === "error")) {
     return { ok: false, error: "Fix the errors before publishing.", issues }
   }
+  const live = await publishedDoc(row.published_revision_id)
+  if (!trackingChangeAllowed(ctx, live, row.draft as WebsiteDocument)) return { ok: false, error: TRACKING_DENIED }
   const svc = createServiceClient()
   const { data, error } = await svc.rpc("website_publish", {
     p_expected_version: expectedVersion,
@@ -167,11 +197,14 @@ export async function rollbackToRevision(revisionId: number): Promise<Result> {
   return mutation(() => rollbackInner(revisionId))
 }
 async function rollbackInner(revisionId: number): Promise<Result> {
-  const { ctx, available } = await guard()
+  const { ctx, available, row } = await guard()
   if (!available) return { ok: false, error: UNAVAILABLE }
+  if (!validVersion(revisionId)) return { ok: false, error: "Revision not found." }
   const svc = createServiceClient()
-  const { data } = await svc.from("website_revisions").select("id, kind").eq("id", revisionId).maybeSingle()
+  const { data } = await svc.from("website_revisions").select("id, kind, document").eq("id", revisionId).maybeSingle()
   if (!data || data.kind !== "published") return { ok: false, error: "Only published revisions can go live." }
+  const live = await publishedDoc(row?.published_revision_id ?? null)
+  if (!trackingChangeAllowed(ctx, live, data.document as WebsiteDocument)) return { ok: false, error: TRACKING_DENIED }
   const { error } = await svc.from("website_documents").update({ published_revision_id: revisionId }).eq("id", 1)
   if (error) return { ok: false, error: error.message }
   await logAction(ctx, "website.rollback", "website", String(revisionId))

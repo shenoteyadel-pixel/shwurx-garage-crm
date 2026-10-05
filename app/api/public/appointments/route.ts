@@ -1,6 +1,8 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { preflight, jsonWithCors } from "@/lib/public-cors"
 import { notifyByPermission } from "@/lib/actions-notifications"
+import { findBySubmission, intakeMetadata, SUBMISSION_UUID } from "@/lib/website/intake-dedupe"
+import { conversionToken } from "@/lib/website/conversion-token"
 import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
 
 export const runtime = "nodejs"
@@ -29,6 +31,16 @@ export async function POST(request: Request) {
     // Previews validate but never create bookings, staff alerts or emails.
     if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
 
+    // Best-effort retry dedupe. appointments has no unique submission index yet, so a
+    // truly simultaneous double submit can still create two rows (see scripts gap note).
+    const submissionId = typeof body.submissionId === "string" && SUBMISSION_UUID.test(body.submissionId) ? body.submissionId : null
+    const persisted = (outcome: "received" | "duplicate", id: string) =>
+      jsonWithCors(request, { ok: true, outcome, id, conversionToken: conversionToken("appointment", id) })
+    if (submissionId) {
+      const existing = await findBySubmission("appointments", submissionId)
+      if (existing) return persisted("duplicate", existing)
+    }
+
     const supabase = createServiceClient()
     const { data, error } = await supabase.rpc("submit_appointment", {
       p_name: name,
@@ -43,10 +55,10 @@ export async function POST(request: Request) {
       p_preferred_time: body?.preferredTime ?? body?.preferred_time ?? null,
       p_notes: body?.notes ?? null,
       p_source: body?.source ?? "website",
-      p_metadata: body?.metadata && typeof body.metadata === "object" ? body.metadata : {},
+      p_metadata: intakeMetadata(body, "appointment", submissionId, ["logistics"]),
     })
 
-    if (error) return jsonWithCors(request, { ok: false, error: error.message }, 400)
+    if (error) return jsonWithCors(request, { ok: false, outcome: "error", error: "not_persisted" }, 400)
     if (!data?.ok || !data?.id) return jsonWithCors(request, { ok: false, outcome: "error", error: data?.error ?? "not_persisted" }, 400)
 
     const logisticsType = String(body?.metadata?.logistics?.type ?? "dropoff")
@@ -89,7 +101,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return jsonWithCors(request, { ...data, outcome: "received" })
+    return persisted("received", String(data.id))
   } catch {
     return jsonWithCors(request, { ok: false, error: "server_error" }, 500)
   }

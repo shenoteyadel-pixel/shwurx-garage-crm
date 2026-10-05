@@ -1,6 +1,7 @@
 import type { MediaAsset, SeoFields, WebsiteDocument } from "./types"
 import { seedBrands, t } from "./seed-brands"
 import { seedServices } from "./seed-services"
+import { DEFAULT_ANALYTICS } from "./analytics"
 
 const pageSeo = (titleEn: string, titleAr: string, descEn: string, descAr: string): SeoFields => ({
   title: t(titleEn, titleAr),
@@ -233,6 +234,7 @@ export function seedDocument(): WebsiteDocument {
         enabled: true,
       },
     },
+    analytics: structuredClone(DEFAULT_ANALYTICS),
     strings: { en: {}, ar: {} },
     images: {},
   }

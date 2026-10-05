@@ -1,5 +1,6 @@
 import type { MediaSource, WebsiteDocument } from "./types"
 import { seedDocument } from "./seed"
+import { analyticsIssues, sanitizeAnalytics } from "./analytics"
 
 const MAX_STR = 8000
 const MAX_ITEMS = 300
@@ -229,7 +230,10 @@ export function normalizeDocument(input: unknown, drops?: string[]): WebsiteDocu
   const raw = (clean && typeof clean === "object" ? (clean as Record<string, unknown>) : {}) as {
     strings?: { en?: unknown; ar?: unknown }
     images?: unknown
+    analytics?: unknown
   }
+  // Provider IDs have strict formats; the generic shaper would accept any string.
+  doc.analytics = sanitizeAnalytics(raw.analytics, drops)
   doc.strings = {
     en: isObj(raw.strings?.en) ? (raw.strings!.en as Record<string, unknown>) : {},
     ar: isObj(raw.strings?.ar) ? (raw.strings!.ar as Record<string, unknown>) : {},
@@ -300,6 +304,7 @@ export function validateDocument(doc: WebsiteDocument): ValidationIssue[] {
     if (!r.from.startsWith("/") || !r.to) issues.push({ level: "error", where: "Redirects", message: `Redirect "${r.from}" needs a path starting with / and a destination.` })
     if (r.from === r.to) issues.push({ level: "error", where: "Redirects", message: `Redirect "${r.from}" points to itself.` })
   }
+  issues.push(...analyticsIssues(doc.analytics))
   return issues
 }
 

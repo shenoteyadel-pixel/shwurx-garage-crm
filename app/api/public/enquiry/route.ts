@@ -5,7 +5,8 @@ import { preflight, jsonWithCors } from "@/lib/public-cors"
 import { notifyByPermission } from "@/lib/actions-notifications"
 import { getPublishedDocumentStrict } from "@/lib/website/store"
 import { intakeIsDryRun, normalizePhone, readBoundedJson } from "@/lib/website/intake-guard"
-import { isPublicSitePath } from "@/lib/website/paths"
+import { publicPath, sanitizeTouch } from "@/lib/website/intake-attribution"
+import { conversionToken } from "@/lib/website/conversion-token"
 import type { WebsiteDocument } from "@/lib/website/types"
 
 export const runtime = "nodejs"
@@ -33,40 +34,11 @@ const optStr = (v: unknown, max: number) => str(v, max) || null
 
 function reply(request: Request, outcome: Outcome, status: number, extra: Record<string, unknown> = {}) {
   const ok = outcome === "received" || outcome === "duplicate" || outcome === "dry_run"
+  // Retries of the same persisted lead get the same id and the same opaque token.
+  if ((outcome === "received" || outcome === "duplicate") && typeof extra.id === "string") {
+    extra = { ...extra, conversionToken: conversionToken("lead", extra.id) }
+  }
   return jsonWithCors(request, { ok, outcome, ...extra }, status)
-}
-
-/** Strips query strings (which may carry tokens) and refuses non-website paths. */
-function publicPath(v: unknown): string | null {
-  const p = str(v, 200).split(/[?#]/)[0]
-  return p.startsWith("/") && isPublicSitePath(p) ? p : null
-}
-
-function sanitizedReferrer(v: unknown): string | null {
-  const s = str(v, 300)
-  if (!s) return null
-  try {
-    const u = new URL(s)
-    return u.protocol === "https:" || u.protocol === "http:" ? u.origin : null
-  } catch {
-    return null
-  }
-}
-
-function attribution(a: Record<string, unknown>) {
-  return {
-    utm: {
-      source: optStr(a.utm_source, 120),
-      medium: optStr(a.utm_medium, 120),
-      campaign: optStr(a.utm_campaign, 120),
-      content: optStr(a.utm_content, 120),
-      term: optStr(a.utm_term, 120),
-    },
-    click_ids: { gclid: optStr(a.gclid, 200), gbraid: optStr(a.gbraid, 200), wbraid: optStr(a.wbraid, 200) },
-    landing_path: publicPath(a.landingPath),
-    referrer: sanitizedReferrer(a.referrer),
-    at: optStr(a.at, 40),
-  }
 }
 
 async function findBySubmission(submissionId: string): Promise<string | null> {
@@ -174,8 +146,8 @@ export async function POST(request: Request) {
       vehicle_model: model || null,
       vehicle_year: year,
       submit_path: publicPath(body.submitPath),
-      first_touch: attribution(first),
-      latest_touch: attribution(latest),
+      first_touch: sanitizeTouch(first),
+      latest_touch: sanitizeTouch(latest),
     }
 
     const brandName = brand?.name.en ?? null

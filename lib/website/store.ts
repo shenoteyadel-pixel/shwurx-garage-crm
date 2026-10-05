@@ -61,7 +61,7 @@ export const readDocumentRow = cache(
   },
 )
 
-async function readRevision(id: number): Promise<WebsiteDocument | null> {
+export async function readRevision(id: number): Promise<WebsiteDocument | null> {
   const svc = createServiceClient()
   const { data } = await svc.from("website_revisions").select("document").eq("id", id).maybeSingle()
   return data ? normalizeDocument(data.document) : null

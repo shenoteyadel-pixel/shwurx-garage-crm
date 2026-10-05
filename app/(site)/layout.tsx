@@ -1,26 +1,25 @@
 import type React from "react"
-import { getSettings } from "@/lib/settings"
 import { SiteHeader } from "@/components/site/site-header"
 import { SiteFooter } from "@/components/site/site-footer"
 import { TrackingGate } from "@/components/site/tracking-gate"
 import { PreviewBar } from "@/components/site/preview-bar"
 import { SiteTracking } from "@/components/site-tracking"
 import { localePath, pick, siteContext } from "@/lib/website/render"
-import { isIndexableDeployment } from "@/lib/website/env"
+import { siteAnalytics } from "@/lib/website/analytics-server"
+import { ConsentBanner } from "@/components/site/consent-banner"
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
-  const [{ doc, lang, preview, previewLabel }, settings] = await Promise.all([siteContext(), getSettings()])
-  // Master switch covers first- and third-party events; editors previewing and
-  // non-production deployments never count.
-  const trackingOff = preview || !isIndexableDeployment()
-  const firstParty = !!settings.tracking_enabled && !trackingOff
-  const tagMode = settings.gtm_container_id ? "gtm" : settings.ga4_measurement_id ? "ga4" : "none"
+  const { doc, lang, preview, previewLabel } = await siteContext()
+  // Master switch, preview, non-production deployments and the host allowlist
+  // are all applied in one place.
+  const tags = await siteAnalytics(doc, preview)
   const ar = lang === "ar"
 
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground" lang={lang} dir={ar ? "rtl" : "ltr"}>
-      <SiteTracking disabled={trackingOff} />
-      <TrackingGate firstParty={firstParty} thirdParty={firstParty} tagMode={tagMode} metaPixel={!!settings.meta_pixel_id} />
+      <SiteTracking tags={tags} />
+      <TrackingGate tags={tags} />
+      {tags.thirdParty && tags.consentRequired && <ConsentBanner lang={lang} privacyHref={localePath(lang, "/privacy")} />}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"

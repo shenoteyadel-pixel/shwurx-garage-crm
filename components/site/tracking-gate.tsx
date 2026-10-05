@@ -2,8 +2,19 @@
 
 import { useEffect } from "react"
 import { usePathname } from "next/navigation"
-import { captureAttribution, track } from "@/lib/site-track"
+import { captureAttribution, emitClick, track } from "@/lib/site-track"
 import { isPublicSitePath } from "@/lib/website/paths"
+import type { RuntimeTags } from "@/lib/website/analytics"
+
+/** Which intent a link expresses, or null for an ordinary link. */
+export function clickKind(href: string): "phone_click" | "whatsapp_click" | null {
+  const h = href.trim().toLowerCase()
+  if (h.startsWith("tel:")) return "phone_click"
+  if (/^https?:\/\/(wa\.me|api\.whatsapp\.com|(www\.)?whatsapp\.com)\//.test(h) || h.startsWith("whatsapp:")) {
+    return "whatsapp_click"
+  }
+  return null
+}
 
 /**
  * Applies the website master switch and consent to first-party events, sets
@@ -15,24 +26,16 @@ import { isPublicSitePath } from "@/lib/website/paths"
  * performs a full page load so no provider script (or its automatic page
  * tracking) survives onto that surface.
  */
-export function TrackingGate({
-  firstParty,
-  thirdParty,
-  tagMode,
-  metaPixel = false,
-}: {
-  firstParty: boolean
-  thirdParty: boolean
-  tagMode: "gtm" | "ga4" | "none"
-  /** a Meta Pixel is injected; it is a loaded tag even when no GTM/GA4 is set */
-  metaPixel?: boolean
-}) {
+export function TrackingGate({ tags }: { tags: RuntimeTags }) {
+  const { firstParty, thirdParty, mode } = tags
   // Assigned during render so child effects (which run first) already see it.
   if (typeof window !== "undefined") {
     window.__shwurxTrack = firstParty
     window.__shwurxThirdParty = thirdParty
-    window.__shwurxTagMode = thirdParty ? tagMode : "none"
-    if (thirdParty && (tagMode !== "none" || metaPixel)) window.__shwurxTagsLoaded = true
+    window.__shwurxTagMode = thirdParty ? mode : "none"
+    window.__shwurxTags = { events: tags.events, adsId: tags.adsId, adsLabels: tags.adsLabels }
+    // Meta-only setups count too: any loaded tag forces the private-route reload.
+    if (thirdParty) window.__shwurxTagsLoaded = true
   }
   const pathname = usePathname()
 
@@ -41,6 +44,22 @@ export function TrackingGate({
     captureAttribution()
     track("page_view")
   }, [pathname, firstParty])
+
+  useEffect(() => {
+    if (!firstParty) return
+    // One delegated listener so every call/WhatsApp link counts exactly once,
+    // including header, footer and CMS-authored links.
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null
+      if (!a) return
+      const kind = clickKind(a.getAttribute("href") ?? "")
+      if (!kind) return
+      const context = a.closest("[data-track-context]")?.getAttribute("data-track-context") || window.location.pathname
+      emitClick(kind, context.slice(0, 80))
+    }
+    document.addEventListener("click", onClick, true)
+    return () => document.removeEventListener("click", onClick, true)
+  }, [firstParty])
 
   useEffect(() => {
     return () => {

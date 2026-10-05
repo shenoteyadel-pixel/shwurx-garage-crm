@@ -1,7 +1,7 @@
 import "server-only"
 import { getSettings, type Settings } from "@/lib/settings"
 import { getSiteContentOverrides } from "@/lib/site-content"
-import { listAllPosts, type BlogPost } from "@/lib/blog"
+import { listAllArticles, type Article } from "@/lib/blog"
 import { getEditorState, readDocumentRow, readRevision, type EditorState } from "@/lib/website/store"
 import { effectiveAnalytics } from "@/lib/website/analytics-server"
 import { sanitizeAnalytics, type AnalyticsConfig } from "@/lib/website/analytics"
@@ -27,9 +27,15 @@ export type WebsiteSectionDTO = {
   fieldValues: FieldMaps
   fieldDefaults: FieldMaps
   images: Record<string, string>
-  posts: BlogPost[]
+  posts: Article[]
   editorState: EditorState | null
+  taxonomy: ArticleTaxonomy
   overview: WebsiteOverviewDTO
+}
+
+export type ArticleTaxonomy = {
+  brands: { slug: string; name: string }[]
+  services: { slug: string; name: string }[]
 }
 
 export type WebsiteOverviewDTO = {
@@ -86,7 +92,7 @@ async function loadAnalyticsSection(): Promise<AnalyticsSectionDTO> {
 async function loadWebsiteSection(): Promise<WebsiteSectionDTO> {
   const [overrides, posts, editorState] = await Promise.all([
     getSiteContentOverrides(),
-    listAllPosts(),
+    listAllArticles(),
     getEditorState(),
   ])
   const enDict = getDictionary("en")
@@ -111,10 +117,10 @@ async function loadWebsiteSection(): Promise<WebsiteSectionDTO> {
           posts.map((p) => ({
             id: p.id,
             slug: p.slug,
-            title: p.title,
+            title: p.content.en.title || p.content.ar.title || p.slug,
             status: p.status,
-            excerpt: p.excerpt,
-            coverUrl: p.cover_url,
+            excerpt: p.content.en.excerpt || p.content.ar.excerpt || null,
+            coverUrl: p.coverUrl,
           })),
         )
       : [],
@@ -132,6 +138,10 @@ async function loadWebsiteSection(): Promise<WebsiteSectionDTO> {
     images,
     posts,
     editorState,
+    taxonomy: {
+      brands: (editorState?.draft?.brands ?? []).map((b) => ({ slug: b.slug, name: b.name.en || b.slug })),
+      services: (editorState?.draft?.services ?? []).map((s) => ({ slug: s.slug, name: s.name.en || s.slug })),
+    },
   }
 }
 

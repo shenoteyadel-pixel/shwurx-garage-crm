@@ -7,6 +7,8 @@ import { ArrowRight } from "lucide-react"
 import { buildMetadata, localePath, pick, publicMedia, siteContext, SITE_URL } from "@/lib/website/render"
 import { FaqList } from "@/components/site/faq-list"
 import { MediaGallery } from "@/components/site/media-gallery"
+import { ArticleCard } from "@/components/site/article-card"
+import { listLiveArticles } from "@/lib/blog"
 
 export const dynamic = "force-dynamic"
 
@@ -21,6 +23,8 @@ const UI = {
     gallery: "From our workshop",
     caseStudies: "Documented jobs",
     family: "A model family by",
+    articles: "Articles",
+    allArticles: "All articles for this brand",
   },
   ar: {
     models: "نطاق الموديلات",
@@ -32,6 +36,8 @@ const UI = {
     gallery: "من ورشتنا",
     caseStudies: "أعمال موثقة",
     family: "فئة طرازات من",
+    articles: "مقالات",
+    allArticles: "كل مقالات هذه العلامة",
   },
 }
 
@@ -61,6 +67,7 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
   const cases = brand.caseStudies.filter((c) => c.documented)
   const { preview } = await siteContext()
   const enquire = "#enquire"
+  const articles = (await listLiveArticles(lang)).filter((a) => a.brandSlug === brand.slug).slice(0, 3)
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -182,6 +189,22 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
         <section className="mt-14" aria-labelledby="faq">
           <h2 id="faq" className="text-xl font-semibold">{u.faq}</h2>
           <FaqList items={brand.faqs.map((f) => ({ id: f.id, q: pick(f.q, lang), a: pick(f.a, lang) }))} />
+        </section>
+      )}
+
+      {articles.length > 0 && (
+        <section className="mt-14" aria-labelledby="articles">
+          <div className="flex items-end justify-between gap-4">
+            <h2 id="articles" className="text-xl font-semibold">{u.articles}</h2>
+            <Link href={`${localePath(lang, "/blog")}?brand=${brand.slug}`} className="text-sm font-medium text-primary hover:underline">
+              {u.allArticles}
+            </Link>
+          </div>
+          <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {articles.map((a) => (
+              <ArticleCard key={a.id} article={a} lang={lang} />
+            ))}
+          </div>
         </section>
       )}
     </div>

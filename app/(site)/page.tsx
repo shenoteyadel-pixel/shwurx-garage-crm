@@ -23,7 +23,7 @@ import { getServerI18n } from "@/lib/i18n/server"
 import { resolveImage } from "@/lib/site-content"
 import { interpolate } from "@/lib/i18n/dictionaries"
 import { TrackLink } from "@/components/site/track-link"
-import { listPublishedPosts } from "@/lib/blog"
+import { listLiveArticles } from "@/lib/blog"
 import { illustrativeStripMembers, isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
 import { IllustrativeStrip } from "@/components/site/team-grid"
 import { buildMetadata, localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
@@ -92,7 +92,9 @@ function brandLogo(doc: WebsiteDocument, lang: Lang, b: WebsiteDocument["brands"
 export default async function HomePage() {
   const [{ doc, lang }, { dict }] = await Promise.all([siteContext(), getServerI18n()])
   const visibleKeys = new Set(doc.pages.home.sections.filter((s) => s.visible).map((s) => s.key))
-  const posts = visibleKeys.has("blog") ? (await listPublishedPosts()).slice(0, 3) : []
+  const posts = visibleKeys.has("blog")
+    ? (await listLiveArticles(lang)).slice(0, 3).map((a) => ({ id: a.id, slug: a.slug, title: a.content[lang].title, excerpt: a.content[lang].excerpt }))
+    : []
   const info = publicSiteInfo(doc, lang)
   const t = dict.home
   const home = doc.pages.home
@@ -385,7 +387,7 @@ export default async function HomePage() {
           <ul className="mt-8 grid gap-4 md:grid-cols-3">
             {posts.map((post) => (
               <li key={post.id}>
-                <Link href={`/blog/${post.slug}`} className="group flex h-full flex-col rounded-lg border border-border bg-card p-5 transition hover:border-primary/50">
+                <Link href={localePath(lang, `/blog/${post.slug}`)} className="group flex h-full flex-col rounded-lg border border-border bg-card p-5 transition hover:border-primary/50">
                   <h3 className="text-base font-bold leading-snug group-hover:text-primary">{post.title}</h3>
                   {post.excerpt && <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted-foreground">{post.excerpt}</p>}
                 </Link>

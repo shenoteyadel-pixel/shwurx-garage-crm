@@ -9,7 +9,6 @@ import { FaqList } from "@/components/site/faq-list"
 import { MediaGallery } from "@/components/site/media-gallery"
 import { ArticleCard } from "@/components/site/article-card"
 import { listLiveArticles } from "@/lib/blog"
-import { isIllustrativeSource } from "@/lib/website/normalize"
 
 export const dynamic = "force-dynamic"
 
@@ -65,7 +64,6 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
     .map((s) => doc.services.find((x) => x.slug === s && x.visible))
     .filter((s): s is NonNullable<typeof s> => !!s)
   const hero = publicMedia(doc, brand.heroImageId)
-  const heroIllustrative = !!hero && isIllustrativeSource(hero.source)
   const heroCaption = hero ? pick(hero.caption, lang) : ""
   const gallery = brand.galleryIds
     .filter((id) => id !== brand.heroImageId)
@@ -126,9 +124,9 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
               style={{ objectPosition: `${hero.focalX}% ${hero.focalY}%` }}
             />
           </div>
-          {(heroIllustrative || heroCaption) && (
+          {heroCaption && (
             <figcaption className="mt-3 text-pretty text-sm leading-relaxed text-muted-foreground">
-              {heroCaption || (lang === "ar" ? "صورة توضيحية مولّدة بالذكاء الاصطناعي" : "AI-generated illustration")}
+              {heroCaption}
             </figcaption>
           )}
         </figure>

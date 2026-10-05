@@ -91,8 +91,8 @@ export function IllustrativeStrip({ photos, lang, compact = false }: { photos: M
       </ul>
       <figcaption className="mt-3 text-sm text-muted-foreground">
         {ar
-          ? "صور توضيحية للفريق مولّدة بالذكاء الاصطناعي — الملفات الحقيقية قريباً. ليست صوراً لموظفينا."
-          : "Illustrative team portraits (AI-generated) — real profiles coming soon. These are not photographs of our staff."}
+          ? "الملفات التعريفية لأفراد الفريق قريباً."
+          : "Team profiles coming soon."}
       </figcaption>
     </figure>
   )

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Archive, ArchiveRestore, ArrowDown, ArrowUp, Copy, Eye, EyeOff, Plus } from "lucide-react"
 import { Badge, Button, Label } from "@/components/ui"
-import { isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
+import { illustrativeStripMembers, isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
 import type { TeamMember, WebsiteDocument } from "@/lib/website/types"
 import { L10nField, MediaPicker, SeoEditor, Toggle, emptyL10n, uid } from "./fields"
 
@@ -16,9 +16,16 @@ type Props = {
   onAddHandled?: (nonce: number) => void
 }
 
-export function memberStatus(m: TeamMember): { label: string; tone: "live" | "draft" | "hidden" | "archived" } {
+export function memberStatus(
+  m: TeamMember,
+  doc?: WebsiteDocument,
+): { label: string; tone: "live" | "draft" | "hidden" | "archived" } {
   if (m.archived) return { label: "Archived", tone: "archived" }
   if (isPublicTeamMember(m)) return { label: "Public", tone: "live" }
+  // Never call a slot hidden while its portrait is publicly shown in the strip.
+  if (doc && illustrativeStripMembers(doc).some((x) => x.id === m.id)) {
+    return { label: "Portrait public (illustrative strip)", tone: "draft" }
+  }
   if (!m.visible) return { label: "Hidden draft", tone: "hidden" }
   return { label: "Incomplete", tone: "draft" }
 }
@@ -47,6 +54,7 @@ export function newTeamMember(sortOrder: number): TeamMember {
     visible: false,
     archived: false,
     sortOrder,
+    inStrip: true,
   }
 }
 
@@ -131,8 +139,13 @@ export function TeamSection({ doc, mutate, addRequest, onAddHandled }: Props) {
 
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
         <Toggle label="Team page switched on" checked={page.visible} onChange={(v) => mutate((d) => void (d.pages.team.visible = v))} />
+        <Toggle
+          label="Show illustrative portrait strip"
+          checked={page.showIllustrative}
+          onChange={(v) => mutate((d) => void (d.pages.team.showIllustrative = v))}
+        />
         <span className="text-muted-foreground">
-          {publicCount} public · {page.members.filter((m) => !m.archived).length} total
+          {publicCount} public · {illustrativeStripMembers(doc).length} in strip · {page.members.filter((m) => !m.archived).length} total
         </span>
         <Badge className={isTeamPagePublic(doc) ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}>
           {!isTeamPagePublic(doc)
@@ -157,7 +170,7 @@ export function TeamSection({ doc, mutate, addRequest, onAddHandled }: Props) {
           <Toggle label="Show archived" checked={showArchived} onChange={setShowArchived} />
           <ol className="flex max-h-[32rem] flex-col gap-1 overflow-y-auto" aria-label="Team members">
             {listed.map((m, i) => {
-              const st = memberStatus(m)
+              const st = memberStatus(m, doc)
               return (
                 <li key={m.id}>
                   <button
@@ -209,7 +222,7 @@ export function TeamSection({ doc, mutate, addRequest, onAddHandled }: Props) {
                 {selected.archived ? <ArchiveRestore className="h-4 w-4" aria-hidden="true" /> : <Archive className="h-4 w-4" aria-hidden="true" />}
                 {selected.archived ? "Restore" : "Archive"}
               </Button>
-              <span className="ms-auto text-xs text-muted-foreground">{memberStatus(selected).label}</span>
+              <span className="ms-auto text-xs text-muted-foreground">{memberStatus(selected, doc).label}</span>
             </div>
             {selected.visible && !selected.archived && missingFields(selected).length > 0 && (
               <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground" role="status">
@@ -225,6 +238,19 @@ export function TeamSection({ doc, mutate, addRequest, onAddHandled }: Props) {
               Upload portraits in Media, then set the English/Arabic description, focal point and approval there. Unapproved photos show initials instead.
             </p>
             <Toggle label="Visible on website" checked={selected.visible} onChange={(v) => update(selected.id, (m) => void (m.visible = v))} />
+            {isIllustrativeMedia(doc, selected.photoId) && !isPublicTeamMember(selected) && (
+              <div className="flex flex-col gap-1 rounded-md bg-muted px-3 py-2">
+                <Toggle
+                  label="Include this illustrative portrait in the public strip"
+                  checked={selected.inStrip}
+                  onChange={(v) => update(selected.id, (m) => void (m.inStrip = v))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The strip shows the image only, labelled as illustrative, with no name or title.
+                  {!page.showIllustrative && " The strip is currently switched off for the whole page."}
+                </p>
+              </div>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Select a member, or add one.</p>

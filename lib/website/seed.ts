@@ -117,6 +117,7 @@ export function blankTeamMember(id: string, sortOrder: number): TeamMember {
     visible: false,
     archived: false,
     sortOrder,
+    inStrip: true,
   }
 }
 

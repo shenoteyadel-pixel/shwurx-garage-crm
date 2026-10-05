@@ -49,3 +49,21 @@ test("after the marker, owner removals stick", () => {
   assert.ok(!again.media.some((m) => m.id === illustrativePortraitId(1)))
   assert.equal(again.appliedSeeds.filter((s) => s === ILLUSTRATIVE_SEED).length, 1)
 })
+
+test("strip respects page switch and per-portrait inclusion", async () => {
+  const { illustrativeStripMembers } = await import("../lib/website/normalize")
+  const doc = normalizeDocument(seedDocument())
+  assert.equal(illustrativeStripMembers(doc).length, 18)
+  doc.pages.team.members.find((m) => m.id === teamSlotId(2))!.inStrip = false
+  assert.equal(illustrativeStripMembers(doc).length, 17)
+  doc.pages.team.showIllustrative = false
+  assert.equal(illustrativeStripMembers(doc).length, 0)
+})
+
+test("all 15 brands are visible, including Corvette and Range Rover", () => {
+  const doc = normalizeDocument(seedDocument())
+  const slugs = doc.brands.filter((b) => b.visible).map((b) => b.slug)
+  assert.equal(slugs.length, 15)
+  assert.ok(slugs.includes("chevrolet-corvette"))
+  assert.ok(slugs.includes("range-rover"))
+})

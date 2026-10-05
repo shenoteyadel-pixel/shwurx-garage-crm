@@ -324,7 +324,19 @@ function migrateTeam(doc: WebsiteDocument, clean: unknown) {
   doc.pages.team.members = doc.pages.team.members
     .map((m, i) => ({ m, i }))
     .sort((a, b) => a.m.sortOrder - b.m.sortOrder || a.i - b.i)
-    .map(({ m }, i) => ({ ...m, sortOrder: i }))
+    .map(({ m }, i) => ({ ...m, sortOrder: i, inStrip: (m as { inStrip?: unknown }).inStrip !== false }))
+}
+
+/**
+ * Members whose illustrative portrait is publicly shown in the anonymous strip:
+ * page switch on, strip switch on, unfinished, not archived, included, AI photo.
+ */
+export function illustrativeStripMembers(doc: WebsiteDocument): import("./types").TeamMember[] {
+  const page = doc.pages.team
+  if (!page.visible || !page.showIllustrative) return []
+  return [...page.members]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .filter((m) => !m.archived && m.inStrip && !isPublicTeamMember(m) && isIllustrativeMedia(doc, m.photoId))
 }
 
 /**
@@ -341,7 +353,14 @@ export function applyIllustrativeSeed(doc: WebsiteDocument, clean: unknown) {
   if (applied.includes(ILLUSTRATIVE_SEED)) return
   const ids = new Set(doc.media.map((m) => m.id))
   for (const m of illustrativeMedia()) if (!ids.has(m.id)) doc.media.push(m)
-  if (doc.pages.home.heroImageId === "site-hero" || doc.pages.home.heroImageId === null) {
+  // An explicit null is the owner clearing the hero and must survive; only the
+  // old seed default or a genuinely absent field migrates.
+  const rawHome = isObj(clean) && isObj((clean as { pages?: unknown }).pages)
+    ? ((clean as { pages: Record<string, unknown> }).pages.home as unknown)
+    : undefined
+  const rawHero = isObj(rawHome) ? (rawHome as Record<string, unknown>).heroImageId : undefined
+  const heroMissing = !isObj(rawHome) || !("heroImageId" in (rawHome as Record<string, unknown>))
+  if (rawHero === "site-hero" || heroMissing) {
     doc.pages.home.heroImageId = HERO_CONCEPT_ID
   }
   for (let n = 1; n <= TEAM_SCAFFOLD_SIZE; n++) {

@@ -3,7 +3,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowRight } from "lucide-react"
 import { buildMetadata, localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
-import { isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
+import { illustrativeStripMembers, isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
 import { publicSiteInfo } from "@/lib/site-info"
 import { IllustrativeStrip, TeamGrid, type TeamCard } from "@/components/site/team-grid"
 import { ContactActions } from "@/components/site/contact-actions"
@@ -24,12 +24,9 @@ export default async function TeamPage() {
   // Unfilled slots with AI portraits appear live only as an anonymous, labelled strip.
   const illustrative = preview
     ? []
-    : page.showIllustrative
-      ? page.members
-          .filter((m) => !m.archived && !isPublicTeamMember(m) && isIllustrativeMedia(doc, m.photoId))
-          .map((m) => publicMedia(doc, m.photoId))
-          .filter((p): p is NonNullable<typeof p> => !!p)
-      : []
+    : illustrativeStripMembers(doc)
+        .map((m) => publicMedia(doc, m.photoId))
+        .filter((p): p is NonNullable<typeof p> => !!p)
   const cards: TeamCard[] = members.map((m) => {
     const aiPhoto = isIllustrativeMedia(doc, m.photoId)
     // A named public member must never be shown with an AI portrait as if it were their photo.

@@ -24,7 +24,7 @@ import { resolveImage } from "@/lib/site-content"
 import { interpolate } from "@/lib/i18n/dictionaries"
 import { TrackLink } from "@/components/site/track-link"
 import { listPublishedPosts } from "@/lib/blog"
-import { isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
+import { illustrativeStripMembers, isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
 import { IllustrativeStrip } from "@/components/site/team-grid"
 import { buildMetadata, localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
 import type { HomeSection, HomeSectionKey, ServiceKind, WebsiteDocument, Lang } from "@/lib/website/types"
@@ -50,8 +50,11 @@ const SERVICE_ICONS: Record<ServiceKind, LucideIcon> = {
 /** Bundled marks for brands that have no approved logo in the media library. */
 const BUNDLED_LOGOS = new Set([
   "astonmartin", "audi", "bentley", "bmw", "ferrari", "jaguar", "lamborghini",
-  "landrover", "maserati", "mclaren", "mercedes", "porsche", "rollsroyce", "volkswagen",
+  "landrover", "maserati", "mclaren", "mercedes", "porsche", "rollsroyce", "volkswagen", "chevrolet", "bugatti",
 ])
+
+/** Model families use their maker's mark. */
+const LOGO_ALIASES: Record<string, string> = { chevroletcorvette: "chevrolet", rangerover: "landrover" }
 
 function SectionHeader({ id, section, lang, fallback, href, linkLabel }: {
   id: string
@@ -80,8 +83,9 @@ function SectionHeader({ id, section, lang, fallback, href, linkLabel }: {
 
 function brandLogo(doc: WebsiteDocument, lang: Lang, b: WebsiteDocument["brands"][number]) {
   const m = publicMedia(doc, b.logoId)
-  if (m) return { url: m.url, alt: pick(m.alt, lang) || `${pick(b.name, lang)} logo`, bundled: false }
-  const key = b.slug.replace(/-benz$/, "").replace(/[^a-z]/g, "")
+  if (m) return { url: m.url, alt: pick(m.alt, lang) || `${pick(b.name, lang)} logo`, bundled: m.url.startsWith("/brands/") }
+  const raw = b.slug.replace(/-benz$/, "").replace(/[^a-z]/g, "")
+  const key = LOGO_ALIASES[raw] ?? raw
   return BUNDLED_LOGOS.has(key) ? { url: `/brands/${key}.svg`, alt: `${pick(b.name, lang)} logo`, bundled: true } : null
 }
 
@@ -98,7 +102,8 @@ export default async function HomePage() {
   const aboutMedia = publicMedia(doc, doc.pages.about.imageId)
   const aboutImg = aboutMedia?.url ?? resolveImage(doc.images, "home.about", "/site/about-tech.png")
   const services = doc.services.filter((s) => s.visible)
-  const brands = doc.brands.filter((b) => b.visible && b.kind === "manufacturer")
+  // Every visible brand page, including model families such as Corvette and Range Rover.
+  const brands = doc.brands.filter((b) => b.visible)
   const lp = (p: string) => localePath(lang, p)
   const heroVisible = visibleKeys.has("hero")
   const sec = (key: HomeSectionKey) => home.sections.find((s) => s.key === key)
@@ -110,9 +115,8 @@ export default async function HomePage() {
     ? doc.pages.team.members.filter((m) => !m.archived && isPublicTeamMember(m)).slice(0, 4)
     : []
   const teamIllustrative =
-    teamPublic && teamMembers.length === 0 && doc.pages.team.showIllustrative
-      ? doc.pages.team.members
-          .filter((m) => !m.archived && isIllustrativeMedia(doc, m.photoId))
+    teamMembers.length === 0
+      ? illustrativeStripMembers(doc)
           .map((m) => publicMedia(doc, m.photoId))
           .filter((p): p is NonNullable<typeof p> => !!p)
           .slice(0, 6)
@@ -298,10 +302,10 @@ export default async function HomePage() {
                     <img
                       src={logo.url}
                       alt={logo.alt}
-                      className={`h-9 w-9 object-contain opacity-70 transition group-hover:opacity-100 ${logo.bundled ? "dark:invert" : ""}`}
+                      className={`h-10 w-16 object-contain opacity-80 transition group-hover:opacity-100 ${logo.bundled ? "brightness-0 dark:invert" : ""}`}
                     />
                   ) : (
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-xs font-bold">
+                    <span aria-hidden="true" className="flex h-10 w-10 items-center justify-center rounded-full border border-border text-xs font-bold">
                       {pick(b.name, lang).slice(0, 1)}
                     </span>
                   )}

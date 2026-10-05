@@ -205,6 +205,8 @@ export interface TeamMember {
   visible: boolean
   archived: boolean
   sortOrder: number
+  /** an unfinished slot's illustrative portrait may appear in the anonymous public strip */
+  inStrip: boolean
 }
 
 export interface TeamPage {

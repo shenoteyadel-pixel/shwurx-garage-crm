@@ -37,7 +37,9 @@ export function SiteHeader({
   trackHref,
   trackLabel,
   menuLabel,
+  logo = null,
 }: {
+  logo?: { url: string; alt: string } | null
   nav: HeaderLink[]
   homeHref: string
   enquireHref: string
@@ -58,7 +60,12 @@ export function SiteHeader({
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur">
       <div className="mx-auto flex h-20 max-w-7xl items-center gap-4 px-4 lg:px-8">
         <Link href={homeHref} className="shrink-0" aria-label="SHWURX Auto Service Center">
-          <Wordmark />
+          {logo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logo.url} alt={logo.alt} className="h-11 w-auto max-w-44 object-contain" />
+          ) : (
+            <Wordmark />
+          )}
         </Link>
 
         <nav aria-label="Main" className="ms-auto hidden items-center gap-1 lg:flex">

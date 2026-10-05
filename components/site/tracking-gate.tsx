@@ -6,8 +6,9 @@ import {
   cancelPendingConversions,
   captureAttribution,
   emitClick,
+  flushPageView,
+  notePageView,
   persistAttributionAfterConsent,
-  track,
 } from "@/lib/site-track"
 import { effectiveConsent, subscribeConsent } from "@/lib/consent"
 import { consentNeeded } from "@/lib/website/consent-needed"
@@ -57,7 +58,7 @@ export function TrackingGate({ tags: input }: { tags?: RuntimeTags | null }) {
   useEffect(() => {
     if (!firstParty) return
     captureAttribution()
-    track("page_view")
+    notePageView(pathname)
   }, [pathname, firstParty])
 
   useEffect(() => {
@@ -80,6 +81,7 @@ export function TrackingGate({ tags: input }: { tags?: RuntimeTags | null }) {
     return subscribeConsent(() => {
       const c = effectiveConsent()
       if (c.ads) persistAttributionAfterConsent()
+      if (c.analytics) flushPageView()
       if (!c.analytics && !c.ads) cancelPendingConversions("consent_withdrawn")
     })
   }, [])

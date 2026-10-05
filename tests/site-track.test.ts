@@ -123,3 +123,88 @@ test("a marker written elsewhere while a retry is queued cancels the queued disp
     mock.timers.reset()
   }
 })
+
+const beacons: string[] = []
+async function captureBeacons() {
+  beacons.length = 0
+  Object.defineProperty(globalThis, "navigator", {
+    value: {
+      userAgent: "test",
+      sendBeacon: (_u: string, b: Blob) => {
+        void b.text().then((t) => beacons.push(JSON.parse(t).eventType))
+        return true
+      },
+    },
+    configurable: true,
+  })
+}
+const flushMicro = () => new Promise((r) => setTimeout(r, 5))
+
+function requireConsent(state: { analytics: boolean; ads: boolean } | null) {
+  win.__shwurxConsentNeeded = true
+  win.__shwurxConsent = state
+  local.removeItem("shwurx_consent_v2")
+  local.removeItem("shwurx_consent_v1")
+}
+
+test("delayed analytics grant sends the CURRENT page view once, never earlier pages", async () => {
+  const track = await load()
+  local.clear()
+  track.resetPageViewState()
+  await captureBeacons()
+  win.__shwurxTrack = true
+  win.__shwurxThirdParty = false
+  requireConsent(null)
+
+  visit("/services")
+  track.notePageView("/services")
+  track.notePageView("/services") // StrictMode double effect
+  visit("/contact")
+  track.notePageView("/contact") // SPA navigation before consent
+  await flushMicro()
+  assert.equal(beacons.length, 0, "nothing sent before consent")
+
+  // Grant well after any 5s retry window would have expired.
+  win.__shwurxConsent = { analytics: true, ads: false }
+  assert.equal(track.flushPageView(), true)
+  assert.equal(track.flushPageView(), false, "second grant notification is a no-op")
+  track.notePageView("/contact") // re-render of the same instance
+  await flushMicro()
+  assert.deepEqual(beacons, ["page_view"], "only /contact, once")
+
+  visit("/about")
+  track.notePageView("/about")
+  visit("/contact")
+  track.notePageView("/contact") // back navigation = new instance
+  await flushMicro()
+  assert.equal(beacons.filter((b) => b === "page_view").length, 3)
+  delete win.__shwurxConsentNeeded
+  delete win.__shwurxConsent
+})
+
+test("denied analytics stores no first-party conversion marker; a later eligible retry sends", async () => {
+  const track = await load()
+  local.clear()
+  session.clear()
+  await captureBeacons()
+  win.__shwurxTrack = true
+  win.__shwurxThirdParty = false
+  visit("/contact")
+  requireConsent({ analytics: false, ads: false })
+
+  track.emitConversion("lead-denied", { form: "enquiry" })
+  await flushMicro()
+  assert.equal(beacons.length, 0)
+  assert.equal(local.getItem("shwurx_conv1_lead_lead-denied"), null, "no marker on denied consent")
+  assert.equal(session.getItem("shwurx_sid"), null, "no analytics session identifier")
+
+  win.__shwurxConsent = { analytics: true, ads: false }
+  track.emitConversion("lead-denied", { form: "enquiry" })
+  track.emitConversion("lead-denied", { form: "enquiry" })
+  await flushMicro()
+  assert.deepEqual(beacons, ["enquiry_persisted"], "sent once after grant")
+  assert.ok(local.getItem("shwurx_conv1_lead_lead-denied"))
+  assert.equal(local.getItem("shwurx_conv4_lead_lead-denied"), null, "provider dedupe is separate and untouched")
+  delete win.__shwurxConsentNeeded
+  delete win.__shwurxConsent
+})

@@ -37,6 +37,7 @@ import {
   L10nField,
   ListEditor,
   MediaPicker,
+  MediaMultiPicker,
   SeoEditor,
   TextField,
   TextItemsEditor,
@@ -452,6 +453,9 @@ function PagesSection({ doc, mutate }: SectionProps) {
           <SectionTitle title={key === "about" ? "About page" : "Privacy page"} />
           <L10nField label="Title" value={p[key].title} onChange={(v) => mutate((d) => void (d.pages[key].title = v))} />
           <L10nField label="Text" value={p[key].body} onChange={(v) => mutate((d) => void (d.pages[key].body = v))} multiline />
+          {key === "about" && (
+            <MediaPicker label="About image" media={doc.media} value={p.about.imageId} onChange={(v) => mutate((d) => void (d.pages.about.imageId = v))} />
+          )}
           <SeoEditor value={p[key].seo} media={doc.media} onChange={(v) => mutate((d) => void (d.pages[key].seo = v))} />
         </div>
       ))}
@@ -549,6 +553,7 @@ function BrandsSection({ doc, mutate }: SectionProps) {
             )}
           />
           <TextItemsEditor title="Brand knowledge" items={b.knowledge} onChange={(v) => set((x) => void (x.knowledge = v))} />
+          <MediaMultiPicker label="Workshop gallery" media={doc.media} value={b.galleryIds} onChange={(v) => set((x) => void (x.galleryIds = v))} />
           <FaqEditor items={b.faqs} onChange={(v) => set((x) => void (x.faqs = v))} />
           <ListEditor
             title="Documented case studies"
@@ -559,6 +564,7 @@ function BrandsSection({ doc, mutate }: SectionProps) {
               <>
                 <L10nField label="Title" value={c.title} onChange={(title) => up({ ...c, title })} />
                 <L10nField label="Write-up" value={c.body} onChange={(body) => up({ ...c, body })} multiline />
+                <MediaMultiPicker label="Job photos" media={doc.media} value={c.mediaIds} onChange={(mediaIds) => up({ ...c, mediaIds })} />
                 <Toggle
                   label="I confirm this job happened and customer details are removed (required to show it)"
                   checked={c.documented}
@@ -622,6 +628,7 @@ function ServicesSection({ doc, mutate }: SectionProps) {
           <TextItemsEditor title="What we do" items={s.subservices} onChange={(v) => set((x) => void (x.subservices = v))} />
           <TextItemsEditor title="Steps" items={s.steps} onChange={(v) => set((x) => void (x.steps = v))} />
           <FaqEditor items={s.faqs} onChange={(v) => set((x) => void (x.faqs = v))} />
+          <MediaMultiPicker label="Workshop gallery" media={doc.media} value={s.galleryIds} onChange={(v) => set((x) => void (x.galleryIds = v))} />
           <SeoEditor value={s.seo} media={doc.media} onChange={(v) => set((x) => void (x.seo = v))} />
         </div>
       )}

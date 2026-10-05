@@ -5,12 +5,13 @@ import { notFound } from "next/navigation"
 import { ArrowRight } from "lucide-react"
 import { buildMetadata, localePath, pick, siteContext } from "@/lib/website/render"
 import { FaqList } from "@/components/site/faq-list"
+import { MediaGallery, resolveGallery } from "@/components/site/media-gallery"
 
 export const dynamic = "force-dynamic"
 
 const UI = {
-  en: { includes: "What it covers", how: "How it works", prepare: "Before you visit", faq: "Questions", brands: "Brands", cta: "Send an enquiry" },
-  ar: { includes: "ما تشمله الخدمة", how: "طريقة العمل", prepare: "قبل زيارتك", faq: "الأسئلة", brands: "العلامات", cta: "أرسل استفساراً" },
+  en: { includes: "What it covers", how: "How it works", prepare: "Before you visit", faq: "Questions", brands: "Brands", cta: "Send an enquiry", gallery: "From our workshop" },
+  ar: { includes: "ما تشمله الخدمة", how: "طريقة العمل", prepare: "قبل زيارتك", faq: "الأسئلة", brands: "العلامات", cta: "أرسل استفساراً", gallery: "من ورشتنا" },
 }
 
 async function load(slug: string) {
@@ -75,6 +76,13 @@ export default async function ServicePage({ params }: { params: Promise<{ slug: 
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pick(service.preparation, lang)}</p>
         {pick(service.scopeNote, lang) && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{pick(service.scopeNote, lang)}</p>}
       </section>
+
+      {resolveGallery(doc, service.galleryIds).length > 0 && (
+        <section className="mt-14" aria-labelledby="gallery">
+          <h2 id="gallery" className="text-xl font-semibold">{u.gallery}</h2>
+          <MediaGallery doc={doc} lang={lang} ids={service.galleryIds} />
+        </section>
+      )}
 
       {brands.length > 0 && (
         <section className="mt-14">

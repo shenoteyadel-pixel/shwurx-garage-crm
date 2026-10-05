@@ -387,8 +387,11 @@ function sessionId(): string {
   }
 }
 
-function sendFirstParty(name: string, env: Record<string, unknown>) {
-  if (!effectiveConsent().analytics) return
+export type SendResult = "sent" | "skipped"
+
+/** "skipped" when analytics consent is not granted: nothing is sent or stored. */
+function sendFirstParty(name: string, env: Record<string, unknown>): SendResult {
+  if (!effectiveConsent().analytics) return "skipped"
   const attr = getAttribution().latest
   const pc = pageContext(window.location.pathname)
   const metadata: Record<string, unknown> = {}
@@ -411,6 +414,42 @@ function sendFirstParty(name: string, env: Record<string, unknown>) {
   } else {
     void fetch("/api/public/track", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true })
   }
+  return "sent"
+}
+
+/* -------------------------------------------------------------- page views */
+
+/**
+ * One page_view per page instance. A page instance starts when the public
+ * pathname changes (initial load, SPA navigation, back/forward); repeated calls
+ * for the same instance (StrictMode double effects, re-renders) are ignored.
+ * Without analytics consent the instance stays pending, and only the CURRENT
+ * instance is sent once consent is granted — earlier pages are never replayed.
+ */
+let pageInstance: { path: string; sent: boolean } | null = null
+
+export function notePageView(pathname: string) {
+  if (!pageInstance || pageInstance.path !== pathname) pageInstance = { path: pathname, sent: false }
+  flushPageView()
+}
+
+/** Sends the current page instance if it is still pending and now allowed. */
+export function flushPageView(): boolean {
+  try {
+    if (!pageInstance || pageInstance.sent || !siteActive()) return false
+    if (window.location.pathname !== pageInstance.path) return false
+    if (!effectiveConsent().analytics) return false
+    pageInstance.sent = true
+    track("page_view")
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Test hook: forget the current page instance. */
+export function resetPageViewState() {
+  pageInstance = null
 }
 
 /**
@@ -549,8 +588,11 @@ export function emitConversion(recordId: string, ctx: ConversionContext) {
         brand_slug: ctx.brand,
         service_slug: ctx.service,
       })
-      sendFirstParty(outcome === "lead" ? "enquiry_persisted" : "appointment_persisted", env)
-      setMarker(fpKey)
+      // Only an actual send is remembered; a consent-skipped attempt leaves no
+      // stored identifier and does not block a later eligible retry.
+      if (sendFirstParty(outcome === "lead" ? "enquiry_persisted" : "appointment_persisted", env) === "sent") {
+        setMarker(fpKey)
+      }
     }
     if (!providersActive()) return
     const key = markerKey(outcome, recordId)

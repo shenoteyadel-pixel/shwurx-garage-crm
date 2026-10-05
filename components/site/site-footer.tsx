@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { MapPin, Phone, Mail } from "lucide-react"
-import { localePath, pick } from "@/lib/website/render"
+import { localePath, pick, publicMedia } from "@/lib/website/render"
 import type { Lang, WebsiteDocument } from "@/lib/website/types"
 
 // Public legal identifiers (shown on the storefront footer, as on business cards).
@@ -17,6 +17,7 @@ const T = {
 export function SiteFooter({ doc, lang }: { doc: WebsiteDocument; lang: Lang }) {
   const t = T[lang]
   const b = doc.business
+  const logo = publicMedia(doc, b.logoId)
   const year = new Date().getFullYear()
   const socials = b.socials.filter((s) => /^https:\/\//.test(s.url))
 
@@ -24,13 +25,20 @@ export function SiteFooter({ doc, lang }: { doc: WebsiteDocument; lang: Lang }) 
     <footer className="border-t border-border bg-footer">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:grid-cols-2 lg:grid-cols-4 lg:px-8">
         <div>
-          <Link href={localePath(lang, "/")} className="flex flex-col leading-none" dir="ltr">
-            <span className="text-2xl font-black tracking-tight">
-              SHWUR<span className="text-primary">X</span>
-            </span>
-            <span className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              ONE GARAGE. <span className="text-primary">LIMITLESS SOLUTIONS.</span>
-            </span>
+          <Link href={localePath(lang, "/")} className="flex flex-col leading-none" dir="ltr" aria-label={pick(b.name, lang) || "SHWURX"}>
+            {logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logo.url} alt={pick(logo.alt, lang) || pick(b.name, lang)} className="h-12 w-auto max-w-48 object-contain" />
+            ) : (
+              <>
+                <span className="text-2xl font-black tracking-tight">
+                  SHWUR<span className="text-primary">X</span>
+                </span>
+                <span className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  ONE GARAGE. <span className="text-primary">LIMITLESS SOLUTIONS.</span>
+                </span>
+              </>
+            )}
           </Link>
           <p className="mt-4 max-w-xs text-pretty text-sm leading-relaxed text-muted-foreground">
             {pick(doc.seo.defaultDescription, lang)}

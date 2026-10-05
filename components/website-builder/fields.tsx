@@ -117,6 +117,89 @@ export function MediaPicker({
   )
 }
 
+/** Ordered multi-select for galleries; unapproved photos are flagged and never rendered publicly. */
+export function MediaMultiPicker({
+  label,
+  media,
+  value,
+  onChange,
+}: {
+  label: string
+  media: MediaAsset[]
+  value: string[]
+  onChange: (ids: string[]) => void
+}) {
+  const byId = new Map(media.map((m) => [m.id, m]))
+  const available = media.filter((m) => !value.includes(m.id))
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= value.length) return
+    const next = [...value]
+    const [x] = next.splice(from, 1)
+    next.splice(to, 0, x)
+    onChange(next)
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <Label>{label}</Label>
+      {value.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No photos selected.</p>
+      ) : (
+        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {value.map((id, i) => {
+            const m = byId.get(id)
+            const hidden = !m || m.approval !== "approved" || !m.publicSafe
+            return (
+              <li key={id} className="flex items-center gap-2 rounded-lg border border-border bg-background/60 p-2">
+                {m ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={m.url || "/placeholder.svg"} alt="" className="h-12 w-16 shrink-0 rounded object-cover" />
+                ) : (
+                  <span className="flex h-12 w-16 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground">deleted</span>
+                )}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-xs">{m?.alt.en || id}</span>
+                  {hidden && <span className="text-[10px] text-destructive">Not shown until approved</span>}
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <button type="button" className="rounded border border-border px-1.5 text-xs" onClick={() => move(i, i - 1)} aria-label="Move earlier">
+                    {"<"}
+                  </button>
+                  <button type="button" className="rounded border border-border px-1.5 text-xs" onClick={() => move(i, i + 1)} aria-label="Move later">
+                    {">"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border border-border px-1.5 text-xs"
+                    onClick={() => onChange(value.filter((x) => x !== id))}
+                    aria-label={`Remove ${m?.alt.en || id}`}
+                  >
+                    {"×"}
+                  </button>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {available.length > 0 && (
+        <select
+          aria-label={`Add photo to ${label}`}
+          className="h-10 rounded-lg border border-input bg-background/60 px-3 text-sm"
+          value=""
+          onChange={(e) => e.target.value && onChange([...value, e.target.value])}
+        >
+          <option value="">Add a photo…</option>
+          {available.map((m) => (
+            <option key={m.id} value={m.id}>
+              {(m.alt.en || m.id) + (m.approval !== "approved" || !m.publicSafe ? " (hidden until approved)" : "")}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  )
+}
+
 /** Generic ordered list with add / remove / move. */
 export function ListEditor<T extends { id: string }>({
   title,

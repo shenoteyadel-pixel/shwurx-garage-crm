@@ -6,6 +6,7 @@ import { notFound } from "next/navigation"
 import { ArrowRight } from "lucide-react"
 import { buildMetadata, localePath, pick, publicMedia, siteContext, SITE_URL } from "@/lib/website/render"
 import { FaqList } from "@/components/site/faq-list"
+import { MediaGallery } from "@/components/site/media-gallery"
 
 export const dynamic = "force-dynamic"
 
@@ -170,6 +171,7 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
               <article key={c.id} className="rounded-2xl border border-border bg-card p-6">
                 <h3 className="font-semibold">{pick(c.title, lang)}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pick(c.body, lang)}</p>
+                <MediaGallery doc={doc} lang={lang} ids={c.mediaIds} compact />
               </article>
             ))}
           </div>

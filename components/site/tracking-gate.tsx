@@ -2,7 +2,19 @@
 
 import { useEffect } from "react"
 import { usePathname } from "next/navigation"
-import { captureAttribution, emitClick, track } from "@/lib/site-track"
+import {
+  cancelPendingConversions,
+  captureAttribution,
+  emitClick,
+  persistAttributionAfterConsent,
+  track,
+} from "@/lib/site-track"
+import { effectiveConsent, subscribeConsent } from "@/lib/consent"
+
+/** The page asks for consent whenever anything (first-party or provider) may measure. */
+export function consentNeeded(tags: Pick<RuntimeTags, "consentRequired" | "firstParty" | "thirdParty">): boolean {
+  return tags.consentRequired && (tags.firstParty || tags.thirdParty)
+}
 import { isPublicSitePath } from "@/lib/website/paths"
 import { normalizeRuntime, type RuntimeTags } from "@/lib/website/analytics"
 
@@ -34,7 +46,13 @@ export function TrackingGate({ tags: input }: { tags?: RuntimeTags | null }) {
     window.__shwurxTrack = firstParty
     window.__shwurxThirdParty = thirdParty
     window.__shwurxTagMode = thirdParty ? mode : "none"
-    window.__shwurxTags = { events: tags.events, adsId: tags.adsId, adsLabels: tags.adsLabels }
+    window.__shwurxConsentNeeded = consentNeeded(tags)
+    window.__shwurxTags = {
+      events: tags.events,
+      adsId: tags.adsId,
+      adsLabels: tags.adsLabels,
+      retentionDays: tags.retentionDays,
+    }
     // Meta-only setups count too: any loaded tag forces the private-route reload.
     if (thirdParty) window.__shwurxTagsLoaded = true
   }
@@ -63,8 +81,17 @@ export function TrackingGate({ tags: input }: { tags?: RuntimeTags | null }) {
   }, [firstParty])
 
   useEffect(() => {
+    return subscribeConsent(() => {
+      const c = effectiveConsent()
+      if (c.ads) persistAttributionAfterConsent()
+      if (!c.analytics && !c.ads) cancelPendingConversions("consent_withdrawn")
+    })
+  }, [])
+
+  useEffect(() => {
     return () => {
       window.__shwurxTrack = false
+      window.__shwurxConsentNeeded = undefined
       window.__shwurxThirdParty = false
       window.__shwurxTagMode = "none"
       // Wait for the router to commit the new URL, then enforce the boundary.

@@ -23,7 +23,7 @@ function bootstrap(tags: RuntimeTags): string {
     ads: tags.adsId,
     pixel: tags.metaPixelId,
   }).replace(/</g, "\\u003c")
-  return `(function(c){var w=window,d=document;w.dataLayer=w.dataLayer||[];if(typeof w.gtag!=='function'){w.gtag=function(){w.dataLayer.push(arguments)}}
+  return `(function(c){var w=window,d=document;if(c.consent)w.__shwurxConsentNeeded=true;w.dataLayer=w.dataLayer||[];if(typeof w.gtag!=='function'){w.gtag=function(){w.dataLayer.push(arguments)}}
 function read(){if(!c.consent)return{analytics:true,ads:true};try{var s=JSON.parse(localStorage.getItem(c.key)||'null');if(s&&s.v===2)return{analytics:s.analytics===true,ads:s.ads===true};var o=localStorage.getItem(c.old);if(o==='granted')return{analytics:true,ads:true};if(o==='denied')return{analytics:false,ads:false}}catch(e){}return w.__shwurxConsent||null}
 function sig(s){var a=s&&s.analytics?'granted':'denied',m=s&&s.ads?'granted':'denied';return{analytics_storage:a,ad_storage:m,ad_user_data:m,ad_personalization:m}}
 var st=read();w.gtag('consent','default',sig(st));w.gtag('set','ads_data_redaction',true);

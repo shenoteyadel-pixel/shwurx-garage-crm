@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { CheckCircle2, Loader2, Send } from "lucide-react"
 import { Button, Field, Input, Textarea } from "@/components/ui"
-import { submitLead, track } from "@/lib/site-track"
+import { emitConversion, intakeEnvelope, newSubmissionId, submitLead } from "@/lib/site-track"
 import { useI18n } from "@/lib/i18n/provider"
 import { DryRunNotice } from "@/components/site/dry-run-notice"
 
@@ -14,6 +14,8 @@ export function ContactForm({ heading, sub }: { heading?: string; sub?: string }
   const t = dict.contactForm
   const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState<string | null>(null)
+  const submissionId = useRef<string>("")
+  if (!submissionId.current && typeof window !== "undefined") submissionId.current = newSubmissionId()
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -35,13 +37,19 @@ export function ContactForm({ heading, sub }: { heading?: string; sub?: string }
         email: email || null,
         message: fd.get("message") || null,
         source: "website",
+        ...intakeEnvelope(submissionId.current),
       })
       if (result.outcome === "dry_run") {
         setStatus("dry_run")
         return
       }
-      track("lead_submit", {})
       setStatus("done")
+      emitConversion(result.id, {
+        form: "contact",
+        formContext: "contact",
+        token: result.conversionToken,
+        outcome: "lead",
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : t.errGeneric)
       setStatus("error")

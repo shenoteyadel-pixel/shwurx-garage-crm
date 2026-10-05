@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { CheckCircle2, Loader2, Car, Truck, MapPin } from "lucide-react"
 import { Button, Field, Input } from "@/components/ui"
-import { submitAppointment, track } from "@/lib/site-track"
+import { emitConversion, intakeEnvelope, newSubmissionId, submitAppointment } from "@/lib/site-track"
 import { SITE_SERVICES } from "@/lib/site-services"
 import { useI18n } from "@/lib/i18n/provider"
 import { DryRunNotice } from "@/components/site/dry-run-notice"
@@ -34,6 +34,8 @@ export function AppointmentForm() {
   const [error, setError] = useState<string | null>(null)
   const [apptType, setApptType] = useState<ApptType>("dropoff")
   const [sameAsPickup, setSameAsPickup] = useState(true)
+  const submissionId = useRef<string>("")
+  if (!submissionId.current && typeof window !== "undefined") submissionId.current = newSubmissionId()
 
   const needsPickup = apptType === "pickup" || apptType === "pickup_delivery"
   const needsDelivery = apptType === "pickup_delivery"
@@ -93,13 +95,19 @@ export function AppointmentForm() {
         notes: fd.get("notes") || null,
         source: "website",
         metadata: { logistics },
+        ...intakeEnvelope(submissionId.current),
       })
       if (result.outcome === "dry_run") {
         setStatus("dry_run")
         return
       }
-      track("appointment_request", { service: fd.get("serviceInterest") || null, type: apptType })
       setStatus("done")
+      emitConversion(result.id, {
+        form: "appointment",
+        formContext: apptType.replace(/_/g, "-"),
+        token: result.conversionToken,
+        outcome: "appointment",
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : f.errGeneric)
       setStatus("error")

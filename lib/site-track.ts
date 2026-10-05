@@ -634,6 +634,27 @@ async function postJson(url: string, payload: Record<string, unknown>): Promise<
   throw new Error(json.error || "Something went wrong. Please try again.")
 }
 
+/** One UUID per form instance, reused by every retry so the server dedupes it. */
+export function newSubmissionId(): string {
+  const c = globalThis.crypto as Crypto
+  if (typeof c.randomUUID === "function") return c.randomUUID()
+  const b = new Uint8Array(16)
+  c.getRandomValues(b)
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("")
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
+/** Fields every website intake request carries besides the form's own data. */
+export function intakeEnvelope(submissionId: string) {
+  return {
+    submissionId,
+    submitPath: typeof window !== "undefined" ? window.location.pathname : null,
+    attribution: getAttribution(),
+  }
+}
+
 export function submitAppointment(payload: Record<string, unknown>) {
   return postJson("/api/public/appointments", payload)
 }

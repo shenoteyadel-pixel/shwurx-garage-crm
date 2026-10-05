@@ -2,7 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { SiteHeader } from "@/components/site/site-header"
 import { SiteFooter } from "@/components/site/site-footer"
-import { TrackingGate } from "@/components/site/tracking-gate"
+import { TrackingGate, consentNeeded } from "@/components/site/tracking-gate"
 import { PreviewBar } from "@/components/site/preview-bar"
 import { SiteTracking } from "@/components/site-tracking"
 import { localePath, pick, siteContext } from "@/lib/website/render"
@@ -35,7 +35,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
     <div className="flex min-h-svh flex-col bg-background text-foreground" lang={lang} dir={ar ? "rtl" : "ltr"}>
       <SiteTracking tags={tags} />
       <TrackingGate tags={tags} />
-      {tags.thirdParty && tags.consentRequired && <ConsentBanner lang={lang} privacyHref={localePath(lang, "/privacy")} />}
+      {consentNeeded(tags) && <ConsentBanner lang={lang} privacyHref={localePath(lang, "/privacy")} />}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"

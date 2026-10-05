@@ -156,6 +156,7 @@ export function EnquiryForm(p: EnquiryFormProps) {
       const json = (await res.json().catch(() => ({}))) as {
         outcome?: string
         id?: string | null
+        conversionToken?: unknown
         fields?: Record<string, string>
       }
       // Inputs are uncontrolled and stay in the DOM on every failure path.
@@ -168,7 +169,14 @@ export function EnquiryForm(p: EnquiryFormProps) {
         setStatus("done")
         // "duplicate" means an earlier attempt persisted but its response was lost;
         // emitConversion is keyed by the durable lead id, so it still counts once.
-        emitConversion(json.id, { form: p.formId, brand: brand || null, service: service || null })
+        emitConversion(json.id, {
+          form: "enquiry",
+          formContext: p.formId,
+          brand: brand || null,
+          service: service || null,
+          token: typeof json.conversionToken === "string" ? json.conversionToken : null,
+          outcome: "lead",
+        })
         return
       }
       setStatus("idle")

@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     })
 
     if (error) return jsonWithCors(request, { ok: false, error: error.message }, 400)
-    if (!data?.ok) return jsonWithCors(request, data, 400)
+    if (!data?.ok || !data?.id) return jsonWithCors(request, { ok: false, outcome: "error", error: data?.error ?? "not_persisted" }, 400)
 
     const logisticsType = String(body?.metadata?.logistics?.type ?? "dropoff")
     const typeLabel =

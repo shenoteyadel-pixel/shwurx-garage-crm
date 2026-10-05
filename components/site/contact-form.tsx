@@ -5,8 +5,9 @@ import { CheckCircle2, Loader2, Send } from "lucide-react"
 import { Button, Field, Input, Textarea } from "@/components/ui"
 import { submitLead, track } from "@/lib/site-track"
 import { useI18n } from "@/lib/i18n/provider"
+import { DryRunNotice } from "@/components/site/dry-run-notice"
 
-type Status = "idle" | "submitting" | "done" | "error"
+type Status = "idle" | "submitting" | "done" | "error" | "dry_run"
 
 export function ContactForm({ heading, sub }: { heading?: string; sub?: string }) {
   const { dict } = useI18n()
@@ -28,13 +29,17 @@ export function ContactForm({ heading, sub }: { heading?: string; sub?: string }
       return
     }
     try {
-      await submitLead({
+      const result = await submitLead({
         name: fd.get("name") || null,
         phone: phone || null,
         email: email || null,
         message: fd.get("message") || null,
         source: "website",
       })
+      if (result.outcome === "dry_run") {
+        setStatus("dry_run")
+        return
+      }
       track("lead_submit", {})
       setStatus("done")
     } catch (err) {
@@ -82,6 +87,7 @@ export function ContactForm({ heading, sub }: { heading?: string; sub?: string }
           </Field>
         </div>
 
+        {status === "dry_run" && <DryRunNotice />}
         {error && (
           <p className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-400">
             {error}

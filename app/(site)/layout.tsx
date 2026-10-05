@@ -6,17 +6,21 @@ import { TrackingGate } from "@/components/site/tracking-gate"
 import { PreviewBar } from "@/components/site/preview-bar"
 import { SiteTracking } from "@/components/site-tracking"
 import { localePath, pick, siteContext } from "@/lib/website/render"
+import { isIndexableDeployment } from "@/lib/website/env"
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
   const [{ doc, lang, preview, previewLabel }, settings] = await Promise.all([siteContext(), getSettings()])
-  // Master switch covers first- and third-party events; editors previewing never count.
-  const firstParty = !!settings.tracking_enabled && !preview
+  // Master switch covers first- and third-party events; editors previewing and
+  // non-production deployments never count.
+  const trackingOff = preview || !isIndexableDeployment()
+  const firstParty = !!settings.tracking_enabled && !trackingOff
+  const tagMode = settings.gtm_container_id ? "gtm" : settings.ga4_measurement_id ? "ga4" : "none"
   const ar = lang === "ar"
 
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground" lang={lang} dir={ar ? "rtl" : "ltr"}>
-      <SiteTracking disabled={preview} />
-      <TrackingGate firstParty={firstParty} thirdParty={firstParty} />
+      <SiteTracking disabled={trackingOff} />
+      <TrackingGate firstParty={firstParty} thirdParty={firstParty} tagMode={tagMode} />
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"

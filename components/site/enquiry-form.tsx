@@ -150,10 +150,9 @@ export function EnquiryForm(p: EnquiryFormProps) {
       }
       if ((json.outcome === "received" || json.outcome === "duplicate") && json.id) {
         setStatus("done")
-        // Only a NEW persisted lead counts; emitConversion also dedupes by submission id.
-        if (json.outcome === "received") {
-          emitConversion(submissionId.current, { form: p.formId, brand: brand || null, service: service || null })
-        }
+        // "duplicate" means an earlier attempt persisted but its response was lost;
+        // emitConversion is keyed by the durable lead id, so it still counts once.
+        emitConversion(json.id, { form: p.formId, brand: brand || null, service: service || null })
         return
       }
       setStatus("idle")
@@ -166,7 +165,7 @@ export function EnquiryForm(p: EnquiryFormProps) {
         if (json.fields.name) f.name = m.required
         if (json.fields.phone) f.phone = m.phone
         if (json.fields.year) f.year = m.year
-        if (json.fields.details || json.fields.service || json.fields.brand) f.details = m.details
+        if (json.fields.details || json.fields.service || json.fields.brand || json.fields.form) f.details = m.details
         setErrors(f)
         setFormError(m.errorSummary)
       } else if (json.outcome === "rate_limited") setFormError(m.rate)

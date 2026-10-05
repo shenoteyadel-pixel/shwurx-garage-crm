@@ -9,11 +9,16 @@
  * never names, phone numbers, emails, messages, VINs or tokenized URLs.
  */
 
+import { isPublicSitePath } from "@/lib/website/paths"
+
 declare global {
   interface Window {
     /** set by <TrackingGate>; false = master switch off or editor preview */
     __shwurxTrack?: boolean
     __shwurxThirdParty?: boolean
+    /** which provider owns conversions: GTM container, direct GA4, or none */
+    __shwurxTagMode?: "gtm" | "ga4" | "none"
+    __shwurxTagsLoaded?: boolean
     dataLayer?: unknown[]
     gtag?: (...args: unknown[]) => void
   }
@@ -54,7 +59,7 @@ function clip(v: string | null, n = 120): string | null {
 
 /** Paths that must never be stored as attribution (tokenized customer links). */
 function safePath(p: string): string {
-  return /^\/(track|approve|approval|customer-access|pay|portal)(\/|$)/.test(p) ? "/" : p.slice(0, 200)
+  return isPublicSitePath(p) ? p.slice(0, 200) : "/"
 }
 
 /**
@@ -124,6 +129,7 @@ function device(): string {
 export function track(eventType: string, metadata: Record<string, unknown> = {}) {
   try {
     if (typeof window === "undefined" || window.__shwurxTrack !== true) return
+    if (!isPublicSitePath(window.location.pathname)) return
     const attr = getAttribution()
     const body = JSON.stringify({
       eventType,
@@ -146,34 +152,81 @@ export function track(eventType: string, metadata: Record<string, unknown> = {})
   }
 }
 
-/**
- * Third-party conversion signal (GTM dataLayer / gtag). Only called after the
- * server confirmed the enquiry was persisted, and only once per submission id.
- */
-export function emitConversion(submissionId: string, context: { form: string; brand?: string | null; service?: string | null }) {
+function markerStore(): Storage | null {
   try {
-    const key = `shwurx_conv_${submissionId}`
-    if (sessionStorage.getItem(key)) return
-    sessionStorage.setItem(key, "1")
-    track("enquiry_persisted", { form: context.form, brand: context.brand ?? null, service: context.service ?? null })
+    return window.localStorage
+  } catch {
+    try {
+      return window.sessionStorage
+    } catch {
+      return null
+    }
+  }
+}
+
+/**
+ * Conversion signal for a VERIFIED persisted lead. Keyed by the durable lead id
+ * (persisted across reloads), so a lost success response followed by a retry
+ * that returns "duplicate" with the same id counts exactly once.
+ */
+export function emitConversion(leadId: string, context: { form: string; brand?: string | null; service?: string | null }) {
+  try {
+    if (!leadId) return
+    const store = markerStore()
+    const firstKey = `shwurx_conv1_${leadId}`
+    if (!store?.getItem(firstKey)) {
+      track("enquiry_persisted", { form: context.form, brand: context.brand ?? null, service: context.service ?? null })
+      store?.setItem(firstKey, "1")
+    }
     if (window.__shwurxThirdParty !== true) return
-    const payload = { event: "generate_lead", form_id: context.form, brand: context.brand ?? undefined, service: context.service ?? undefined }
-    if (window.dataLayer) window.dataLayer.push(payload)
-    else if (window.gtag) window.gtag("event", "generate_lead", { form_id: context.form })
+    const key = `shwurx_conv3_${leadId}`
+    if (store?.getItem(key)) return
+    dispatchThirdParty(key, context, 0)
   } catch {
     /* best-effort */
   }
 }
 
-async function postJson(url: string, payload: Record<string, unknown>) {
+/**
+ * Sends generate_lead to exactly one provider, chosen by configuration (never
+ * by whichever global happens to exist). Waits for the tag to be ready and only
+ * marks the conversion as sent once a provider has accepted it.
+ */
+function dispatchThirdParty(key: string, context: { form: string; brand?: string | null; service?: string | null }, attempt: number) {
+  const mode = window.__shwurxTagMode ?? "none"
+  let accepted = false
+  if (mode === "gtm" && Array.isArray(window.dataLayer)) {
+    // GTM drains the dataLayer queue once its container loads.
+    window.dataLayer.push({ event: "generate_lead", form_id: context.form, brand: context.brand ?? undefined, service: context.service ?? undefined })
+    accepted = true
+  } else if (mode === "ga4" && typeof window.gtag === "function") {
+    window.gtag("event", "generate_lead", { form_id: context.form, brand: context.brand ?? undefined, service: context.service ?? undefined })
+    accepted = true
+  }
+  if (accepted) {
+    markerStore()?.setItem(key, "1")
+    return
+  }
+  if (mode !== "none" && attempt < 20) {
+    window.setTimeout(() => dispatchThirdParty(key, context, attempt + 1), 500)
+  }
+}
+
+/** "received" always carries the persisted record id; "dry_run" never does. */
+export type IntakeResult = { outcome: "received"; id: string } | { outcome: "dry_run"; id: null }
+
+async function postJson(url: string, payload: Record<string, unknown>): Promise<IntakeResult> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })
-  const json = (await res.json().catch(() => ({ ok: false }))) as { ok?: boolean; error?: string }
-  if (!res.ok || !json.ok) throw new Error(json.error || "Something went wrong. Please try again.")
-  return json
+  const json = (await res.json().catch(() => ({ ok: false }))) as { ok?: boolean; outcome?: string; id?: unknown; error?: string }
+  if (res.ok && json.outcome === "dry_run") return { outcome: "dry_run", id: null }
+  if (res.ok && json.ok && json.outcome === "received" && typeof json.id === "string" && json.id) {
+    return { outcome: "received", id: json.id }
+  }
+  throw new Error(json.error || "Something went wrong. Please try again.")
 }
 
 export function submitAppointment(payload: Record<string, unknown>) {

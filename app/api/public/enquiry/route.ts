@@ -100,31 +100,49 @@ export async function POST(request: Request) {
     const doc: WebsiteDocument | null = await getPublishedDocumentStrict()
     if (!doc) return reply(request, "unavailable", 503)
     if (!doc.forms.enquiry.enabled) return reply(request, "unavailable", 403)
+    for (const k of ["name", "phone", "model", "details"] as const) {
+      if (body[k] !== undefined && body[k] !== null && typeof body[k] !== "string") {
+        return reply(request, "invalid", 400, { fields: { [k]: "invalid" } })
+      }
+    }
 
     const errors: Record<string, string> = {}
     const name = str(body.name, 80)
     const phone = str(body.phone, 24)
     const phoneDigits = normalizePhone(phone)
     const model = str(body.model, 60)
-    const yearRaw = str(body.year, 4)
     const details = str(body.details, 1000)
     const locale = body.locale === "ar" ? "ar" : "en"
     const brandRaw = str(body.brand, 60)
     const serviceRaw = str(body.service, 60)
-    const formId = SLUG.test(str(body.formId, 60)) ? str(body.formId, 60) : "enquiry"
+
+    // The form id must name a real, published form context (never a free label).
+    const formRaw = body.formId === undefined || body.formId === null ? "enquiry" : body.formId
+    const formId = typeof formRaw === "string" && SLUG.test(formRaw) && formRaw in doc.forms ? formRaw : null
+    if (!formId) errors.form = "unknown"
 
     const brand = brandRaw ? doc.brands.find((b) => b.slug === brandRaw && b.visible) : undefined
     const service = serviceRaw ? doc.services.find((s) => s.slug === serviceRaw && s.visible) : undefined
     if (brandRaw && !brand) errors.brand = "unknown"
     if (serviceRaw && !service) errors.service = "unknown"
+    // A service chosen alongside a brand must be one that brand actually offers.
+    if (brand && service && !brand.serviceSlugs.includes(service.slug)) errors.service = "not_for_brand"
 
     if (name.length < 2) errors.name = "required"
     if (phoneDigits.length < 7 || phoneDigits.length > 15) errors.phone = "invalid"
+
+    // Validate the RAW year before any normalization so "20160" is rejected, not truncated.
     let year: number | null = null
-    if (yearRaw) {
-      year = Number(yearRaw)
+    const yearInput = body.year
+    if (yearInput !== undefined && yearInput !== null && yearInput !== "") {
+      const rawText = typeof yearInput === "number" ? String(yearInput) : typeof yearInput === "string" ? yearInput.trim() : null
       const maxYear = new Date().getFullYear() + 1
-      if (!Number.isInteger(year) || year < MIN_VEHICLE_YEAR || year > maxYear) errors.year = "out_of_range"
+      if (rawText === null || !/^\d{4}$/.test(rawText)) {
+        errors.year = "invalid"
+      } else {
+        year = Number(rawText)
+        if (year < MIN_VEHICLE_YEAR || year > maxYear) errors.year = "out_of_range"
+      }
     }
     // A known service gives enough context; otherwise ask for a model or details.
     if (!service && !model && details.length < 5) errors.details = "required"

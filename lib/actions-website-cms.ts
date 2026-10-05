@@ -215,7 +215,9 @@ export async function exportWebsiteBackup(): Promise<Result<{ json: string }>> {
     revisions,
     cmsAvailable: available,
   }
-  await logAction(ctx, "website.export", "website", "1")
+  // Deliberately no audit write: logging fans out owner alerts, and a read
+  // must not mutate or notify — especially from a preview on a shared DB.
+  void ctx
   return { ok: true, json: JSON.stringify(payload, null, 2) }
 }
 

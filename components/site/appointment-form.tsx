@@ -6,8 +6,9 @@ import { Button, Field, Input } from "@/components/ui"
 import { submitAppointment, track } from "@/lib/site-track"
 import { SITE_SERVICES } from "@/lib/site-services"
 import { useI18n } from "@/lib/i18n/provider"
+import { DryRunNotice } from "@/components/site/dry-run-notice"
 
-type Status = "idle" | "submitting" | "done" | "error"
+type Status = "idle" | "submitting" | "done" | "error" | "dry_run"
 type ApptType = "dropoff" | "pickup" | "pickup_delivery"
 
 const EMIRATES = [
@@ -78,7 +79,7 @@ export function AppointmentForm() {
     }
 
     try {
-      await submitAppointment({
+      const result = await submitAppointment({
         name: fd.get("name"),
         phone: fd.get("phone"),
         email: fd.get("email") || null,
@@ -93,6 +94,10 @@ export function AppointmentForm() {
         source: "website",
         metadata: { logistics },
       })
+      if (result.outcome === "dry_run") {
+        setStatus("dry_run")
+        return
+      }
       track("appointment_request", { service: fd.get("serviceInterest") || null, type: apptType })
       setStatus("done")
     } catch (err) {
@@ -313,6 +318,7 @@ export function AppointmentForm() {
         </Field>
       </div>
 
+      {status === "dry_run" && <DryRunNotice />}
       {error && <p className="mt-4 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</p>}
 
       <Button type="submit" size="lg" className="mt-6 w-full" disabled={status === "submitting"}>

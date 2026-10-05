@@ -1,4 +1,4 @@
-import type { WebsiteDocument } from "./types"
+import type { MediaSource, WebsiteDocument } from "./types"
 import { seedDocument } from "./seed"
 
 const MAX_STR = 8000
@@ -15,6 +15,8 @@ const PROBE = "https://probe.invalid"
 export function safeInternalPath(v: string): string {
   const s = v.trim()
   if (!s.startsWith("/") || s.startsWith("//") || UNSAFE_CHARS.test(s)) return ""
+  // Encoded separators can become "//host" after a redirector decodes them.
+  if (/%(2f|5c|00)/i.test(s)) return ""
   try {
     const u = new URL(s, PROBE)
     return u.origin === PROBE ? u.pathname + u.search + u.hash : ""
@@ -73,14 +75,27 @@ function sanitize(value: unknown, key: string, depth: number): unknown {
 }
 
 const L = { en: "", ar: "" }
-const SEO = { title: L, description: L, indexable: true }
+/** Must mirror SeoFields exactly: shape() keeps only template keys. */
+const SEO: import("./types").SeoFields = { title: L, description: L, ogImageId: null, noindex: false }
 
 /**
  * Item templates for arrays that are empty in the seed (so the seed cannot
  * describe their items). Keyed by the array's property name.
  */
 const ITEM_TEMPLATES: Record<string, unknown> = {
-  custom: { slug: "", title: L, visible: false, blocks: [], seo: SEO },
+  custom: {
+    id: "",
+    slug: "",
+    template: "standard",
+    title: L,
+    intro: L,
+    visible: false,
+    blocks: [],
+    seo: SEO,
+    brandSlug: null,
+    serviceSlug: null,
+  },
+  faqs: { id: "", q: L, a: L },
   caseStudies: { id: "", title: L, body: L, mediaIds: [""], documented: false },
   redirects: { from: "", to: "", permanent: true },
   galleryIds: "",
@@ -91,11 +106,51 @@ const ITEM_TEMPLATES: Record<string, unknown> = {
 
 const ENUMS: Record<string, readonly string[]> = {
   approval: ["approved", "needs_review", "rejected"],
-  source: ["workshop_original", "existing_site_asset", "upload"],
+  source: ["workshop_original", "existing_site_asset", "brand_mark", "upload"] satisfies MediaSource[],
+  template: ["standard", "landing"],
 }
+
+/** Discriminated PageBlock variants; an unknown `type` is reported, never kept. */
+const BLOCK_TEMPLATES: Record<string, unknown> = {
+  text: { id: "", type: "text", heading: L, body: L },
+  faq: { id: "", type: "faq", heading: L, faqs: [] },
+  gallery: { id: "", type: "gallery", heading: L, mediaIds: [] },
+  cta: { id: "", type: "cta", heading: L, body: L },
+}
+
+function shapeBlocks(input: unknown, drops: string[] | undefined, path: string): unknown[] {
+  if (!Array.isArray(input)) return []
+  const out: unknown[] = []
+  input.forEach((v, i) => {
+    const at = `${path}[${i}]`
+    const type = isObj(v) ? (v as Record<string, unknown>).type : undefined
+    const tpl = typeof type === "string" ? BLOCK_TEMPLATES[type] : undefined
+    if (!tpl) {
+      drops?.push(`${at}: block type must be one of ${Object.keys(BLOCK_TEMPLATES).join(", ")}`)
+      return
+    }
+    const shaped = shape(v, tpl, "", drops, at) as Record<string, unknown>
+    // Only the variant's own keys survive, so stale fields from another type can't leak.
+    const strict: Record<string, unknown> = {}
+    for (const k of Object.keys(tpl as object)) strict[k] = shaped[k]
+    strict.type = type
+    out.push(strict)
+  })
+  return out
+}
+
+const NULLABLE_SLUGS = new Set(["brandSlug", "serviceSlug"])
+/** Schema-nullable media references: explicit null must never inherit another item's value. */
+const NULLABLE_IDS = new Set(["logoId", "ogImageId", "heroImageId", "imageId", "defaultOgImageId"])
+const NULLABLE_NUMS = new Set(["width", "height", "yearTo"])
 
 /** Shape `input` like `template`: wrong types fall back to the template value. */
 function shape(input: unknown, template: unknown, key = "", drops?: string[], path = ""): unknown {
+  if (key === "blocks") return shapeBlocks(input, drops, path)
+  if (NULLABLE_SLUGS.has(key)) return typeof input === "string" && SLUG_RE.test(input) ? input : null
+  if (NULLABLE_IDS.has(key)) return typeof input === "string" && input.trim() ? input : null
+  if (NULLABLE_NUMS.has(key)) return typeof input === "number" && Number.isFinite(input) ? input : null
+  if (key === "parentName") return isObj(input) ? shape(input, L, "", drops, path) : null
   if (template === null || template === undefined) return input ?? template
   if (typeof template === "string") {
     if (typeof input !== "string") return template

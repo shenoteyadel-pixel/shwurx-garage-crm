@@ -69,6 +69,47 @@ function campaignValue(v: string | null): string | null {
 const CLICK_ID_RE = /^[A-Za-z0-9_-]{8,200}$/
 const clickId = (v: string | null) => (v && CLICK_ID_RE.test(v) ? v : null)
 
+/** Reserved GA4 campaign settings, separate from retained CRM first/latest touch. */
+const CAMPAIGN_FIELDS = ["campaign_source", "campaign_medium", "campaign_name", "campaign_content", "campaign_term"] as const
+type ProviderCampaign = Record<typeof CAMPAIGN_FIELDS[number] | "external_referrer_origin", string | null>
+let documentCampaign: ProviderCampaign | null = null
+
+function safeReferrerOrigin(): string | null {
+  try {
+    if (!document.referrer) return null
+    const u = new URL(document.referrer)
+    if (u.protocol !== "https:" && u.protocol !== "http:" || u.username || u.password) return null
+    if (u.origin === window.location.origin || looksLikeContactData(u.hostname.replace(/^www\./i, ""))) return null
+    return u.origin
+  } catch { return null }
+}
+
+/** Snapshot once per document, before the loader; SPA changes are not new entries. */
+function currentDocumentCampaign(): ProviderCampaign {
+  if (!documentCampaign) {
+    const q = new URLSearchParams(window.location.search)
+    documentCampaign = {
+      campaign_source: campaignValue(q.get("utm_source")),
+      campaign_medium: campaignValue(q.get("utm_medium")),
+      campaign_name: campaignValue(q.get("utm_campaign")),
+      campaign_content: campaignValue(q.get("utm_content")),
+      campaign_term: campaignValue(q.get("utm_term")),
+      external_referrer_origin: safeReferrerOrigin(),
+    }
+  }
+  return documentCampaign
+}
+
+/** Freeze only the currently permitted projection; never export stored CRM touches. */
+function providerCampaign(allowed: boolean): ProviderCampaign {
+  const entry = currentDocumentCampaign()
+  const out = {} as ProviderCampaign
+  for (const k of CAMPAIGN_FIELDS) out[k] = allowed ? campaignValue(entry[k]) : null
+  // Empty is an explicit safe referrer override, so Google cannot fall back to a raw referrer.
+  out.external_referrer_origin = allowed ? entry.external_referrer_origin ?? "" : null
+  return out
+}
+
 export interface PageContext {
   page_path: string
   page_type: string
@@ -182,6 +223,7 @@ export function envelope(key: string, f: EventFields = {}) {
     ads_conversion_id: routed && c.ads ? cfg.adsId.replace(/^AW-/, "") || null : null,
     ads_conversion_label: routed && c.ads && kind && (!needsToken || conversionToken) ? cfg.adsLabels[kind] || null : null,
     conversion_token: conversionToken,
+    ...providerCampaign(routed && c.analytics),
   }
   for (const k of ENVELOPE_FIELDS) e[k] = token(f[k])
   return e
@@ -189,7 +231,21 @@ export function envelope(key: string, f: EventFields = {}) {
 
 /** Native Consent Mode bridge. Installed before the Google loader can run. */
 export function installGtmConsentBridge() {
-  if (typeof window === "undefined" || window.__shwurxRegisterGtmConsentListener) return
+  if (typeof window === "undefined") return
+  currentDocumentCampaign()
+  // TrackingGate installs this bridge before the loader in both owner modes.
+  // Reinstall on render because TrackingGate also refreshes the page-settings callback.
+  window.__shwurxSafePageSettings = () => {
+    const pc = pageContext(window.location.pathname)
+    const { external_referrer_origin, ...campaign } = providerCampaign(providersActive() && effectiveConsent().analytics)
+    return {
+      page_location: "https://www.swurxauto.com" + pc.page_path,
+      page_referrer: external_referrer_origin ?? "",
+      page_title: `SHWURX | ${pc.page_type}`,
+      ...campaign,
+    }
+  }
+  if (window.__shwurxRegisterGtmConsentListener) return
   let listener: ((choice: ConsentState) => unknown) | null = null
   let acknowledgements = 0
   const eligible = () => providersActive() && window.__shwurxTagMode === "gtm"
@@ -264,6 +320,7 @@ function pushTo(d: Destination, env: Record<string, unknown>, ads?: { sendTo: st
       ga4_id: c.analytics ? env.ga4_id : null,
       ads_conversion_id: c.ads ? env.ads_conversion_id : null,
       ads_conversion_label: c.ads ? env.ads_conversion_label : null,
+      ...Object.fromEntries([...CAMPAIGN_FIELDS, "external_referrer_origin"].map((k) => [k, c.analytics ? env[k] : null])),
     })
     return true
   }
@@ -276,7 +333,8 @@ function pushTo(d: Destination, env: Record<string, unknown>, ads?: { sendTo: st
   if (typeof env.ga4_id !== "string" || !/^G-[A-Z0-9]{4,16}$/.test(env.ga4_id)) return false
   const params: Record<string, unknown> = { send_to: env.ga4_id }
   for (const k of ["event_id", "schema_version", "page_path", "page_type", "locale", "brand_slug", "service_slug", ...ENVELOPE_FIELDS]) params[k] = env[k]
-  Object.assign(params, { page_location: "https://www.swurxauto.com" + String(env.page_path), page_referrer: "", page_title: `SHWURX | ${env.page_type}` })
+  for (const k of CAMPAIGN_FIELDS) params[k] = env[k]
+  Object.assign(params, { page_location: "https://www.swurxauto.com" + String(env.page_path), page_referrer: env.external_referrer_origin ?? "", page_title: `SHWURX | ${env.page_type}` })
   window.gtag!("event", String(env.event_name), params)
   return true
 }
@@ -321,14 +379,7 @@ function retentionMs(): number {
 }
 
 function externalReferrer(): string | null {
-  try {
-    if (!document.referrer) return null
-    const u = new URL(document.referrer)
-    if (u.origin === window.location.origin) return null
-    return u.protocol === "https:" || u.protocol === "http:" ? u.origin : null
-  } catch {
-    return null
-  }
+  return safeReferrerOrigin()
 }
 
 function currentTouch(): { touch: Touch; meaningful: boolean } {
@@ -363,6 +414,7 @@ let entryEvaluated = false
 export function beginPageLoad() {
   entryEvaluated = false
   memory = null
+  documentCampaign = null
 }
 
 function readStored(): TouchAttribution | null {

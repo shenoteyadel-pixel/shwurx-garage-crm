@@ -53,11 +53,11 @@ beforeEach(() => {
   bus.installGtmConsentBridge()
 })
 
-test("all 15 immutable keys produce explicit 20-field schema2 envelopes and enter the GTM bus", () => {
+test("all 15 immutable keys produce explicit 26-field schema2 envelopes and enter the GTM bus", () => {
   installNative(); win.dataLayer.length = 0
   for (const key of EVENT_KEYS) {
     const e = bus.envelope(key)
-    assert.equal(Object.keys(e).length, 21, "20 fields plus event wrapper")
+    assert.equal(Object.keys(e).length, 27, "26 fields plus event wrapper")
     assert.equal(e.schema_version, 2); assert.equal(e.event_key, key)
     assert.ok(Object.values(e).every((value) => value !== undefined))
     bus.track(key)
@@ -135,7 +135,7 @@ test("direct GA4 receives only context params and safe page settings; token, rou
   const ga = calls.find((c) => c[1] === "generate_lead")!
   assert.ok(ga)
   const params = ga[2] as Record<string, unknown>
-  assert.equal(Object.keys(params).length, 18, "14 context params plus 3 safe page settings and explicit destination")
+  assert.equal(Object.keys(params).length, 23, "14 context params, 5 campaign settings, 3 safe page settings and explicit destination")
   assert.equal(params.send_to, "G-YV9FVWM29N", "never broadcast a GA4 event to the shared Ads group")
   for (const key of ["event_key", "conversion_token", "ga4_id", "ads_conversion_id", "ads_conversion_label"]) assert.equal(key in params, false)
   const serialized = JSON.stringify(params)

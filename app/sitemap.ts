@@ -11,7 +11,13 @@ export const revalidate = 3600
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const doc = await getPublishedDocument()
   const now = new Date()
-  const paths: string[] = ["/", "/brands", "/services", "/about", "/contact", "/blog", "/privacy"]
+  const staticPages = [
+    ["/", doc.pages.home.seo], ["/brands", doc.pages.brandsIndex.seo],
+    ["/services", doc.pages.servicesIndex.seo], ["/about", doc.pages.about.seo],
+    ["/contact", doc.pages.contact.seo], ["/privacy", doc.pages.privacy.seo],
+  ] as const
+  const paths: string[] = staticPages.filter(([, seo]) => !seo.noindex).map(([path]) => path)
+  paths.push("/blog")
   if (doc.pages.appointment.visible && !doc.pages.appointment.seo.noindex) paths.push("/appointment")
 
   if (isTeamPagePublic(doc) && !doc.pages.team.seo.noindex) paths.push("/team")

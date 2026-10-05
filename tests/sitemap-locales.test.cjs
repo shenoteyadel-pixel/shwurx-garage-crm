@@ -20,7 +20,10 @@ const model = compile("lib/article-model.ts")
 const brands = ["porsche", "bentley", "rolls-royce", "lamborghini", "mercedes-benz", "audi", "lotus", "mclaren", "aston-martin", "ferrari", "maserati", "bugatti", "chevrolet-corvette", "gmc", "range-rover"]
 const services = ["mechanical-repair", "diagnostics", "bodywork", "painting", "online-programming", "offline-programming"]
 const page = (slug, visible = true, noindex = false) => ({ slug, visible, seo: { noindex } })
-const document = () => ({ brands: brands.map((b) => page(b)), services: services.map((s) => page(s)), pages: { team: page("team"), appointment: page("appointment", false), custom: [] } })
+const document = () => ({ brands: brands.map((b) => page(b)), services: services.map((s) => page(s)), pages: {
+  home: page(""), brandsIndex: page("brands"), servicesIndex: page("services"), about: page("about"), contact: page("contact"), privacy: page("privacy"),
+  team: page("team"), appointment: page("appointment", false), custom: [],
+} })
 function generator(doc, articles = []) {
   return compile("app/sitemap.ts", {
     "@/lib/website/store": { getPublishedDocument: async () => doc },
@@ -70,6 +73,21 @@ test("visible indexable appointment and custom pages are represented in both lan
   const entries = await generator(doc)()
   for (const route of ["/appointment", "/ar/appointment", "/pages/owner-page", "/ar/pages/owner-page"]) assert(entries.some((e) => e.url === ORIGIN + route))
   assert.equal(entries.length, 62)
+})
+
+test("each CMS-controlled static page obeys its published noindex flag in both locales without hiding indexed children", async () => {
+  const mapping = { home: "/", brandsIndex: "/brands", servicesIndex: "/services", about: "/about", contact: "/contact", privacy: "/privacy" }
+  for (const [key, route] of Object.entries(mapping)) {
+    const doc = document(); doc.pages[key].seo.noindex = true
+    const entries = await generator(doc)(), urls = entries.map((e) => e.url)
+    assert.equal(entries.length, 56)
+    assert(!urls.includes(ORIGIN + route))
+    assert(!urls.includes(ORIGIN + (route === "/" ? "/ar" : "/ar" + route)))
+    assert(urls.includes(ORIGIN + "/brands/porsche")); assert(urls.includes(ORIGIN + "/ar/services/painting"))
+    const xml = resolveSitemap(entries)
+    assert(!xml.includes(`<loc>${ORIGIN + route}</loc>`))
+    assert(!xml.includes(`href="${ORIGIN + route}"`))
+  }
 })
 
 test("article entries remain restricted to actual published ready locales without fabricated alternates or drafts", async () => {

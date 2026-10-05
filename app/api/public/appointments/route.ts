@@ -1,6 +1,7 @@
 import { createPublicClient } from "@/lib/supabase/public"
 import { preflight, jsonWithCors } from "@/lib/public-cors"
 import { notifyByPermission } from "@/lib/actions-notifications"
+import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
 
 export const runtime = "nodejs"
 
@@ -15,12 +16,18 @@ export function OPTIONS(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}))
+    const raw = await readBoundedJson(request)
+    if (!raw) return jsonWithCors(request, { ok: false, outcome: "rejected", error: "bad_request" }, 413)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = raw as any
     const name = String(body?.name ?? "").trim()
     const phone = String(body?.phone ?? "").trim()
 
-    if (!name) return jsonWithCors(request, { ok: false, error: "missing_name" }, 400)
-    if (!phone) return jsonWithCors(request, { ok: false, error: "missing_phone" }, 400)
+    if (!name) return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_name" }, 400)
+    if (!phone) return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_phone" }, 400)
+
+    // Previews validate but never create bookings, staff alerts or emails.
+    if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
 
     const supabase = createPublicClient()
     const { data, error } = await supabase.rpc("submit_appointment", {
@@ -82,7 +89,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return jsonWithCors(request, data)
+    return jsonWithCors(request, { ...data, outcome: "received" })
   } catch {
     return jsonWithCors(request, { ok: false, error: "server_error" }, 500)
   }

@@ -134,6 +134,15 @@ export async function getPublishedDocument(): Promise<WebsiteDocument> {
   return (await getPublished()).doc
 }
 
+/** Like getPublishedDocument, but returns null instead of throwing on read failure. */
+export async function getPublishedDocumentStrict(): Promise<WebsiteDocument | null> {
+  try {
+    return (await getPublished()).doc
+  } catch {
+    return null
+  }
+}
+
 /**
  * Document for public rendering. An editor with `website.manage` who has
  * switched on preview sees the draft (or a chosen revision); everyone else —

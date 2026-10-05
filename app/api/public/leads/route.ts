@@ -1,6 +1,7 @@
 import { createPublicClient } from "@/lib/supabase/public"
 import { preflight, jsonWithCors } from "@/lib/public-cors"
 import { notifyByPermission } from "@/lib/actions-notifications"
+import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
 
 export const runtime = "nodejs"
 
@@ -15,14 +16,18 @@ export function OPTIONS(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}))
+    const body = await readBoundedJson(request)
+    if (!body) return jsonWithCors(request, { ok: false, outcome: "rejected", error: "bad_request" }, 413)
     const name = String(body?.name ?? "").trim()
     const phone = String(body?.phone ?? "").trim()
     const email = String(body?.email ?? "").trim()
 
     if (!phone && !email) {
-      return jsonWithCors(request, { ok: false, error: "missing_contact" }, 400)
+      return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_contact" }, 400)
     }
+
+    // Previews validate but never create production leads or staff alerts.
+    if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
 
     const supabase = createPublicClient()
     const { data, error } = await supabase.rpc("submit_lead", {
@@ -49,7 +54,7 @@ export async function POST(request: Request) {
       /* notification is best-effort */
     }
 
-    return jsonWithCors(request, data)
+    return jsonWithCors(request, { ...data, outcome: "received" })
   } catch {
     return jsonWithCors(request, { ok: false, error: "server_error" }, 500)
   }

@@ -1,5 +1,7 @@
 import { createPublicClient } from "@/lib/supabase/public"
 import { preflight, jsonWithCors } from "@/lib/public-cors"
+import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
+import { isPublicSitePath } from "@/lib/website/paths"
 
 export const runtime = "nodejs"
 
@@ -15,10 +17,19 @@ export function OPTIONS(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}))
+    const raw = await readBoundedJson(request)
+    if (!raw) return jsonWithCors(request, { ok: false, error: "bad_request" }, 413)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = raw as any
     const eventType = String(body?.eventType ?? body?.event_type ?? "").trim()
     if (!eventType) {
       return jsonWithCors(request, { ok: false, error: "missing_event_type" }, 400)
+    }
+    // Never count preview traffic, and never accept CRM/token paths.
+    if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run" })
+    const pagePath = String(body?.pagePath ?? body?.page_path ?? "")
+    if (pagePath && !isPublicSitePath(pagePath.split("?")[0])) {
+      return jsonWithCors(request, { ok: false, error: "non_public_path" }, 400)
     }
 
     // Device is derived server-side from the UA when the client doesn't send one.

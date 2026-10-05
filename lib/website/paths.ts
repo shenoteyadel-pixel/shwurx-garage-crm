@@ -14,6 +14,12 @@ export function stripLocale(pathname: string): { lang: "en" | "ar"; path: string
   return { lang: "en", path: pathname }
 }
 
+/** True for public website pages in either locale; false for CRM, portal and token routes. */
+export function isPublicSitePath(pathname: string): boolean {
+  if (/[\\\u0000-\u001f]/.test(pathname)) return false
+  return isSitePath(stripLocale(pathname).path)
+}
+
 /** The same page in the other language, or null when the path is not a website page. */
 export function switchLocalePath(pathname: string, target: "en" | "ar"): string | null {
   const { path } = stripLocale(pathname)

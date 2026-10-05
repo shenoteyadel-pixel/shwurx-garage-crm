@@ -28,13 +28,13 @@ const MSG = {
   en: {
     required: "Please fill in this field.",
     phone: "Enter a phone number with at least 7 digits.",
-    year: "Enter a 4-digit year.",
+    year: "Enter a model year from 2016 onwards.",
     details: "Tell us the model, the service or the problem.",
     generic: "We could not send your enquiry. Please try again, or call or WhatsApp us.",
     tooFast: "Please take a moment to check your details, then send again.",
     rate: "We already received several enquiries from this number. We will contact you shortly.",
     preview: "Preview mode — enquiries are not sent.",
-    dryRun: "Test environment — your details were validated but not saved.",
+    dryRun: "Test only: the details passed validation but nothing was sent or saved, and no one will contact you from this preview.",
     optional: "optional",
     other: "Other / not sure",
     sending: "Sending…",
@@ -43,13 +43,13 @@ const MSG = {
   ar: {
     required: "يرجى تعبئة هذا الحقل.",
     phone: "أدخل رقم هاتف لا يقل عن 7 أرقام.",
-    year: "أدخل سنة من 4 أرقام.",
+    year: "أدخل سنة الطراز من 2016 فما بعد.",
     details: "أخبرنا بالموديل أو الخدمة أو المشكلة.",
     generic: "تعذّر إرسال استفسارك. يرجى المحاولة مرة أخرى أو الاتصال بنا أو مراسلتنا عبر واتساب.",
     tooFast: "يرجى مراجعة بياناتك ثم الإرسال مرة أخرى.",
     rate: "استلمنا عدة استفسارات من هذا الرقم، وسنتواصل معك قريباً.",
     preview: "وضع المعاينة — لا يتم إرسال الاستفسارات.",
-    dryRun: "بيئة اختبار — تم التحقق من بياناتك دون حفظها.",
+    dryRun: "اختبار فقط: اجتازت البيانات التحقق لكن لم يُرسل أو يُحفظ شيء، ولن يتواصل معك أحد من هذه المعاينة.",
     optional: "اختياري",
     other: "أخرى / غير متأكد",
     sending: "جارٍ الإرسال…",
@@ -99,7 +99,8 @@ export function EnquiryForm(p: EnquiryFormProps) {
     const next: Partial<Record<Field, string>> = {}
     if (v("name").length < 2) next.name = m.required
     if (v("phone").replace(/\D/g, "").length < 7) next.phone = m.phone
-    if (v("year") && !/^\d{4}$/.test(v("year"))) next.year = m.year
+    const yr = Number(v("year"))
+    if (v("year") && (!/^\d{4}$/.test(v("year")) || yr < 2016 || yr > new Date().getFullYear() + 1)) next.year = m.year
     if (!v("model") && !v("details") && !service) next.details = m.details
     setErrors(next)
     setFormError(null)
@@ -137,31 +138,39 @@ export function EnquiryForm(p: EnquiryFormProps) {
         }),
       })
       const json = (await res.json().catch(() => ({}))) as {
-        ok?: boolean
-        error?: string
-        preview?: boolean
-        dryRun?: boolean
+        outcome?: string
+        id?: string | null
         fields?: Record<string, string>
       }
-      if (!res.ok || !json.ok) {
+      // Inputs are uncontrolled and stay in the DOM on every failure path.
+      if (json.outcome === "dry_run") {
         setStatus("idle")
-        if (json.error === "validation" && json.fields) {
-          const f: Partial<Record<Field, string>> = {}
-          if (json.fields.name) f.name = m.required
-          if (json.fields.phone) f.phone = m.phone
-          if (json.fields.year) f.year = m.year
-          if (json.fields.details) f.details = m.details
-          setErrors(f)
-          setFormError(m.errorSummary)
-        } else if (json.error === "too_fast") setFormError(m.tooFast)
-        else if (json.error === "rate_limited") setFormError(m.rate)
-        else setFormError(m.generic)
+        setNotice(m.dryRun)
         return
       }
-      setStatus("done")
-      if (json.preview) setNotice(m.preview)
-      else if (json.dryRun) setNotice(m.dryRun)
-      else emitConversion(submissionId.current, { form: p.formId, brand: brand || null, service: service || null })
+      if ((json.outcome === "received" || json.outcome === "duplicate") && json.id) {
+        setStatus("done")
+        // Only a NEW persisted lead counts; emitConversion also dedupes by submission id.
+        if (json.outcome === "received") {
+          emitConversion(submissionId.current, { form: p.formId, brand: brand || null, service: service || null })
+        }
+        return
+      }
+      setStatus("idle")
+      if (json.outcome === "invalid" && json.fields) {
+        if (json.fields.form === "too_fast") {
+          setFormError(m.tooFast)
+          return
+        }
+        const f: Partial<Record<Field, string>> = {}
+        if (json.fields.name) f.name = m.required
+        if (json.fields.phone) f.phone = m.phone
+        if (json.fields.year) f.year = m.year
+        if (json.fields.details || json.fields.service || json.fields.brand) f.details = m.details
+        setErrors(f)
+        setFormError(m.errorSummary)
+      } else if (json.outcome === "rate_limited") setFormError(m.rate)
+      else setFormError(m.generic)
     } catch {
       setStatus("idle")
       setFormError(m.generic)

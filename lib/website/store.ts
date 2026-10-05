@@ -6,6 +6,7 @@ import { getSessionContext, ctxCan } from "@/lib/rbac/context"
 import { normalizeDocument } from "./normalize"
 import { seedDocument } from "./seed"
 import { deploymentMode } from "./env"
+import { liveMediaIds } from "./media-usage"
 import type { RevisionSummary, WebsiteDocument } from "./types"
 
 export const PREVIEW_COOKIE = "shwurx_site_preview"
@@ -196,6 +197,8 @@ export interface EditorState {
   revisions: RevisionSummary[]
   /** draft differs from published (cheap JSON comparison) */
   hasUnpublished: boolean
+  /** media assigned AND public in the published revision */
+  liveMediaIds: string[]
 }
 
 export async function getEditorState(): Promise<EditorState> {
@@ -213,6 +216,7 @@ export async function getEditorState(): Promise<EditorState> {
       updatedByName: null,
       revisions: [],
       hasUnpublished: false,
+      liveMediaIds: liveMediaIds(legacy),
     }
   }
   const svc = createServiceClient()
@@ -241,5 +245,6 @@ export async function getEditorState(): Promise<EditorState> {
       createdByName: (r.created_by_name as string) ?? null,
     })),
     hasUnpublished: !published || JSON.stringify(published) !== JSON.stringify(draft),
+    liveMediaIds: liveMediaIds(published ? normalizeDocument(published) : null),
   }
 }

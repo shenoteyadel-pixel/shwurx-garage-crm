@@ -1,12 +1,12 @@
-import "server-only"
-import { createServiceClient } from "@/lib/supabase/server"
+import { pick } from "@/lib/website/render"
+import type { Lang, WebsiteDocument } from "@/lib/website/types"
 
 /**
- * Public marketing-site business info.
- *
- * Read with the SERVICE client (anonymous visitors have no session and the
- * settings table is RLS-protected) but expose ONLY non-sensitive, public-facing
- * fields — never the TRN, trade licence, or legal/internal notes.
+ * Public business identity for the marketing site, derived ONLY from the
+ * published (or previewed) website document's Business fields — the same
+ * source the header, footer and enquiry form use. Invoice/legal settings are
+ * never read here; before the versioned site exists, the legacy document is
+ * seeded from them (see lib/website/store.ts).
  */
 export type PublicSiteInfo = {
   companyName: string
@@ -14,34 +14,20 @@ export type PublicSiteInfo = {
   whatsapp: string | null
   email: string | null
   address: string | null
+  mapUrl: string | null
 }
 
-const DEFAULTS: PublicSiteInfo = {
-  companyName: "SHWURX Auto Service Center",
-  phone: null,
-  whatsapp: null,
-  email: null,
-  address: null,
-}
+const FALLBACK_NAME = "SHWURX Auto Service Center"
 
-export async function getPublicSiteInfo(): Promise<PublicSiteInfo> {
-  try {
-    const svc = createServiceClient()
-    const { data } = await svc
-      .from("settings")
-      .select("company_name, phone, email, address")
-      .eq("id", 1)
-      .maybeSingle()
-    if (!data) return DEFAULTS
-    return {
-      companyName: data.company_name || DEFAULTS.companyName,
-      phone: data.phone || null,
-      // No dedicated WhatsApp column; use the main phone for the WhatsApp link.
-      whatsapp: data.phone || null,
-      email: data.email || null,
-      address: data.address || null,
-    }
-  } catch {
-    return DEFAULTS
+export function publicSiteInfo(doc: WebsiteDocument, lang: Lang): PublicSiteInfo {
+  const b = doc.business
+  const orNull = (v: string) => (v.trim() ? v.trim() : null)
+  return {
+    companyName: pick(b.name, lang) || FALLBACK_NAME,
+    phone: orNull(b.phone),
+    whatsapp: orNull(b.whatsapp),
+    email: orNull(b.email),
+    address: orNull(pick(b.address, lang)),
+    mapUrl: orNull(b.mapUrl),
   }
 }

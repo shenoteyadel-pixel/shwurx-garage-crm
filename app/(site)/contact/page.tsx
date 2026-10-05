@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { Phone, Mail, MapPin, MessageCircle, Clock, ArrowUpRight } from "lucide-react"
 import { ContactForm } from "@/components/site/contact-form"
-import { getPublicSiteInfo } from "@/lib/site-info"
+import { publicSiteInfo } from "@/lib/site-info"
 import { getServerI18n } from "@/lib/i18n/server"
 import { buildMetadata, pick, siteContext } from "@/lib/website/render"
 
@@ -11,7 +11,8 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function ContactPage() {
-  const [{ doc, lang }, info, { dict }] = await Promise.all([siteContext(), getPublicSiteInfo(), getServerI18n()])
+  const [{ doc, lang }, { dict }] = await Promise.all([siteContext(), getServerI18n()])
+  const info = publicSiteInfo(doc, lang)
   const t = dict.contactPage
   const page = doc.pages.contact
   const waNumber = (info.whatsapp || "").replace(/[^\d]/g, "")

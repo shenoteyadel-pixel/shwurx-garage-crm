@@ -5,6 +5,7 @@ import Image from "next/image"
 import { Card, Button, Input, Label, Textarea, Badge } from "@/components/ui"
 import { MarketingForm } from "@/components/marketing-form"
 import { WebsiteBuilder } from "@/components/website-builder/website-builder"
+import { AnalyticsEditor } from "@/components/website-builder/analytics-editor"
 import { SITE_CONTENT_GROUPS, SITE_IMAGE_SLOTS } from "@/lib/site-content-fields"
 import type { BlogPost } from "@/lib/blog"
 import type { ControlCenterDTO } from "@/lib/website/control-center-data"
@@ -30,7 +31,7 @@ import {
 } from "lucide-react"
 
 type Locale = "en" | "ar"
-type TabKey = "builder" | "content" | "images" | "blog" | "tracking"
+type TabKey = "builder" | "content" | "images" | "blog" | "analytics" | "tracking"
 
 interface FieldMaps {
   en: Record<string, string>
@@ -50,16 +51,23 @@ export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
   // Tabs are scoped strictly to the viewer's permissions so the two concerns
   // never overlap: website content/images/blog require website.manage, while
   // tracking & analytics require marketing.view (edit needs marketing.manage).
+  // Once the versioned site exists, public pages read only its draft/published
+  // documents, so the old Text/Images editors (which write site_content) are
+  // retired rather than left saving values nobody sees.
+  const legacyContent = canManageWebsite && !editorState?.initialised
+  const analytics = data.analytics
+  const legacyTracking = canViewMarketing && !analytics?.managed
   const tabs: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    ...(canManageWebsite
+    ...(canManageWebsite && editorState ? ([{ key: "builder", label: "Site builder", icon: Globe }] as const) : []),
+    ...(legacyContent
       ? ([
-          ...(editorState ? ([{ key: "builder", label: "Site builder", icon: Globe }] as const) : []),
           { key: "content", label: "Text & Content", icon: Type },
           { key: "images", label: "Images", icon: ImageIcon },
-          { key: "blog", label: "Blog", icon: Newspaper },
         ] as const)
       : []),
-    ...(canViewMarketing ? ([{ key: "tracking", label: "Tracking & Analytics", icon: BarChart3 }] as const) : []),
+    ...(canManageWebsite ? ([{ key: "blog", label: "Blog", icon: Newspaper }] as const) : []),
+    ...(canViewMarketing && analytics ? ([{ key: "analytics", label: "Analytics", icon: BarChart3 }] as const) : []),
+    ...(legacyTracking ? ([{ key: "tracking", label: "Legacy tracking", icon: BarChart3 }] as const) : []),
   ]
 
   const [tab, setTab] = useState<TabKey>(() => tabs[0]?.key ?? "content")
@@ -88,13 +96,19 @@ export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
         })}
       </div>
 
-      {tab === "builder" && editorState && <WebsiteBuilder state={editorState} canEditAnalytics={canManageMarketing} />}
-      {tab === "content" && (
+      {/* Stays mounted while hidden so unsaved builder edits survive switching tabs. */}
+      {canManageWebsite && editorState && (
+        <div hidden={tab !== "builder"}>
+          <WebsiteBuilder state={editorState} />
+        </div>
+      )}
+      {tab === "analytics" && analytics && <AnalyticsEditor data={analytics} canEdit={canManageMarketing} />}
+      {tab === "content" && legacyContent && (
         <ContentEditor fieldValues={fieldValues} fieldDefaults={fieldDefaults} canManage={canManageWebsite} />
       )}
-      {tab === "images" && <ImageManager images={images} canManage={canManageWebsite} />}
+      {tab === "images" && legacyContent && <ImageManager images={images} canManage={canManageWebsite} />}
       {tab === "blog" && <BlogManager posts={posts} canManage={canManageWebsite} />}
-      {tab === "tracking" && tracking && <MarketingForm settings={tracking} canManage={canManageMarketing} />}
+      {tab === "tracking" && tracking && legacyTracking && <MarketingForm settings={tracking} canManage={canManageMarketing} />}
     </div>
   )
 }

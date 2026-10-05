@@ -110,7 +110,9 @@ async function saveInner(input: unknown, expectedVersion: number): Promise<Resul
   if (!validVersion(expectedVersion)) return { ok: false, error: BAD_VERSION, currentVersion: row.draft_version }
   const shape = parseDocument(input)
   if (!shape.ok) return { ok: false, error: "The draft has invalid structure.", issues: shape.issues }
-  const doc = shape.doc
+  // Analytics is edited only through the separate marketing action, so a
+  // content save always keeps the stored analytics block untouched.
+  const doc = { ...shape.doc, analytics: normalizeDocument(row.draft ?? {}).analytics }
   if (!trackingChangeAllowed(ctx, row.draft as WebsiteDocument, doc)) return { ok: false, error: TRACKING_DENIED }
   const svc = createServiceClient()
   const { data, error } = await svc.rpc("website_save_draft", {

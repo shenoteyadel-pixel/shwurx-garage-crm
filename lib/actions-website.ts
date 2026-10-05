@@ -4,6 +4,26 @@ import { revalidatePath } from "next/cache"
 import { put } from "@vercel/blob"
 import { createServiceClient } from "@/lib/supabase/server"
 import { requirePermission, logAction } from "@/lib/rbac/context"
+import { canMutateCms, PREVIEW_MUTATION_MESSAGE } from "@/lib/website/env"
+import { readDocumentRow } from "@/lib/website/store"
+
+/** Same order as the versioned CMS: permission first, then deployment policy. */
+async function legacyGuard() {
+  const ctx = await requirePermission("website.manage")
+  if (!canMutateCms()) throw new Error(PREVIEW_MUTATION_MESSAGE)
+  return ctx
+}
+
+const RETIRED =
+  "Text and images are now edited in Site builder. The old editor is retired because the public site no longer reads it."
+
+/** Old Text/Images writes would be silently ignored once the versioned site exists. */
+async function legacyContentGuard() {
+  const ctx = await legacyGuard()
+  const { available, row } = await readDocumentRow()
+  if (available && row) throw new Error(RETIRED)
+  return ctx
+}
 
 /**
  * Website Control Center actions. All are gated on `website.manage`, the
@@ -38,7 +58,7 @@ function pruneEmpty(obj: Record<string, unknown>): Record<string, unknown> {
  * merge it into the stored `en` / `ar` JSON.
  */
 export async function saveSiteContent(formData: FormData) {
-  const ctx = await requirePermission("website.manage")
+  const ctx = await legacyContentGuard()
   const locale = clean(formData.get("locale")) === "ar" ? "ar" : "en"
 
   const nested: Record<string, unknown> = {}
@@ -71,7 +91,7 @@ export async function saveSiteContent(formData: FormData) {
 
 /** Save the named image slots (e.g. home.hero) — merged into images JSON. */
 export async function saveSiteImages(images: Record<string, string>) {
-  const ctx = await requirePermission("website.manage")
+  const ctx = await legacyContentGuard()
   const svc = createServiceClient()
   const { data } = await svc.from("site_content").select("images").eq("id", 1).maybeSingle()
   const current = (data?.images as Record<string, string>) ?? {}
@@ -92,7 +112,7 @@ export async function saveSiteImages(images: Record<string, string>) {
 
 /** Upload an image to Blob and return its public URL. */
 export async function uploadWebsiteImage(formData: FormData): Promise<{ url: string }> {
-  await requirePermission("website.manage")
+  await legacyContentGuard()
   const file = formData.get("file")
   if (!(file instanceof File) || file.size === 0) throw new Error("No file provided.")
   if (!file.type.startsWith("image/")) throw new Error("Only image files are allowed.")
@@ -116,7 +136,7 @@ const slugify = (s: string) =>
     .slice(0, 80)
 
 export async function saveBlogPost(formData: FormData) {
-  const ctx = await requirePermission("website.manage")
+  const ctx = await legacyGuard()
   const id = clean(formData.get("id"))
   const title = clean(formData.get("title"))
   if (!title) throw new Error("Title is required.")
@@ -161,7 +181,7 @@ export async function saveBlogPost(formData: FormData) {
 }
 
 export async function deleteBlogPost(id: string) {
-  const ctx = await requirePermission("website.manage")
+  const ctx = await legacyGuard()
   const svc = createServiceClient()
   const { error } = await svc.from("blog_posts").delete().eq("id", id)
   if (error) throw new Error(error.message)

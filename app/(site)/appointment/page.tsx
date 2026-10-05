@@ -1,8 +1,9 @@
 import type { Metadata } from "next"
 import { CalendarClock, PhoneCall, CheckCircle2 } from "lucide-react"
 import { AppointmentForm } from "@/components/site/appointment-form"
-import { getPublicSiteInfo } from "@/lib/site-info"
+import { publicSiteInfo } from "@/lib/site-info"
 import { getServerI18n } from "@/lib/i18n/server"
+import { siteContext } from "@/lib/website/render"
 
 export const metadata: Metadata = {
   title: "Book an Appointment — SHWURX Auto Service Center",
@@ -10,7 +11,8 @@ export const metadata: Metadata = {
 }
 
 export default async function AppointmentPage() {
-  const [info, { dict }] = await Promise.all([getPublicSiteInfo(), getServerI18n()])
+  const [{ doc, lang }, { dict }] = await Promise.all([siteContext(), getServerI18n()])
+  const info = publicSiteInfo(doc, lang)
   const t = dict.appointmentPage
 
   return (

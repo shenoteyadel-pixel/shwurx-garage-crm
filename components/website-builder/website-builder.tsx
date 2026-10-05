@@ -1,5 +1,6 @@
 "use client"
 
+import { assignedMediaIds, mediaStatus, MEDIA_STATUS_LABEL } from "@/lib/website/media-usage"
 import { useMemo, useRef, useState, useTransition } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
@@ -68,15 +69,15 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: "custom", label: "Custom pages" },
   { key: "nav", label: "Navigation" },
   { key: "form", label: "Enquiry form" },
-  { key: "seo", label: "SEO & redirects" },
+  { key: "seo", label: "SEO" },
   { key: "media", label: "Media" },
-  { key: "analytics", label: "Analytics" },
   { key: "history", label: "History" },
 ]
 
 const emptySeo = () => ({ title: emptyL10n(), description: emptyL10n(), ogImageId: null, noindex: false })
 
-export function WebsiteBuilder({ state, canEditAnalytics = false }: { state: EditorState; canEditAnalytics?: boolean }) {
+export function WebsiteBuilder({ state }: { state: EditorState }) {
+  const editCount = useRef(0)
   const router = useRouter()
   const [doc, setDoc] = useState<WebsiteDocument>(state.draft)
   const [version, setVersion] = useState(state.draftVersion)
@@ -104,6 +105,7 @@ export function WebsiteBuilder({ state, canEditAnalytics = false }: { state: Edi
       fn(next)
       return next
     })
+    editCount.current += 1
     setDirty(true)
   }
 
@@ -161,6 +163,7 @@ export function WebsiteBuilder({ state, canEditAnalytics = false }: { state: Edi
   }
 
   const save = async (): Promise<number | null> => {
+    const sentAt = editCount.current
     const r = await saveWebsiteDraft(doc, version)
     if (!r.ok) {
       if (r.issues) setIssues(r.issues)
@@ -174,7 +177,8 @@ export function WebsiteBuilder({ state, canEditAnalytics = false }: { state: Edi
       return null
     }
     setVersion(r.version)
-    setDirty(false)
+    // Edits typed while the request was in flight were not sent; keep them unsaved.
+    setDirty(editCount.current !== sentAt)
     return r.version
   }
 
@@ -332,8 +336,7 @@ export function WebsiteBuilder({ state, canEditAnalytics = false }: { state: Edi
         {section === "nav" && <NavSection doc={doc} mutate={mutate} />}
         {section === "form" && <FormSection doc={doc} mutate={mutate} />}
         {section === "seo" && <SeoSection doc={doc} mutate={mutate} />}
-        {section === "media" && <MediaSection doc={doc} mutate={mutate} />}
-        {section === "analytics" && <AnalyticsSection doc={doc} mutate={mutate} canEdit={canEditAnalytics} />}
+        {section === "media" && <MediaSection doc={doc} mutate={mutate} liveIds={state.liveMediaIds} />}
         {section === "history" && (
           <HistorySection
             state={state}
@@ -845,31 +848,28 @@ function SeoSection({ doc, mutate }: SectionProps) {
       <L10nField label="Title suffix" value={s.titleSuffix} onChange={(v) => mutate((d) => void (d.seo.titleSuffix = v))} hint="Added after every page title, e.g. “ | SHWURX Dubai”." />
       <L10nField label="Default description" value={s.defaultDescription} onChange={(v) => mutate((d) => void (d.seo.defaultDescription = v))} multiline />
       <MediaPicker label="Default share image" media={doc.media} value={s.defaultOgImageId} onChange={(v) => mutate((d) => void (d.seo.defaultOgImageId = v))} />
-      <ListEditor
-        title="Redirects"
-        addLabel="Add redirect"
-        items={s.redirects}
-        onChange={(v) => mutate((d) => void (d.seo.redirects = v))}
-        create={() => ({ id: uid("rd"), from: "/old-page", to: "/", permanent: true })}
-        render={(r, up) => (
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-40 flex-1">
-              <TextField label="From" value={r.from} onChange={(from) => up({ ...r, from })} />
-            </div>
-            <div className="min-w-40 flex-1">
-              <TextField label="To" value={r.to} onChange={(to) => up({ ...r, to })} />
-            </div>
-            <Toggle label="Permanent" checked={r.permanent} onChange={(permanent) => up({ ...r, permanent })} />
-          </div>
+      <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border p-4">
+        <p className="text-sm font-medium">Redirects (not active)</p>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          The live site does not apply redirects yet, so this list cannot be edited. Stored entries are kept unchanged.
+        </p>
+        {s.redirects.length > 0 && (
+          <ul className="flex flex-col gap-1 font-mono text-xs text-muted-foreground">
+            {s.redirects.map((r) => (
+              <li key={r.id}>{`${r.from} → ${r.to}${r.permanent ? " (permanent)" : ""}`}</li>
+            ))}
+          </ul>
         )}
-      />
+      </div>
     </>
   )
 }
 
 /* ---------------------------------- Media --------------------------------- */
 
-function MediaSection({ doc, mutate }: SectionProps) {
+function MediaSection({ doc, mutate, liveIds }: SectionProps & { liveIds: string[] }) {
+  const draftAssigned = assignedMediaIds(doc)
+  const live = new Set(liveIds)
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -913,7 +913,7 @@ function MediaSection({ doc, mutate }: SectionProps) {
         {sorted.map((m) => {
           const i = doc.media.findIndex((x) => x.id === m.id)
           const set = (fn: (x: (typeof doc.media)[number]) => void) => mutate((d) => fn(d.media[i]))
-          const live = m.approval === "approved" && m.publicSafe
+          const status = mediaStatus(m, draftAssigned, live)
           return (
             <div key={m.id} className="flex flex-col gap-3 rounded-lg border border-border p-3">
               <div className="relative aspect-video overflow-hidden rounded-md bg-muted">
@@ -927,8 +927,16 @@ function MediaSection({ doc, mutate }: SectionProps) {
                 />
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge className={live ? "bg-primary/15 text-primary" : "bg-amber-500/15 text-amber-600"}>
-                  {live ? "Shown on site" : "Hidden"}
+                <Badge
+                  className={
+                    status === "live"
+                      ? "bg-primary/15 text-primary"
+                      : status === "hidden"
+                        ? "bg-amber-500/15 text-amber-600"
+                        : "bg-muted text-muted-foreground"
+                  }
+                >
+                  {MEDIA_STATUS_LABEL[status]}
                 </Badge>
                 <span className="text-xs text-muted-foreground">{m.source.replace(/_/g, " ")}</span>
               </div>

@@ -18,7 +18,7 @@ import {
   MapPin,
   type LucideIcon,
 } from "lucide-react"
-import { getPublicSiteInfo } from "@/lib/site-info"
+import { publicSiteInfo } from "@/lib/site-info"
 import { getServerI18n } from "@/lib/i18n/server"
 import { resolveImage } from "@/lib/site-content"
 import { interpolate } from "@/lib/i18n/dictionaries"
@@ -58,7 +58,8 @@ function brandLogo(doc: WebsiteDocument, lang: Lang, b: WebsiteDocument["brands"
 }
 
 export default async function HomePage() {
-  const [{ doc, lang }, info, { dict }] = await Promise.all([siteContext(), getPublicSiteInfo(), getServerI18n()])
+  const [{ doc, lang }, { dict }] = await Promise.all([siteContext(), getServerI18n()])
+  const info = publicSiteInfo(doc, lang)
   const t = dict.home
   const home = doc.pages.home
   const heroMedia = publicMedia(doc, home.heroImageId)

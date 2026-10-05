@@ -20,10 +20,13 @@ const ICONS: Record<ServiceKind, LucideIcon> = {
 }
 
 export default async function ServicesPage() {
-  const [{ doc, lang }, { dict }] = await Promise.all([siteContext(), getServerI18n()])
+  const [{ doc, lang, source }, { dict }] = await Promise.all([siteContext(), getServerI18n()])
   const t = dict.servicesPage
   const page = doc.pages.servicesIndex
-  const services = doc.services.filter((s) => s.visible)
+  // Before the first explicit publish, production keeps the old services list
+  // (cards only); per-service detail pages stay hidden until published.
+  const legacy = source === "legacy"
+  const services = legacy ? doc.services : doc.services.filter((s) => s.visible)
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-16 lg:px-8">
@@ -35,17 +38,26 @@ export default async function ServicesPage() {
       <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {services.map((s) => {
           const Icon = ICONS[s.kind] ?? Wrench
-          return (
-            <Link
-              key={s.id}
-              href={localePath(lang, `/services/${s.slug}`)}
-              className="group rounded-2xl border border-border bg-card p-6 transition hover:border-primary/50"
-            >
+          const body = (
+            <>
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
                 <Icon className="h-6 w-6 text-primary" />
               </div>
               <h2 className="mt-4 text-lg font-semibold">{pick(s.name, lang)}</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pick(s.summary, lang)}</p>
+            </>
+          )
+          return legacy ? (
+            <div key={s.id} className="rounded-2xl border border-border bg-card p-6">
+              {body}
+            </div>
+          ) : (
+            <Link
+              key={s.id}
+              href={localePath(lang, `/services/${s.slug}`)}
+              className="group rounded-2xl border border-border bg-card p-6 transition hover:border-primary/50"
+            >
+              {body}
             </Link>
           )
         })}

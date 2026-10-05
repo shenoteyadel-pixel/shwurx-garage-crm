@@ -102,7 +102,12 @@ export function WebsiteControlCenter({ data }: { data: ControlCenterDTO }) {
           <WebsiteBuilder state={editorState} />
         </div>
       )}
-      {tab === "analytics" && analytics && <AnalyticsEditor data={analytics} canEdit={canManageMarketing} />}
+      {/* Same as the builder: hidden, not unmounted, so pending analytics edits survive tab switches. */}
+      {canViewMarketing && analytics && (
+        <div hidden={tab !== "analytics"}>
+          <AnalyticsEditor data={analytics} canEdit={canManageMarketing} />
+        </div>
+      )}
       {tab === "content" && legacyContent && (
         <ContentEditor fieldValues={fieldValues} fieldDefaults={fieldDefaults} canManage={canManageWebsite} />
       )}

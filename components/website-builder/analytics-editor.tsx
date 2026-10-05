@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { AlertTriangle, Loader2, Rocket } from "lucide-react"
 import { Badge, Button, Card, Label } from "@/components/ui"
@@ -23,12 +23,24 @@ export function AnalyticsEditor({ data, canEdit }: { data: AnalyticsSectionDTO; 
   const [issues, setIssues] = useState<AnalyticsIssue[] | null>(null)
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
   const [pending, start] = useTransition()
+  const editCount = useRef(0)
+  const [syncedFrom, setSyncedFrom] = useState(data.config)
+
+  // Adopt the server's latest config after router.refresh() only when there
+  // are no pending local edits (mirrors the main builder).
+  if (syncedFrom !== data.config) {
+    setSyncedFrom(data.config)
+    if (!dirty) setConfig(data.config)
+  }
 
   const doc = { analytics: config } as WebsiteDocument
   const mutate = (fn: (d: WebsiteDocument) => void) => {
-    const next = { analytics: structuredClone(config) } as WebsiteDocument
-    fn(next)
-    setConfig(next.analytics)
+    setConfig((prev) => {
+      const next = { analytics: structuredClone(prev) } as WebsiteDocument
+      fn(next)
+      return next.analytics
+    })
+    editCount.current += 1
     setDirty(true)
   }
 
@@ -69,13 +81,15 @@ export function AnalyticsEditor({ data, canEdit }: { data: AnalyticsSectionDTO; 
                 onClick={() =>
                   start(async () => {
                     setMessage(null)
+                    const sentAt = editCount.current
                     const r = await publishAnalyticsConfig(config, data.draftVersion, data.liveRevisionId ?? 0, note)
                     if (!r.ok) {
                       setIssues(r.issues ?? null)
                       return setMessage({ tone: "error", text: r.error })
                     }
                     setIssues(null)
-                    setDirty(false)
+                    // Edits typed while publishing were not sent; keep them pending.
+                    setDirty(editCount.current !== sentAt)
                     setNote("")
                     setMessage({ tone: "ok", text: "Analytics published. Only analytics changed on the live site." })
                     router.refresh()

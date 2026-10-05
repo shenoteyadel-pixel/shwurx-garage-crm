@@ -110,9 +110,13 @@ export async function saveSiteImages(images: Record<string, string>) {
   revalidatePath("/marketing")
 }
 
-/** Upload an image to Blob and return its public URL. */
+/**
+ * Upload an image to Blob and return its public URL. Blog covers still use
+ * this after the CMS exists, so only permission + deployment policy apply;
+ * the retired-content guard is reserved for the old Text/Images writes.
+ */
 export async function uploadWebsiteImage(formData: FormData): Promise<{ url: string }> {
-  await legacyContentGuard()
+  await legacyGuard()
   const file = formData.get("file")
   if (!(file instanceof File) || file.size === 0) throw new Error("No file provided.")
   if (!file.type.startsWith("image/")) throw new Error("Only image files are allowed.")

@@ -7,6 +7,7 @@ import { normalizeDocument } from "./normalize"
 import { seedDocument } from "./seed"
 import { deploymentMode } from "./env"
 import { liveMediaIds } from "./media-usage"
+import { migrateLegacyStrings } from "./legacy-migrate"
 import type { RevisionSummary, WebsiteDocument } from "./types"
 
 export const PREVIEW_COOKIE = "shwurx_site_preview"
@@ -93,7 +94,7 @@ export const legacyDocument = cache(async (): Promise<WebsiteDocument> => {
   } catch {
     /* fall back to pure defaults */
   }
-  return normalizeDocument(doc)
+  return normalizeDocument(migrateLegacyStrings(normalizeDocument(doc)))
 })
 
 /**

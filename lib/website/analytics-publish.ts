@@ -38,8 +38,12 @@ export function planAnalyticsPublish(input: AnalyticsPublishInput, state: Analyt
     return { ok: false, conflict: true, error: "The live website changed since you opened this page. Reload, then publish again." }
   }
   if (!input.analytics || typeof input.analytics !== "object") return { ok: false, error: "Invalid analytics settings." }
-  const config = sanitizeAnalytics({ ...(input.analytics as object), managed: true })
-  const issues = analyticsIssues(config)
+  const drops: string[] = []
+  const config = sanitizeAnalytics({ ...(input.analytics as object), managed: true }, drops)
+  const issues: AnalyticsIssue[] = [
+    ...drops.map((message) => ({ level: "error" as const, where: "Analytics", message })),
+    ...analyticsIssues(config),
+  ]
   if (issues.some((i) => i.level === "error")) return { ok: false, error: "Fix the errors before publishing.", issues }
   return {
     ok: true,

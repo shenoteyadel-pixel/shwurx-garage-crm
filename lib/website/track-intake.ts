@@ -114,7 +114,7 @@ export function parseTrackBody(body: Record<string, unknown>, userAgent: string)
   const raw = body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata) ? (body.metadata as Record<string, unknown>) : {}
   for (const k of METADATA_KEYS) {
     const v = raw[k]
-    if (typeof v === "string" && TOKEN.test(v)) metadata[k] = v
+    if (typeof v === "string" && TOKEN.test(v) && !looksLikeContactData(v)) metadata[k] = v
   }
 
   const sid = body.sessionId ?? body.session_id
@@ -125,7 +125,7 @@ export function parseTrackBody(body: Record<string, unknown>, userAgent: string)
     ok: true,
     record: {
       eventType,
-      sessionId: typeof sid === "string" && SESSION.test(sid) ? sid : null,
+      sessionId: typeof sid === "string" && SESSION.test(sid) && !looksLikeContactData(sid) ? sid : null,
       pagePath,
       referrer: originOnly(body.referrer),
       source: campaignValue(body.source),

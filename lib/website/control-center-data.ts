@@ -1,4 +1,5 @@
 import "server-only"
+import { conversionSigningReady } from "@/lib/website/conversion-token"
 import { getSettings, type Settings } from "@/lib/settings"
 import { getSiteContentOverrides } from "@/lib/site-content"
 import { listAllArticles, type Article } from "@/lib/blog"
@@ -8,6 +9,7 @@ import { effectiveAnalytics } from "@/lib/website/analytics-server"
 import { sanitizeAnalytics, type AnalyticsConfig } from "@/lib/website/analytics"
 import { getDictionary } from "@/lib/i18n/dictionaries"
 import { buildInventory, type InventoryItem } from "@/lib/website/inventory"
+import { siteOriginDiagnostic } from "@/lib/website/env"
 import { SITE_CONTENT_GROUPS, SITE_IMAGE_SLOTS, readPath } from "@/lib/site-content-fields"
 
 import {
@@ -40,22 +42,12 @@ export type ArticleTaxonomy = {
 }
 
 export type WebsiteOverviewDTO = {
-  /** configured public domain, or null when none is set */
-  liveUrl: string | null
+  /** Same validated origin used for public canonical URLs. */
+  liveUrl: string
+  liveUrlSource: "configured" | "fallback"
   lastPublishedAt: string | null
   lastPublishedBy: string | null
   inventory: InventoryItem[]
-}
-
-function configuredSiteUrl(): string | null {
-  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim()
-  if (!raw || raw.includes("NEXT_PUBLIC")) return null
-  try {
-    const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`)
-    return u.origin
-  } catch {
-    return null
-  }
 }
 
 /** Analytics-only view: config + revision pointers. Never any page, brand, blog or financial data. */
@@ -66,6 +58,7 @@ export type AnalyticsSectionDTO = {
   liveRevisionId: number | null
   config: AnalyticsConfig
   managed: boolean
+  conversionSigningReady: boolean
 }
 
 export type ControlCenterDTO = {
@@ -87,6 +80,7 @@ async function loadAnalyticsSection(): Promise<AnalyticsSectionDTO> {
     liveRevisionId,
     config: await effectiveAnalytics(live),
     managed: !!stored?.managed,
+    conversionSigningReady: conversionSigningReady(),
   }
 }
 
@@ -107,8 +101,10 @@ async function loadWebsiteSection(): Promise<WebsiteSectionDTO> {
   const liveId = editorState?.publishedRevisionId ?? null
   const live = liveId ? await readRevision(liveId) : null
   const liveRev = editorState?.revisions.find((r) => r.id === liveId) ?? null
+  const publicOrigin = siteOriginDiagnostic()
   const overview: WebsiteOverviewDTO = {
-    liveUrl: configuredSiteUrl(),
+    liveUrl: publicOrigin.origin,
+    liveUrlSource: publicOrigin.source,
     lastPublishedAt: liveRev?.createdAt ?? null,
     lastPublishedBy: liveRev?.createdByName ?? null,
     inventory: editorState?.initialised

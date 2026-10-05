@@ -146,6 +146,9 @@ export function WebsiteOverview({
             ) : (
               <p className="text-lg font-semibold">No public domain configured</p>
             )}
+            {overview.liveUrlSource === "fallback" && (
+              <p className="text-xs text-muted-foreground">Using the website's default public domain.</p>
+            )}
             <p className="text-sm text-muted-foreground">
               {overview.lastPublishedAt
                 ? `Last published ${formatWhen(overview.lastPublishedAt)}${overview.lastPublishedBy ? ` by ${overview.lastPublishedBy}` : ""}`

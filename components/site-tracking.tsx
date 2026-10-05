@@ -13,7 +13,7 @@ import { CONSENT_KEY, LEGACY_CONSENT_KEY } from "@/lib/consent"
  *     app sends one page_view per committed public route.
  * IDs are format-validated before they reach this point.
  */
-function bootstrap(tags: RuntimeTags): string {
+export function bootstrap(tags: RuntimeTags): string {
   const cfg = JSON.stringify({
     consent: tags.consentRequired,
     key: CONSENT_KEY,
@@ -26,12 +26,13 @@ function bootstrap(tags: RuntimeTags): string {
   return `(function(c){var w=window,d=document;if(c.consent)w.__shwurxConsentNeeded=true;w.dataLayer=w.dataLayer||[];if(typeof w.gtag!=='function'){w.gtag=function(){w.dataLayer.push(arguments)}}
 function read(){if(!c.consent)return{analytics:true,ads:true};try{var s=JSON.parse(localStorage.getItem(c.key)||'null');if(s&&s.v===2)return{analytics:s.analytics===true,ads:s.ads===true};var o=localStorage.getItem(c.old);if(o==='granted')return{analytics:true,ads:true};if(o==='denied')return{analytics:false,ads:false}}catch(e){}return w.__shwurxConsent||null}
 function sig(s){var a=s&&s.analytics?'granted':'denied',m=s&&s.ads?'granted':'denied';return{analytics_storage:a,ad_storage:m,ad_user_data:m,ad_personalization:m}}
-var st=read();w.gtag('consent','default',sig(st));w.gtag('set','ads_data_redaction',true);
-var g=false,p=false;function load(src){var e=d.createElement('script');e.async=true;e.src=src;d.head.appendChild(e)}
-w.__shwurxApplyConsent=function(s){w.__shwurxConsent=s;w.gtag('consent','update',sig(s));
-if(s&&(s.analytics||s.ads)&&!g&&(c.gtm||c.ga4||c.ads)){g=true;w.__shwurxTagsLoaded=true;
+var st=read();if(!c.gtm){w.gtag('consent','default',sig(st));w.gtag('set','ads_data_redaction',true);w.gtag('set','url_passthrough',false)}
+var g=false,p=false,ga=false,ad=false;function load(src){var e=d.createElement('script');e.async=true;e.src=src;d.head.appendChild(e)}
+w.__shwurxApplyConsent=function(s){var chosen=s;s={analytics:!!(s&&s.analytics===true),ads:!!(s&&s.ads===true)};w.__shwurxConsent=chosen?s:null;if(c.gtm){if(typeof w.__shwurxNotifyGtmConsent==='function')w.__shwurxNotifyGtmConsent()}else{w.gtag('consent','update',sig(s))};
+if(typeof w.__shwurxPublicRuntimeEligible==='function'&&w.__shwurxPublicRuntimeEligible()&&s&&(s.analytics||s.ads)&&!g&&(c.gtm||c.ga4||c.ads)&&(!c.gtm||(typeof w.__shwurxRegisterGtmConsentListener==='function'&&typeof w.__shwurxGtmConsentApplied==='function'))){g=true;w.__shwurxTagsLoaded=true;
 if(c.gtm){w.dataLayer.push({'gtm.start':new Date().getTime(),event:'gtm.js'});load('https://www.googletagmanager.com/gtm.js?id='+encodeURIComponent(c.gtm))}
-else{load('https://www.googletagmanager.com/gtag/js?id='+encodeURIComponent(c.ga4||c.ads));w.gtag('js',new Date());if(c.ga4)w.gtag('config',c.ga4,{send_page_view:false});if(c.ads)w.gtag('config',c.ads)}}
+else{load('https://www.googletagmanager.com/gtag/js?id='+encodeURIComponent(c.ga4||c.ads));w.gtag('js',new Date())}}
+if(g&&!c.gtm){var safe=typeof w.__shwurxSafePageSettings==='function'?w.__shwurxSafePageSettings():{page_location:'https://www.swurxauto.com/',page_referrer:'',page_title:'SHWURX'};safe.send_page_view=false;if(c.ga4&&s.analytics&&!ga){ga=true;w.gtag('config',c.ga4,safe)}if(c.ads&&s.ads&&!ad){ad=true;w.gtag('config',c.ads,safe)}}
 if(c.pixel){if(s&&s.ads){if(!p){p=true;w.__shwurxTagsLoaded=true;!function(f,b,e,v,n,t,x){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;x=b.getElementsByTagName(e)[0];x.parentNode.insertBefore(t,x)}(w,d,'script','https://connect.facebook.net/en_US/fbevents.js');w.fbq('init',c.pixel);w.fbq('track','PageView')}else{w.fbq('consent','grant')}}else if(p){w.fbq('consent','revoke')}}
 w.dispatchEvent(new Event('shwurx:tags'))};
 w.__shwurxApplyConsent(st);

@@ -75,6 +75,11 @@ export function AnalyticsEditor({ data, canEdit }: { data: AnalyticsSectionDTO; 
           {dirty && <Badge className="bg-amber-500/15 text-amber-600">Unpublished changes</Badge>}
           {!data.managed && <span className="text-xs text-muted-foreground">Currently using the older tracking settings.</span>}
         </div>
+        <p className="text-xs text-muted-foreground">
+          {data.conversionSigningReady
+            ? "Ads lead deduplication: signing is configured. Provider delivery still requires verification."
+            : "Ads lead deduplication: signing is unavailable. Enquiries still save; Ads lead conversions stay suppressed."}
+        </p>
         {blocked ? (
           <p className="flex items-start gap-2 text-sm text-muted-foreground">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />

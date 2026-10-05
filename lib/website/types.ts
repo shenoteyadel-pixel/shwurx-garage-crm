@@ -224,6 +224,7 @@ export interface TeamPage {
 }
 
 export interface PagesContent {
+  appointment: import("./appointment").AppointmentPageConfig
   home: {
     eyebrow: L10n
     title: L10n
@@ -292,7 +293,7 @@ export interface WebsiteDocument {
   services: Service[]
   media: MediaAsset[]
   seo: SeoSettings
-  forms: { enquiry: EnquiryFormConfig }
+  forms: { enquiry: EnquiryFormConfig; appointment: import("./appointment").AppointmentFormConfig }
   /** GA4 / GTM / Ads / Meta / Search Console — Website Center only */
   analytics: import("./analytics").AnalyticsConfig
   /** legacy dictionary overrides (previous site_content.en / .ar) */

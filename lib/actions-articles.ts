@@ -19,6 +19,11 @@ import { articleToDoc, draftRowToArticle, fillMissing, publicSnapshot, withPubli
 import matrix from "@/data/editorial/matrix-75.json"
 import editorial from "@/data/editorial/articles-75.json"
 import brandHeroes from "@/data/editorial/brand-heroes-v2.json"
+import { reviewedArticlePackage } from "@/lib/reviewed-article-package"
+import {
+  REVIEWED_ARTICLE_BRANDS, reviewedPackageFingerprint, isCurrentBilingualPublication,
+  type ArticleBatchVersion, type ArticleBatchResult, type ArticleBatchItemResult,
+} from "@/lib/article-batch"
 
 async function guard() {
   const ctx = await requirePermission("website.manage")
@@ -168,6 +173,82 @@ export async function saveArticle(input: Article, expectedRevision: number | nul
   await logAction(ctx, intent === "approve" ? "article_approved" : existing ? "article_updated" : "article_created", "article_draft", saved.id)
   revalidatePath("/marketing")
   return { ok: true, article: saved }
+}
+
+/** One reviewed brand (five articles), through the ordinary guarded CAS/approval/snapshot lifecycle. */
+export async function publishReviewedArticleBrand(brand: string, versions: ArticleBatchVersion[]): Promise<ArticleBatchResult> {
+  await guard()
+  if (!(REVIEWED_ARTICLE_BRANDS as readonly string[]).includes(brand) || !Array.isArray(versions) || versions.length > 5) {
+    return { ok: false, items: [], error: "Choose one reviewed brand (five articles maximum)." }
+  }
+  let expected: Article[]
+  try {
+    expected = reviewedArticlePackage().filter((a) => a.brandSlug === brand)
+  } catch {
+    return { ok: false, items: [], error: "The editorial package changed. Review it before batch publication." }
+  }
+  const keys = new Set(expected.map((a) => a.key))
+  if (expected.length !== 5 || new Set(versions.map((v) => v?.key)).size !== versions.length || versions.some((v) =>
+    !v || !keys.has(v.key) || typeof v.id !== "string" || !v.id || !Number.isSafeInteger(v.revision) || v.revision < 1,
+  )) return { ok: false, items: [], error: "The loaded article versions are invalid. Reload the library." }
+
+  const svc = createServiceClient()
+  const items: ArticleBatchItemResult[] = []
+  for (const reviewed of expected) {
+    const key = reviewed.key!
+    try {
+      const { data, error } = await svc.from("article_drafts").select("*").eq("article_key", key).maybeSingle()
+      if (error) throw error
+      if (!data) {
+        items.push({ key, outcome: "missing", message: "Missing draft. Import the full editorial articles first." })
+        continue
+      }
+      const current = await editorArticle(svc, data as DraftRow)
+      if (reviewedPackageFingerprint(current) !== reviewedPackageFingerprint(reviewed)) {
+        items.push({ key, outcome: "edited", revision: current.revision, message: "Saved copy, sources, taxonomy or cover differs from the reviewed package. Kept unchanged; review it individually." })
+        continue
+      }
+      // A repeated request can safely report an already-committed publication, even with the old UI revision.
+      if (isCurrentBilingualPublication(current)) {
+        items.push({ key, outcome: "already_live", revision: current.revision, message: "This matching revision is already live in English and Arabic." })
+        continue
+      }
+      const loaded = versions.find((v) => v.key === key)
+      if (!loaded || loaded.id !== current.id || loaded.revision !== current.revision) {
+        items.push({ key, outcome: "conflict", revision: current.revision, message: CONFLICT })
+        continue
+      }
+      const ready: Article = {
+        ...current,
+        content: { en: { ...current.content.en, ready: true }, ar: { ...current.content.ar, ready: true } },
+      }
+      // saveArticle records the authenticated reviewer and saves readiness in an append-only CAS revision.
+      const approved = await saveArticle(ready, current.revision, "approve")
+      if (!approved.ok) {
+        items.push({ key, outcome: approved.conflict ? "conflict" : "failed", message: approved.error })
+        continue
+      }
+      if (reviewedPackageFingerprint(approved.article) !== reviewedPackageFingerprint(reviewed)) {
+        items.push({ key, outcome: "conflict", message: "The stored article changed during review. It was not published by this batch." })
+        continue
+      }
+      // Publishes only the stored approved snapshot; never write blog_posts directly or trust client copy.
+      const published = await saveArticle(approved.article, approved.article.revision, "publish")
+      if (!published.ok) {
+        items.push({ key, outcome: published.conflict ? "conflict" : "failed", message: published.error })
+        continue
+      }
+      if (!isCurrentBilingualPublication(published.article) || reviewedPackageFingerprint(published.article) !== reviewedPackageFingerprint(reviewed)) {
+        items.push({ key, outcome: "conflict", message: "Publication changed before readback. Refresh the library to see the current state." })
+        continue
+      }
+      items.push({ key, outcome: "published", revision: published.article.revision, message: "Verified live in English and Arabic." })
+    } catch {
+      items.push({ key, outcome: "failed", message: "Could not verify completion. Refresh the library before retrying; any completed publications are preserved." })
+    }
+  }
+  revalidatePath("/marketing")
+  return { ok: items.every((item) => item.outcome === "published" || item.outcome === "already_live"), items }
 }
 
 /** Drafts keep an append-only history, so they are retired (unpublished) rather than deleted. */

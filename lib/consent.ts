@@ -29,6 +29,13 @@ declare global {
     __shwurxConsent?: ConsentState | null
     /** set by the tag bootstrap; loads/updates tags for the given state */
     __shwurxApplyConsent?: (s: ConsentState | null) => void
+    __shwurxRegisterGtmConsentListener?: (callback: (choice: ConsentState) => unknown) => boolean
+    __shwurxGtmConsentApplied?: (choice: ConsentState) => boolean
+    __shwurxNotifyGtmConsent?: () => boolean
+    __shwurxGtmConsentReady?: boolean
+    __shwurxConsentEpoch?: number
+    __shwurxPublicRuntimeEligible?: () => boolean
+    __shwurxSafePageSettings?: () => { page_location: string; page_referrer: string; page_title: string }
   }
 }
 
@@ -37,6 +44,7 @@ const listeners = new Set<() => void>()
 /** null = the visitor has not chosen yet. */
 export function readConsent(): ConsentState | null {
   if (typeof window === "undefined") return null
+  if (window.__shwurxConsent != null) return { analytics: window.__shwurxConsent.analytics === true, ads: window.__shwurxConsent.ads === true }
   try {
     const raw = window.localStorage.getItem(CONSENT_KEY)
     if (raw) {
@@ -67,7 +75,9 @@ const ANALYTICS_KEYS = ["shwurx_sid"]
 
 export function writeConsent(next: ConsentState) {
   const prev = readConsent()
-  window.__shwurxConsent = next
+  next = { analytics: next.analytics === true, ads: next.ads === true }
+  if (!prev || prev.analytics !== next.analytics || prev.ads !== next.ads) window.__shwurxConsentEpoch = (window.__shwurxConsentEpoch ?? 0) + 1
+  window.__shwurxConsent = { ...next }
   try {
     const stored: Stored = { v: 2, analytics: next.analytics, ads: next.ads, at: new Date().toISOString() }
     window.localStorage.setItem(CONSENT_KEY, JSON.stringify(stored))

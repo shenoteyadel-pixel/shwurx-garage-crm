@@ -5,6 +5,7 @@ import { getRenderDocument } from "./store"
 import { isIndexableDeployment, resolveSiteOrigin } from "./env"
 import { isIllustrativeSource, isTeamPagePublic } from "./normalize"
 import { displayImageAlt, displayImageCaption } from "./media-display"
+import { isAppointmentPath } from "./appointment"
 import type { L10n, Lang, MediaAsset, NavLink, SeoFields, WebsiteDocument } from "./types"
 
 // The live apex 308-redirects to www, so canonicals always use the www origin.
@@ -26,7 +27,9 @@ export function localePath(lang: Lang, path: string): string {
 /** Visible nav links, dropping /team while the Team page is switched off (avoids a link to a 404). */
 export function visibleNav(doc: WebsiteDocument, links: NavLink[]): NavLink[] {
   const teamPublic = isTeamPagePublic(doc)
-  return links.filter((l) => l.visible && (teamPublic || (l.href !== "/team" && !l.href.startsWith("/team#"))))
+  return links.filter((l) => l.visible &&
+    (doc.pages.appointment.visible || !isAppointmentPath(l.href)) &&
+    (teamPublic || (l.href !== "/team" && !l.href.startsWith("/team#"))))
 }
 
 /** Only approved, public-safe media is ever rendered publicly. */

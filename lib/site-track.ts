@@ -11,17 +11,20 @@
  * Payloads never contain names, phones, emails, free text, plates, VINs, raw
  * URLs, customer identifiers or CRM tokens: only controlled enums and slugs.
  */
-import { effectiveConsent } from "@/lib/consent"
+import { effectiveConsent, type ConsentState } from "@/lib/consent"
 import { looksLikeContactData } from "@/lib/website/contact-shape"
 import { isPublicSitePath } from "@/lib/website/paths"
 
-type ConversionKey = "lead" | "appointment" | "phone_click" | "whatsapp_click"
+import { CONVERSION_EVENT_KEYS, EVENT_KEY_SET, safeConversionToken, telemetryToken } from "@/lib/website/tracking-contract"
+import { sanitizeAnalytics, type ConversionKey } from "@/lib/website/analytics"
 
 export interface TagMapping {
   events: Record<ConversionKey, string>
+  ga4Id: string | null
   adsId: string | null
   adsLabels: Record<ConversionKey, string>
   retentionDays?: number
+  publicSlugs?: { brands: string[]; services: string[] }
 }
 
 declare global {
@@ -39,28 +42,22 @@ declare global {
   }
 }
 
-const FALLBACK_EVENTS: Record<ConversionKey, string> = {
-  lead: "generate_lead",
-  appointment: "appointment_request_received",
-  phone_click: "phone_click",
-  whatsapp_click: "whatsapp_click",
+function routing() {
+  return sanitizeAnalytics({ ...window.__shwurxTags, owner: window.__shwurxTagMode === "gtm" ? "gtm" : "gtag" })
 }
-const eventName = (k: ConversionKey) => window.__shwurxTags?.events?.[k] || FALLBACK_EVENTS[k]
+function conversionKey(key: string): ConversionKey | undefined {
+  return (Object.keys(CONVERSION_EVENT_KEYS) as ConversionKey[]).find((k) => CONVERSION_EVENT_KEYS[k] === key)
+}
 function adsTarget(k: ConversionKey): string | null {
-  const t = window.__shwurxTags
-  const label = t?.adsLabels?.[k]
-  return t?.adsId && label ? `${t.adsId}/${label}` : null
+  const t = routing()
+  const label = t.adsLabels[k]
+  return t.adsId && label ? `${t.adsId}/${label}` : null
 }
 
 /* ---------------------------------------------------------------- sanitizers */
 
-const TOKEN_RE = /^[a-z0-9][a-z0-9_-]{0,59}$/
-/** Lowercase controlled identifier (slug/enum) or null. */
-export function token(v: unknown): string | null {
-  if (typeof v !== "string") return null
-  const s = v.trim().toLowerCase()
-  return TOKEN_RE.test(s) ? s : null
-}
+/** Telemetry-only identifiers: never use to validate business form values. */
+export const token = telemetryToken
 
 /** Contact-shaped values (email, phone run, URL) are never forwarded. */
 function campaignValue(v: string | null): string | null {
@@ -92,7 +89,13 @@ export function pageContext(pathname: string): PageContext {
   const segs = clean.split("/").filter(Boolean)
   const locale = segs[0] === "ar" ? "ar" : "en"
   if (locale === "ar") segs.shift()
-  const safe = segs.map((s) => token(decodeSafe(s)) ?? "_")
+  const safe = segs.map((s) => telemetryToken(s, 200) ?? "_")
+  if ((safe[0] === "brands" || safe[0] === "services") && safe.length > 1) {
+    const known = typeof window === "undefined" ? undefined : window.__shwurxTags?.publicSlugs?.[safe[0]]
+    if (known && !known.includes(safe[1])) safe[1] = "_"
+    // Detail pages have exactly one slug; arbitrary path tails are not telemetry.
+    for (let n = 2; n < safe.length; n++) safe[n] = "_"
+  }
   const page_path = "/" + (locale === "ar" ? ["ar", ...safe] : safe).join("/")
   let page_type = "page"
   let brand_slug: string | null = null
@@ -106,14 +109,6 @@ export function pageContext(pathname: string): PageContext {
   } else if (["about", "contact", "privacy", "book"].includes(safe[0])) page_type = safe[0]
   return { page_path: page_path === "/" ? "/" : page_path.replace(/\/$/, ""), page_type, locale, brand_slug, service_slug }
 }
-function decodeSafe(s: string) {
-  try {
-    return decodeURIComponent(s)
-  } catch {
-    return s
-  }
-}
-
 /* -------------------------------------------------------------- gating */
 
 function siteActive(): boolean {
@@ -156,43 +151,80 @@ function rid(): string {
   }
 }
 
+function contextSlug(value: unknown, section: "brands" | "services"): string | null {
+  const clean = token(value)
+  const known = window.__shwurxTags?.publicSlugs?.[section]
+  return clean && (!known || known.includes(clean)) ? clean : null
+}
+
 /** Every field present, absent ones explicitly null, so GTM never reuses stale values. */
-export function envelope(name: string, f: EventFields = {}) {
+export function envelope(key: string, f: EventFields = {}) {
   const pc = pageContext(window.location.pathname)
+  const cfg = routing()
+  const kind = conversionKey(key)
+  const c = effectiveConsent()
+  const conversionToken = safeConversionToken(f.conversion_token)
+  const needsToken = kind === "lead" || kind === "appointment"
+  const routed = providersActive()
   const e: Record<string, string | number | null> = {
     event: "shwurx_event",
-    schema_version: 1,
-    event_name: name,
+    schema_version: 2,
+    event_key: EVENT_KEY_SET.has(key) ? key : null,
+    event_name: kind ? cfg.events[kind] : token(key),
     event_id: rid(),
     page_path: pc.page_path,
     page_type: pc.page_type,
     locale: pc.locale,
-    brand_slug: token(f.brand_slug) ?? pc.brand_slug,
-    service_slug: token(f.service_slug) ?? pc.service_slug,
-    conversion_token: f.conversion_token && /^[A-Za-z0-9_-]{16,128}$/.test(f.conversion_token) ? f.conversion_token : null,
+    brand_slug: contextSlug(f.brand_slug, "brands") ?? pc.brand_slug,
+    service_slug: contextSlug(f.service_slug, "services") ?? pc.service_slug,
+    // Freeze each purpose's routing at emission: later grants cannot replay it.
+    ga4_id: routed && c.analytics ? cfg.ga4Id || null : null,
+    ads_conversion_id: routed && c.ads ? cfg.adsId.replace(/^AW-/, "") || null : null,
+    ads_conversion_label: routed && c.ads && kind && (!needsToken || conversionToken) ? cfg.adsLabels[kind] || null : null,
+    conversion_token: conversionToken,
   }
   for (const k of ENVELOPE_FIELDS) e[k] = token(f[k])
   return e
 }
 
-/** Events the Google owner may receive. Anything else stays first-party. */
-const GOOGLE_EVENTS = new Set([
-  "page_view",
-  "navigation_click",
-  "language_change",
-  "phone_click",
-  "whatsapp_click",
-  "directions_click",
-  "email_click",
-  "social_click",
-  "form_start",
-  "form_validation_error",
-  "form_submit_error",
-  "generate_lead",
-  "appointment_request_received",
-  "faq_expand",
-  "gallery_open",
-])
+/** Native Consent Mode bridge. Installed before the Google loader can run. */
+export function installGtmConsentBridge() {
+  if (typeof window === "undefined" || window.__shwurxRegisterGtmConsentListener) return
+  let listener: ((choice: ConsentState) => unknown) | null = null
+  let acknowledgements = 0
+  const eligible = () => providersActive() && window.__shwurxTagMode === "gtm"
+  window.__shwurxGtmConsentApplied = (choice) => {
+    try {
+      const c = effectiveConsent()
+      if (!eligible() || !choice || typeof choice.analytics !== "boolean" || typeof choice.ads !== "boolean"
+        || choice.analytics !== c.analytics || choice.ads !== c.ads || !Array.isArray(window.dataLayer)) return false
+      const control = envelope("page_view")
+      const cfg = routing()
+      for (const k of ["event_key", "event_name", "event_id", "conversion_token", "ads_conversion_label", ...ENVELOPE_FIELDS]) control[k] = null
+      Object.assign(control, { event: "shwurx_consent_applied", ga4_id: cfg.ga4Id || null, ads_conversion_id: cfg.adsId.replace(/^AW-/, "") || null })
+      window.dataLayer.push(control)
+      acknowledgements += 1
+      return true
+    } catch { return false }
+  }
+  window.__shwurxNotifyGtmConsent = () => {
+    window.__shwurxGtmConsentReady = false
+    try {
+      if (!eligible() || !listener) return false
+      const c = effectiveConsent()
+      const before = acknowledgements
+      const result = listener({ analytics: c.analytics === true, ads: c.ads === true }) === true && acknowledgements === before + 1
+      window.__shwurxGtmConsentReady = result
+      return result
+    } catch { return false }
+  }
+  window.__shwurxRegisterGtmConsentListener = (callback) => {
+    try {
+      listener = typeof callback === "function" ? callback : null
+      return window.__shwurxNotifyGtmConsent?.() === true
+    } catch { window.__shwurxGtmConsentReady = false; return false }
+  }
+}
 
 /**
  * Google destinations, each gated by its own consent:
@@ -209,13 +241,13 @@ function allowedDestinations(withAds: boolean): Destination[] {
   if (mode === "gtm") return c.analytics || c.ads ? ["gtm"] : []
   if (mode !== "ga4") return []
   const out: Destination[] = []
-  if (c.analytics) out.push("ga4")
+  if (c.analytics && routing().ga4Id) out.push("ga4")
   if (withAds && c.ads) out.push("ads")
   return out
 }
 
 function destinationReady(d: Destination): boolean {
-  return d === "gtm" ? Array.isArray(window.dataLayer) : typeof window.gtag === "function"
+  return d === "gtm" ? Array.isArray(window.dataLayer) && window.__shwurxGtmConsentReady === true : typeof window.gtag === "function"
 }
 
 /**
@@ -225,20 +257,27 @@ function destinationReady(d: Destination): boolean {
 function pushTo(d: Destination, env: Record<string, unknown>, ads?: { sendTo: string; transactionId: string | null }): boolean {
   if (!allowedDestinations(!!ads).includes(d) || !destinationReady(d)) return false
   if (d === "gtm") {
-    // GTM maps the allowlisted event_name; Ads conversions are configured in the container.
-    window.dataLayer!.push(env)
+    if (!EVENT_KEY_SET.has(String(env.event_key))) return false
+    const c = effectiveConsent()
+    // Withdrawal narrows an already queued envelope; a grant never widens it.
+    window.dataLayer!.push({ ...env,
+      ga4_id: c.analytics ? env.ga4_id : null,
+      ads_conversion_id: c.ads ? env.ads_conversion_id : null,
+      ads_conversion_label: c.ads ? env.ads_conversion_label : null,
+    })
     return true
   }
   if (d === "ads") {
-    if (!ads) return false
+    if (!ads || ((env.event_key === "generate_lead" || env.event_key === "appointment_request_received") && !safeConversionToken(ads.transactionId))) return false
     window.gtag!("event", "conversion", { send_to: ads.sendTo, ...(ads.transactionId ? { transaction_id: ads.transactionId } : {}) })
     return true
   }
-  const { event: _e, event_name, schema_version: _v, ...params } = env
-  if (event_name === "page_view") {
-    Object.assign(params, { page_location: window.location.origin + String(env.page_path), page_title: document.title.slice(0, 120) })
-  }
-  window.gtag!("event", String(event_name), params)
+  // Explicit provider allowlist excludes identity/destination/control fields.
+  if (typeof env.ga4_id !== "string" || !/^G-[A-Z0-9]{4,16}$/.test(env.ga4_id)) return false
+  const params: Record<string, unknown> = { send_to: env.ga4_id }
+  for (const k of ["event_id", "schema_version", "page_path", "page_type", "locale", "brand_slug", "service_slug", ...ENVELOPE_FIELDS]) params[k] = env[k]
+  Object.assign(params, { page_location: "https://www.swurxauto.com" + String(env.page_path), page_referrer: "", page_title: `SHWURX | ${env.page_type}` })
+  window.gtag!("event", String(env.event_name), params)
   return true
 }
 
@@ -506,7 +545,7 @@ export function track(eventType: string, metadata: Record<string, unknown> = {})
     }
     const env = envelope(name, fields)
     sendFirstParty(name, env)
-    if (providersActive() && GOOGLE_EVENTS.has(name)) deliver(env)
+    if (providersActive() && EVENT_KEY_SET.has(name)) deliver(env)
   } catch {
     /* tracking is best-effort */
   }
@@ -517,18 +556,18 @@ export function track(eventType: string, metadata: Record<string, unknown> = {})
  * dropped. Retries only target a destination that was allowed at emit time,
  * so a later consent grant never replays an earlier event.
  */
-function queueUntilReady(d: Destination, env: Record<string, unknown>, ads?: { sendTo: string; transactionId: string | null }, attempt = 0) {
+function queueUntilReady(d: Destination, env: Record<string, unknown>, ads?: { sendTo: string; transactionId: string | null }, attempt = 0, epoch = window.__shwurxConsentEpoch ?? 0) {
   if (attempt >= 10) return
   window.setTimeout(() => {
-    if (!providersActive()) return
-    if (!pushTo(d, env, ads)) queueUntilReady(d, env, ads, attempt + 1)
+    if (!providersActive() || epoch !== (window.__shwurxConsentEpoch ?? 0)) return
+    if (!pushTo(d, env, ads)) queueUntilReady(d, env, ads, attempt + 1, epoch)
   }, 500)
 }
 
 export function emitClick(kind: "phone_click" | "whatsapp_click", placement: string, extra: EventFields = {}) {
   try {
     if (!siteActive()) return
-    const env = envelope(eventName(kind), { ...extra, placement })
+    const env = envelope(kind, { ...extra, placement })
     sendFirstParty(kind, env)
     if (!providersActive()) return
     const sendTo = adsTarget(kind)
@@ -623,7 +662,7 @@ export function emitConversion(recordId: string, ctx: ConversionContext) {
     const outcome = ctx.outcome ?? "lead"
     const fpKey = `shwurx_conv1_${outcome}_${recordId}`
     if (!hasMarker(fpKey)) {
-      const env = envelope(eventName(outcome), {
+      const env = envelope(CONVERSION_EVENT_KEYS[outcome], {
         form_key: ctx.form,
         form_context: ctx.formContext,
         brand_slug: ctx.brand,
@@ -639,12 +678,15 @@ export function emitConversion(recordId: string, ctx: ConversionContext) {
     // Each destination is gated and deduped on its own. Only destinations
     // allowed NOW are queued; an explicit later retry for the same record (for
     // example after an Ads grant) fills in the missing destination only.
-    for (const dest of allowedDestinations(!!adsTarget(outcome))) {
+    for (const dest of allowedDestinations(!!adsTarget(outcome) && !!safeConversionToken(ctx.token))) {
       const key = markerKey(dest, outcome, recordId)
       if (hasDestMarker(dest, outcome, recordId) || inFlight.has(key)) continue
       record(key, outcome, "queued", undefined, dest)
       inFlight.set(key, 0)
-      dispatch(key, dest, outcome, recordId, ctx, 0)
+      dispatch(key, dest, outcome, recordId, envelope(CONVERSION_EVENT_KEYS[outcome], {
+        form_key: ctx.form, form_context: ctx.formContext, brand_slug: ctx.brand,
+        service_slug: ctx.service, conversion_token: ctx.token,
+      }), 0, window.__shwurxConsentEpoch ?? 0)
     }
   } catch {
     /* best-effort */
@@ -662,8 +704,9 @@ function dispatch(
   dest: Destination,
   outcome: "lead" | "appointment",
   recordId: string,
-  ctx: ConversionContext,
+  env: Record<string, string | number | null>,
   attempt: number,
+  epoch: number,
 ) {
   if (!inFlight.has(key)) return
   if (hasDestMarker(dest, outcome, recordId)) {
@@ -671,18 +714,11 @@ function dispatch(
     record(key, outcome, "skipped", "already_sent", dest)
     return
   }
-  if (!providersActive() || !allowedDestinations(dest === "ads").includes(dest)) {
+  if (!providersActive() || epoch !== (window.__shwurxConsentEpoch ?? 0) || !allowedDestinations(dest === "ads").includes(dest)) {
     inFlight.delete(key)
     record(key, outcome, "abandoned", "ineligible", dest)
     return
   }
-  const env = envelope(eventName(outcome), {
-    form_key: ctx.form,
-    form_context: ctx.formContext,
-    brand_slug: ctx.brand,
-    service_slug: ctx.service,
-    conversion_token: ctx.token ?? null,
-  })
   const sendTo = adsTarget(outcome)
   const ads = dest === "ads" && sendTo ? { sendTo, transactionId: env.conversion_token as string | null } : undefined
   if (pushTo(dest, env, ads)) {
@@ -692,7 +728,7 @@ function dispatch(
     return
   }
   if (attempt < 20) {
-    inFlight.set(key, window.setTimeout(() => dispatch(key, dest, outcome, recordId, ctx, attempt + 1), 500))
+    inFlight.set(key, window.setTimeout(() => dispatch(key, dest, outcome, recordId, env, attempt + 1, epoch), 500))
     return
   }
   inFlight.delete(key)
@@ -723,7 +759,7 @@ async function postJson(url: string, payload: Record<string, unknown>): Promise<
     return {
       outcome: json.outcome,
       id: json.id,
-      conversionToken: typeof json.conversionToken === "string" ? json.conversionToken : null,
+      conversionToken: safeConversionToken(json.conversionToken),
     }
   }
   throw new Error(json.error || "Something went wrong. Please try again.")

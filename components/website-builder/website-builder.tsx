@@ -50,6 +50,7 @@ import {
 } from "./fields"
 import { AnalyticsSection } from "./analytics-section"
 import { TeamSection } from "./team-section"
+import { AppointmentPageSection, AppointmentFormSection } from "./appointment-section"
 
 export type BuilderSection =
   | "business"
@@ -77,7 +78,7 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: "services", label: "Services" },
   { key: "custom", label: "Custom pages" },
   { key: "nav", label: "Navigation" },
-  { key: "form", label: "Enquiry form" },
+  { key: "form", label: "Forms" },
   { key: "seo", label: "SEO" },
   { key: "media", label: "Media" },
   { key: "history", label: "History" },
@@ -558,6 +559,7 @@ function PagesSection({ doc, mutate }: SectionProps) {
       <SeoEditor value={p.home.seo} media={doc.media} onChange={(v) => mutate((d) => void (d.pages.home.seo = v))} />
 
       <TextItemsEditor title="Our process (inspection → quote → approval)" items={p.process} onChange={(v) => mutate((d) => void (d.pages.process = v))} />
+      <AppointmentPageSection doc={doc} mutate={mutate} />
 
       {(["about", "privacy"] as const).map((key) => (
         <div key={key} className="flex flex-col gap-4 border-t border-border pt-5">
@@ -945,6 +947,7 @@ function FormSection({ doc, mutate }: SectionProps) {
       <L10nField label="Success title" value={f.successTitle} onChange={(v) => mutate((d) => void (d.forms.enquiry.successTitle = v))} />
       <L10nField label="Success message" value={f.successBody} onChange={(v) => mutate((d) => void (d.forms.enquiry.successBody = v))} multiline />
       <L10nField label="What happens next" value={f.nextSteps} onChange={(v) => mutate((d) => void (d.forms.enquiry.nextSteps = v))} multiline />
+      <AppointmentFormSection doc={doc} mutate={mutate} />
     </>
   )
 }

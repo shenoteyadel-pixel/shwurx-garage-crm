@@ -187,22 +187,30 @@ export function buildInventory(
 
   core("contact", "/contact", p.contact.title)
 
-  // /appointment always renders the built-in booking form with bundled EN/AR copy.
-  // It is not driven by forms.enquiry (that config belongs to the contact enquiry form),
-  // so it is reported as always public and not editable here — never "Hidden".
   items.push({
     key: "page:appointment",
     type: "form",
-    title: { en: "Book an appointment", ar: "حجز موعد" },
+    title: p.appointment.title,
     path: "/appointment",
-    status: "published",
-    changed: false,
-    complete: { en: true, ar: true },
-    flags: [],
-    edit: {
-      kind: "none",
-      reason: "Built-in booking form, always public. Its text and fields are not editable in the Website Center yet.",
+    status: status(p.appointment.visible, !!lp?.appointment, !!lp?.appointment.visible),
+    changed: json(p.appointment) !== json(lp?.appointment) || json(draft.forms.appointment) !== json(live?.forms.appointment),
+    complete: allOf(p.appointment.title, p.appointment.body),
+    flags: draft.forms.appointment.enabled ? [] : ["Online requests disabled; contact alternative shown"],
+    edit: { kind: "builder", section: "pages", recordId: "appointment" },
+  })
+  items.push({
+    key: "form:appointment",
+    type: "form",
+    title: { en: "Appointment form", ar: "نموذج طلب الموعد" },
+    path: "/appointment",
+    status: status(p.appointment.visible && draft.forms.appointment.enabled, !!live, !!lp?.appointment.visible && !!live?.forms.appointment.enabled),
+    changed: json(draft.forms.appointment) !== json(live?.forms.appointment),
+    complete: {
+      en: !!draft.forms.appointment.copy.en.submit.trim(),
+      ar: !!draft.forms.appointment.copy.ar.submit.trim(),
     },
+    flags: [],
+    edit: { kind: "builder", section: "form", recordId: "appointment-form" },
   })
 
   items.push({

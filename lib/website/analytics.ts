@@ -1,3 +1,5 @@
+import { validConversionEventName } from "./tracking-contract"
+
 /**
  * Website analytics configuration (GA4 / GTM / Google Ads / Meta / Search
  * Console). Stored inside the versioned website document so it is edited only
@@ -95,8 +97,6 @@ export const ID_RULES = {
 
 const LABEL_RE = /^[A-Za-z0-9_-]{4,64}$/
 /** GA4 event-name rules; reserved prefixes are rejected by Google. */
-const EVENT_RE = /^[A-Za-z][A-Za-z0-9_]{0,39}$/
-const RESERVED_EVENT_PREFIX = /^(google_|ga_|firebase_)/i
 const HOST_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -154,9 +154,14 @@ export function sanitizeAnalytics(input: unknown, drops?: string[]): AnalyticsCo
     }
     const ev = str(events[k])
     if (ev) {
-      if (EVENT_RE.test(ev) && !RESERVED_EVENT_PREFIX.test(ev)) out.events[k] = ev
+      if (validConversionEventName(ev)) out.events[k] = ev
       else drops?.push(`analytics.events.${k}: "${ev.slice(0, 40)}" is not a valid event name`)
     }
+  }
+
+  if (new Set(CONVERSION_KEYS.map((key) => out.events[key])).size !== CONVERSION_KEYS.length) {
+    drops?.push("analytics.events: conversion names must be distinct")
+    out.events = { ...DEFAULT_EVENTS }
   }
 
   const days = Number(src.retentionDays)
@@ -232,6 +237,8 @@ export interface RuntimeTags {
   consentRequired: boolean
   retentionDays: number
   verificationToken: string | null
+  /** Visible slugs from the same published document; never from a draft. */
+  publicSlugs?: { brands: string[]; services: string[] }
   /** why third-party tags are off, for diagnostics */
   blockedBy: string[]
 }
@@ -261,26 +268,23 @@ export function normalizeRuntime(input: unknown): RuntimeTags {
   if (!isObj(input)) return structuredClone(OFF_RUNTIME)
   const t = input as Partial<RuntimeTags>
   const s = (v: unknown) => (typeof v === "string" && v ? v : null)
-  const rec = (v: unknown, base: Record<ConversionKey, string>) => {
-    const o = isObj(v) ? v : {}
-    const out = { ...base }
-    for (const k of CONVERSION_KEYS) if (typeof o[k] === "string") out[k] = o[k] as string
-    return out
-  }
+  const clean = sanitizeAnalytics({ ...t, owner: t.mode === "gtm" ? "gtm" : "gtag" })
   const mode = t.mode === "gtm" || t.mode === "ga4" ? t.mode : "none"
   return {
     firstParty: t.firstParty === true,
     thirdParty: t.thirdParty === true,
     mode,
-    gtmId: s(t.gtmId),
-    ga4Id: s(t.ga4Id),
-    adsId: s(t.adsId),
-    adsLabels: rec(t.adsLabels, DEFAULT_ANALYTICS.adsLabels),
-    events: rec(t.events, DEFAULT_EVENTS),
+    gtmId: clean.gtmId || null,
+    ga4Id: clean.ga4Id || null,
+    adsId: clean.adsId || null,
+    adsLabels: clean.adsLabels,
+    events: clean.events,
     metaPixelId: s(t.metaPixelId),
     consentRequired: t.consentRequired !== false,
     retentionDays: typeof t.retentionDays === "number" ? t.retentionDays : DEFAULT_ANALYTICS.retentionDays,
     verificationToken: s(t.verificationToken),
+    ...(isObj(t.publicSlugs) && Array.isArray(t.publicSlugs.brands) && Array.isArray(t.publicSlugs.services)
+      ? { publicSlugs: { brands: t.publicSlugs.brands.filter((s): s is string => typeof s === "string"), services: t.publicSlugs.services.filter((s): s is string => typeof s === "string") } } : {}),
     blockedBy: Array.isArray(t.blockedBy) ? t.blockedBy.filter((x): x is string => typeof x === "string") : [],
   }
 }
@@ -303,8 +307,10 @@ export function resolveRuntime(
   const tagsOn = blockedBy.length === 0
   const gtmId = tagsOn && cfg.owner === "gtm" && cfg.gtmId ? cfg.gtmId : null
   const direct = tagsOn && cfg.owner === "gtag"
-  const ga4Id = direct && cfg.ga4Id ? cfg.ga4Id : null
-  const adsId = direct && cfg.adsId ? cfg.adsId : null
+  // GTM receives data-only destinations; it remains the sole Google script owner.
+  const routed = !!gtmId || direct
+  const ga4Id = routed && cfg.ga4Id ? cfg.ga4Id : null
+  const adsId = routed && cfg.adsId ? cfg.adsId : null
   const metaPixelId = tagsOn && cfg.metaPixelId ? cfg.metaPixelId : null
   const mode = gtmId ? "gtm" : ga4Id || adsId ? "ga4" : "none"
   return {
@@ -345,14 +351,17 @@ export function analyticsIssues(cfg: AnalyticsConfig): AnalyticsIssue[] {
     issues.push({
       level: "warning",
       where,
-      message: "GTM owns all Google tags: the GA4/Ads IDs and labels here are references for the container and are not loaded directly (prevents double counting).",
+      message: "GTM owns all Google tags. Its schema2 tags read the published IDs, event names and labels from the event bus. Destination changes apply after a full page reload.",
     })
   }
   if (cfg.owner === "gtag" && cfg.adsId && !cfg.adsLabels.lead) {
     issues.push({ level: "warning", where, message: "Google Ads ID is set without a lead conversion label; form leads will not count in Ads." })
   }
   if (cfg.owner === "none" && CONVERSION_KEYS.some((k) => cfg.adsLabels[k])) {
-    issues.push({ level: "warning", where, message: "Ads conversion labels are only used when the tag owner is direct Google tag." })
+    issues.push({ level: "warning", where, message: "Ads conversion labels require a Google tag owner." })
+  }
+  if (CONVERSION_KEYS.some((key) => !validConversionEventName(cfg.events[key]))) {
+    issues.push({ level: "error", where, message: "Conversion event names must be valid, non-reserved names without contact data or collisions with standard website events." })
   }
   const names = CONVERSION_KEYS.map((k) => cfg.events[k])
   if (new Set(names).size !== names.length) {

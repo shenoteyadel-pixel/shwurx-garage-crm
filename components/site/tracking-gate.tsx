@@ -8,6 +8,8 @@ import {
   emitClick,
   flushPageView,
   notePageView,
+  installGtmConsentBridge,
+  pageContext,
   persistAttributionAfterConsent,
 } from "@/lib/site-track"
 import { effectiveConsent, subscribeConsent } from "@/lib/consent"
@@ -46,10 +48,18 @@ export function TrackingGate({ tags: input }: { tags?: RuntimeTags | null }) {
     window.__shwurxConsentNeeded = consentNeeded(tags)
     window.__shwurxTags = {
       events: tags.events,
+      ga4Id: tags.ga4Id,
       adsId: tags.adsId,
       adsLabels: tags.adsLabels,
       retentionDays: tags.retentionDays,
+      publicSlugs: tags.publicSlugs,
     }
+    window.__shwurxPublicRuntimeEligible = () => window.__shwurxTrack === true && window.__shwurxThirdParty === true && isPublicSitePath(window.location.pathname)
+    window.__shwurxSafePageSettings = () => {
+      const context = pageContext(window.location.pathname)
+      return { page_location: "https://www.swurxauto.com" + context.page_path, page_referrer: "", page_title: `SHWURX | ${context.page_type}` }
+    }
+    installGtmConsentBridge()
     // Meta-only setups count too: any loaded tag forces the private-route reload.
     if (thirdParty) window.__shwurxTagsLoaded = true
   }
@@ -92,6 +102,7 @@ export function TrackingGate({ tags: input }: { tags?: RuntimeTags | null }) {
       window.__shwurxConsentNeeded = undefined
       window.__shwurxThirdParty = false
       window.__shwurxTagMode = "none"
+      window.__shwurxGtmConsentReady = false
       // Wait for the router to commit the new URL, then enforce the boundary.
       window.setTimeout(() => {
         if (window.__shwurxTagsLoaded && !isPublicSitePath(window.location.pathname)) {

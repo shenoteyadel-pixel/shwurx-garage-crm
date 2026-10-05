@@ -27,6 +27,7 @@ import { listLiveArticles } from "@/lib/blog"
 import { illustrativeStripMembers, isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
 import { IllustrativeStrip } from "@/components/site/team-grid"
 import { buildMetadata, localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
+import { isAppointmentPath } from "@/lib/website/appointment"
 import type { HomeSection, HomeSectionKey, ServiceKind, WebsiteDocument, Lang } from "@/lib/website/types"
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -124,7 +125,7 @@ export default async function HomePage() {
   const ctas = [
     { cta: home.primaryCta, label: "hero primary", primary: true },
     { cta: home.secondaryCta, label: "hero secondary", primary: false },
-  ].filter((c) => pick(c.cta.label, lang) && c.cta.href)
+  ].filter((c) => pick(c.cta.label, lang) && c.cta.href && (doc.pages.appointment.visible || !isAppointmentPath(c.cta.href)))
 
   const sections: Partial<Record<HomeSectionKey, React.ReactNode>> = {
     hero: (

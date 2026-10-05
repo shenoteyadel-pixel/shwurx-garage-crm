@@ -4,6 +4,8 @@ import { useRef, useState, useTransition } from "react"
 import Image from "next/image"
 import { Card, Button, Input, Label, Textarea, Badge } from "@/components/ui"
 import { MarketingForm } from "@/components/marketing-form"
+import { WebsiteBuilder } from "@/components/website-builder/website-builder"
+import type { EditorState } from "@/lib/website/store"
 import { SITE_CONTENT_GROUPS, SITE_IMAGE_SLOTS } from "@/lib/site-content-fields"
 import type { Settings } from "@/lib/settings"
 import type { BlogPost } from "@/lib/blog"
@@ -29,7 +31,7 @@ import {
 } from "lucide-react"
 
 type Locale = "en" | "ar"
-type TabKey = "content" | "images" | "blog" | "tracking"
+type TabKey = "builder" | "content" | "images" | "blog" | "tracking"
 
 interface FieldMaps {
   en: Record<string, string>
@@ -45,7 +47,9 @@ export function WebsiteControlCenter({
   fieldDefaults,
   images,
   posts,
+  editorState,
 }: {
+  editorState: EditorState | null
   settings: Settings
   canManageWebsite: boolean
   canManageMarketing: boolean
@@ -61,6 +65,7 @@ export function WebsiteControlCenter({
   const tabs: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     ...(canManageWebsite
       ? ([
+          ...(editorState ? ([{ key: "builder", label: "Site builder", icon: Globe }] as const) : []),
           { key: "content", label: "Text & Content", icon: Type },
           { key: "images", label: "Images", icon: ImageIcon },
           { key: "blog", label: "Blog", icon: Newspaper },
@@ -95,6 +100,7 @@ export function WebsiteControlCenter({
         })}
       </div>
 
+      {tab === "builder" && editorState && <WebsiteBuilder state={editorState} />}
       {tab === "content" && (
         <ContentEditor fieldValues={fieldValues} fieldDefaults={fieldDefaults} canManage={canManageWebsite} />
       )}

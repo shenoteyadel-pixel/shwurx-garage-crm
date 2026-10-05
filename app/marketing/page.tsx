@@ -6,6 +6,7 @@ import { WebsiteControlCenter } from "@/components/website-control-center"
 import { getDictionary } from "@/lib/i18n/dictionaries"
 import { getSiteContentOverrides } from "@/lib/site-content"
 import { listAllPosts } from "@/lib/blog"
+import { getEditorState } from "@/lib/website/store"
 import { SITE_CONTENT_GROUPS, SITE_IMAGE_SLOTS, readPath } from "@/lib/site-content-fields"
 
 export const metadata = { title: "Website Control Center · SHWURX Auto Service Center" }
@@ -24,6 +25,7 @@ export default async function MarketingPage() {
   //  - website.manage  → edit site text, images and blog
   //  - marketing.view  → see tracking/analytics; marketing.manage → edit it
   const canManageWebsite = perms.has("website.manage")
+  const editorState = canManageWebsite ? await getEditorState() : null
   const canManageMarketing = perms.has("marketing.manage")
   const canViewMarketing = perms.has("marketing.view") || perms.has("marketing.manage")
 
@@ -51,7 +53,7 @@ export default async function MarketingPage() {
 
   return (
     <AppShell user={user}>
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-5xl">
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight">Website Control Center</h1>
           <p className="text-sm text-muted-foreground">
@@ -68,6 +70,7 @@ export default async function MarketingPage() {
           fieldDefaults={fieldDefaults}
           images={images}
           posts={posts}
+          editorState={editorState}
         />
       </div>
     </AppShell>

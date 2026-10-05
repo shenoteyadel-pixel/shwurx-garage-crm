@@ -394,8 +394,9 @@ export function applyBrandHeroSeed(doc: WebsiteDocument, clean: unknown) {
   const seeded = new Set(brandHeroMedia().map((m) => m.id))
   for (const b of doc.brands) {
     const raw = rawBySlug.get(b.slug)
-    const hasOwnHero = !!raw && typeof raw.heroImageId === "string" && raw.heroImageId.trim() !== ""
-    if (!hasOwnHero && seeded.has(brandHeroId(b.slug))) b.heroImageId = brandHeroId(b.slug)
+    // Only an absent field is seeded; an explicit value (including null or "") is the owner's choice.
+    const fieldPresent = !!raw && Object.prototype.hasOwnProperty.call(raw, "heroImageId")
+    if (!fieldPresent && seeded.has(brandHeroId(b.slug))) b.heroImageId = brandHeroId(b.slug)
   }
   doc.appliedSeeds.push(BRAND_HERO_SEED)
 }

@@ -1,0 +1,234 @@
+{
+  "appliedFromCommit": "b6a7fc1fa618df58d0878cccbe256c6d28182c40",
+  "applied": [
+    {
+      "file": "050_website_cms.sql",
+      "sha256": "898fc582702c03675b7029e57f051a723b3d706fe4b8f79bc6d5dd1d0948c49c",
+      "ms": 136,
+      "at": "2026-10-05T11:40:10.558Z"
+    },
+    {
+      "file": "060_appointment_submission_unique.sql",
+      "sha256": "f2d27d48d73c90079be51193e5d09bfd991f6d303159642ddd9ecb00c1cb8911",
+      "ms": 19,
+      "at": "2026-10-05T11:40:10.587Z"
+    },
+    {
+      "file": "071_article_drafts.sql",
+      "sha256": "f238bfac5642d0e34fcba32a41f28445911f1c122ef0004ea65bbb33947869a0",
+      "ms": 43,
+      "at": "2026-10-05T11:40:10.639Z"
+    }
+  ],
+  "preflight": {
+    "duplicateSubmissionGroups": [
+      {
+        "t": "leads",
+        "n": "0"
+      },
+      {
+        "t": "appointments",
+        "n": "0"
+      }
+    ],
+    "old071Present": false,
+    "metadataColumns": [
+      {
+        "table_name": "appointments",
+        "column_name": "metadata",
+        "data_type": "jsonb",
+        "is_nullable": "NO"
+      },
+      {
+        "table_name": "leads",
+        "column_name": "metadata",
+        "data_type": "jsonb",
+        "is_nullable": "NO"
+      }
+    ]
+  },
+  "tables": [
+    {
+      "relname": "appointments",
+      "rls": true,
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+    },
+    {
+      "relname": "article_drafts",
+      "rls": true,
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}"
+    },
+    {
+      "relname": "article_versions",
+      "rls": true,
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}"
+    },
+    {
+      "relname": "blog_posts",
+      "rls": true,
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+    },
+    {
+      "relname": "leads",
+      "rls": true,
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+    },
+    {
+      "relname": "website_documents",
+      "rls": true,
+      "acl": "{postgres=arwdDxtm/postgres,service_role=ar/postgres}"
+    },
+    {
+      "relname": "website_revisions",
+      "rls": true,
+      "acl": "{postgres=arwdDxtm/postgres,service_role=ar/postgres}"
+    }
+  ],
+  "sequences": [
+    {
+      "relname": "article_versions_id_seq",
+      "acl": "{postgres=rwU/postgres}"
+    },
+    {
+      "relname": "website_revisions_id_seq",
+      "acl": "{postgres=rwU/postgres,service_role=U/postgres}"
+    }
+  ],
+  "indexes": [
+    "CREATE UNIQUE INDEX appointments_submission_id_uniq ON public.appointments USING btree (((metadata ->> 'submission_id'::text))) WHERE (metadata ? 'submission_id'::text)",
+    "CREATE UNIQUE INDEX article_drafts_article_key_key ON public.article_drafts USING btree (article_key)",
+    "CREATE INDEX article_drafts_brand_idx ON public.article_drafts USING btree (brand_slug)",
+    "CREATE UNIQUE INDEX article_drafts_pkey ON public.article_drafts USING btree (id)",
+    "CREATE UNIQUE INDEX article_drafts_slug_key ON public.article_drafts USING btree (slug)",
+    "CREATE INDEX article_versions_draft_idx ON public.article_versions USING btree (draft_id)",
+    "CREATE INDEX article_versions_key_idx ON public.article_versions USING btree (article_key, created_at DESC)",
+    "CREATE UNIQUE INDEX article_versions_pkey ON public.article_versions USING btree (id)",
+    "CREATE UNIQUE INDEX blog_posts_article_key_key ON public.blog_posts USING btree (article_key) WHERE (article_key IS NOT NULL)",
+    "CREATE UNIQUE INDEX leads_submission_id_uniq ON public.leads USING btree (((metadata ->> 'submission_id'::text))) WHERE (metadata ? 'submission_id'::text)",
+    "CREATE UNIQUE INDEX website_documents_pkey ON public.website_documents USING btree (id)",
+    "CREATE UNIQUE INDEX website_revisions_pkey ON public.website_revisions USING btree (id)"
+  ],
+  "functions": [
+    {
+      "proname": "article_publish",
+      "args": "p_id uuid, p_expected_revision integer, p_post jsonb, p_actor text",
+      "result": "jsonb",
+      "secdef": true,
+      "cfg": "{\"search_path=pg_catalog, pg_temp\"}",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "defmd5": "f96858b9cfaa98d4681388e5f0d71afb"
+    },
+    {
+      "proname": "article_save",
+      "args": "p_id uuid, p_expected_revision integer, p_key text, p_slug text, p_brand text, p_workflow text, p_doc jsonb, p_action text, p_actor text",
+      "result": "article_drafts",
+      "secdef": true,
+      "cfg": "{\"search_path=pg_catalog, pg_temp\"}",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "defmd5": "a5e3ac61195121cc76efc7a85225d994"
+    },
+    {
+      "proname": "article_unpublish",
+      "args": "p_id uuid, p_expected_revision integer, p_actor text",
+      "result": "integer",
+      "secdef": true,
+      "cfg": "{\"search_path=pg_catalog, pg_temp\"}",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "defmd5": "7e2c2f812c020c56b9b57aba19cf5f8a"
+    },
+    {
+      "proname": "article_versions_immutable",
+      "args": "",
+      "result": "trigger",
+      "secdef": false,
+      "cfg": "{\"search_path=pg_catalog, pg_temp\"}",
+      "acl": "{postgres=X/postgres}",
+      "defmd5": "da7f6178b27066950d97e8649ef54860"
+    },
+    {
+      "proname": "submit_appointment",
+      "args": "p_name text, p_phone text, p_email text, p_vehicle_make text, p_vehicle_model text, p_vehicle_year text, p_plate_number text, p_service_interest text, p_preferred_date date, p_preferred_time text, p_notes text, p_source text, p_metadata jsonb",
+      "result": "json",
+      "secdef": true,
+      "cfg": "{\"search_path=\\\"\\\"\"}",
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "defmd5": "21889ae73f2c811ef8b8e94abb25214f"
+    },
+    {
+      "proname": "submit_lead",
+      "args": "p_name text, p_phone text, p_email text, p_message text, p_service_interest text, p_source text, p_metadata jsonb",
+      "result": "json",
+      "secdef": true,
+      "cfg": "{\"search_path=\\\"\\\"\"}",
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "defmd5": "8cc7a6bff90adab43ce4df4978610d66"
+    },
+    {
+      "proname": "website_publish",
+      "args": "p_expected_version integer, p_user uuid, p_user_name text, p_note text",
+      "result": "json",
+      "secdef": true,
+      "cfg": "{\"search_path=\\\"\\\"\"}",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "defmd5": "10b2a2ee7801821685dbb9be69a50b4f"
+    },
+    {
+      "proname": "website_save_draft",
+      "args": "p_expected_version integer, p_draft jsonb, p_user uuid, p_user_name text",
+      "result": "json",
+      "secdef": true,
+      "cfg": "{\"search_path=\\\"\\\"\"}",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "defmd5": "8f0cc26b8463db9b7c1308da1852ddcc"
+    }
+  ],
+  "triggers": [
+    {
+      "tbl": "leads",
+      "tgname": "leads_touch"
+    },
+    {
+      "tbl": "appointments",
+      "tgname": "appointments_touch"
+    },
+    {
+      "tbl": "appointments",
+      "tgname": "trg_appointments_logistics"
+    },
+    {
+      "tbl": "article_versions",
+      "tgname": "article_versions_no_update"
+    },
+    {
+      "tbl": "article_versions",
+      "tgname": "article_versions_no_truncate"
+    }
+  ],
+  "blogPostsColumns": [
+    "id",
+    "slug",
+    "title",
+    "excerpt",
+    "cover_url",
+    "body",
+    "status",
+    "published_at",
+    "created_at",
+    "updated_at",
+    "author",
+    "article_key",
+    "content",
+    "workflow",
+    "brand_slug",
+    "service_slugs",
+    "related_keys",
+    "sources",
+    "brief",
+    "cover_illustrative",
+    "reviewed_by",
+    "reviewed_at",
+    "revision",
+    "locale",
+    "translation_group"
+  ]
+}

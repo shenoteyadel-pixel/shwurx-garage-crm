@@ -99,7 +99,7 @@ export default async function HomePage() {
   const t = dict.home
   const home = doc.pages.home
   const heroMedia = publicMedia(doc, home.heroImageId)
-  const heroImg = heroMedia?.url ?? resolveImage(doc.images, "home.hero", "/site/hero-porsche.png")
+  const heroImg = heroMedia?.url ?? null
   const heroAlt = (heroMedia && pick(heroMedia.alt, lang)) || "Porsche parked in the SHWURX Auto Service Center workshop"
   const aboutMedia = publicMedia(doc, doc.pages.about.imageId)
   const aboutImg = aboutMedia?.url ?? resolveImage(doc.images, "home.about", "/site/about-tech.png")
@@ -131,8 +131,9 @@ export default async function HomePage() {
   const sections: Partial<Record<HomeSectionKey, React.ReactNode>> = {
     hero: (
       <section key="hero" className="relative isolate overflow-hidden border-b border-border bg-background">
+        {heroImg && (
         <div className="absolute inset-y-0 right-0 z-0 hidden w-[62%] lg:block rtl:left-0 rtl:right-auto">
-          <Image src={heroImg || "/placeholder.svg"} alt={heroAlt} fill priority sizes="62vw" className="object-cover object-center" />
+          <Image src={heroImg} alt={heroAlt} fill priority sizes="62vw" className="object-cover object-center" />
           <div className="absolute inset-0 bg-gradient-to-r from-background via-background/45 to-transparent rtl:bg-gradient-to-l" />
           <div className="absolute inset-y-0 right-8 hidden flex-col justify-center gap-2 text-right xl:flex" aria-hidden="true">
             {WALL_WORDS.map((w) => (
@@ -145,6 +146,7 @@ export default async function HomePage() {
             </p>
           )}
         </div>
+        )}
 
         <div className="relative z-10 mx-auto max-w-7xl px-4 lg:px-8">
           <div className="grid items-center gap-8 lg:grid-cols-2">
@@ -193,15 +195,17 @@ export default async function HomePage() {
               )}
             </div>
 
-            <div className="relative -mx-4 h-64 sm:h-80 lg:hidden">
-              <Image src={heroImg || "/placeholder.svg"} alt={heroAlt} fill priority sizes="100vw" className="object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
-              {heroCaption && (
-                <p className="absolute bottom-2 left-4 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground rtl:left-auto rtl:right-4">
-                  {heroCaption}
-                </p>
-              )}
-            </div>
+            {heroImg && (
+              <div className="relative -mx-4 h-64 sm:h-80 lg:hidden">
+                <Image src={heroImg} alt={heroAlt} fill priority sizes="100vw" className="object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+                {heroCaption && (
+                  <p className="absolute bottom-2 left-4 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground rtl:left-auto rtl:right-4">
+                    {heroCaption}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </section>

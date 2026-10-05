@@ -97,7 +97,9 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
   const services = article.serviceSlugs
     .map((s) => doc.services.find((x) => x.slug === s && x.visible))
     .filter((s): s is NonNullable<typeof s> => !!s)
-  const related = relatedArticles(article, await listLiveArticles(lang), lang)
+  const liveArticles = await listLiveArticles(lang)
+  const related = relatedArticles(article, liveArticles, lang)
+  const publishedArticleHrefs = liveArticles.map((a) => articleHref(a.slug, lang))
   const relatedBrand = (s: string | null) => (s ? pick(doc.brands.find((b) => b.slug === s)?.name, lang) : "")
   const enquireHref = brand ? `${localePath(lang, `/brands/${brand.slug}`)}#enquire` : localePath(lang, "/contact")
   const updatedDiffers = article.updatedAt && article.publishedAt && article.updatedAt.slice(0, 10) !== article.publishedAt.slice(0, 10)
@@ -158,7 +160,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
         </figure>
       )}
 
-      <ArticleBody body={c.body} />
+      <ArticleBody body={c.body} publishedArticleHrefs={publishedArticleHrefs} siteUrl={SITE_URL} />
 
       <aside className="mt-12 rounded-2xl border border-border bg-card p-6" aria-labelledby="article-cta">
         <h2 id="article-cta" className="text-xl font-semibold">

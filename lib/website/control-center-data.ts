@@ -2,6 +2,7 @@ import "server-only"
 import { getSettings, type Settings } from "@/lib/settings"
 import { getSiteContentOverrides } from "@/lib/site-content"
 import { listAllArticles, type Article } from "@/lib/blog"
+import { localeIssues } from "@/lib/article-model"
 import { getEditorState, readDocumentRow, readRevision, type EditorState } from "@/lib/website/store"
 import { effectiveAnalytics } from "@/lib/website/analytics-server"
 import { sanitizeAnalytics, type AnalyticsConfig } from "@/lib/website/analytics"
@@ -117,10 +118,17 @@ async function loadWebsiteSection(): Promise<WebsiteSectionDTO> {
           posts.map((p) => ({
             id: p.id,
             slug: p.slug,
-            title: p.content.en.title || p.content.ar.title || p.slug,
+            title: p.content.en.title,
+            titleAr: p.content.ar.title,
             status: p.status,
             excerpt: p.content.en.excerpt || p.content.ar.excerpt || null,
             coverUrl: p.coverUrl,
+            draftAhead: p.draftAhead,
+            published: p.published,
+            complete: {
+              en: localeIssues(p.content.en).length === 0,
+              ar: localeIssues(p.content.ar).length === 0,
+            },
           })),
         )
       : [],

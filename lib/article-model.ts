@@ -43,6 +43,18 @@ export interface ArticleBrief {
   factualCaution: string
 }
 
+/** Live metadata for the private editor, read from the actual public snapshot. */
+export interface PublishedArticleSummary {
+  slug: string
+  brandSlug: string | null
+  title: Record<ArticleLang, string>
+  excerpt: Record<ArticleLang, string>
+  coverUrl: string | null
+  locales: ArticleLang[]
+  publishedAt: string | null
+  revision: number
+}
+
 export interface Article {
   id: string
   key: string | null
@@ -65,6 +77,9 @@ export interface Article {
   revision: number
   /** True when the row predates the bilingual model (content = {}). */
   legacy: boolean
+  /** Private editor metadata; never serialized into a draft document or public snapshot. */
+  draftAhead?: boolean
+  published?: PublishedArticleSummary | null
 }
 
 export const emptyCopy = (): LocaleCopy => ({

@@ -5,11 +5,10 @@ import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { Card, Button, Input, Label, Textarea, Badge } from "@/components/ui"
 import { uploadWebsiteImage } from "@/lib/actions-website"
-import { saveArticle, deleteArticle, importEditorialBriefs, importEditorialArticles, type ArticleIntent } from "@/lib/actions-articles"
+import { saveArticle, importEditorialBriefs, importEditorialArticles, type ArticleIntent } from "@/lib/actions-articles"
 import {
   emptyCopy,
   localeIssues,
-  liveLocales,
   publishIssues,
   type Article,
   type ArticleLang,
@@ -161,7 +160,7 @@ export function ArticleManager({ posts, taxonomy, canManage, openPostId }: Props
       ) : (
         <div className="flex flex-col gap-2">
           {visible.map((p) => {
-            const live = liveLocales(p)
+            const live = p.published?.locales ?? []
             const title = p.content.en.title || p.content.ar.title || p.slug
             return (
               <Card key={p.id} className="flex items-center justify-between gap-4 p-4">
@@ -171,22 +170,27 @@ export function ArticleManager({ posts, taxonomy, canManage, openPostId }: Props
                     <Badge>{WORKFLOW_LABEL[p.workflow]}</Badge>
                     {p.status === "published" && (
                       <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-500">
-                        Live {live.length ? live.map((l) => l.toUpperCase()).join(" + ") : "(no complete locale)"}
+                        Live {live.length ? live.map((l) => l.toUpperCase()).join(" + ") : "(snapshot unavailable)"}
                       </Badge>
                     )}
+                    {p.draftAhead && <Badge>Unpublished changes</Badge>}
                     {p.legacy && <Badge>Legacy · EN only</Badge>}
                   </div>
                   <p className="truncate text-xs text-muted-foreground">
-                    /blog/{p.slug}
+                    Draft: /blog/{p.slug}
                     {p.brandSlug ? ` · ${brandName.get(p.brandSlug) ?? p.brandSlug}` : ""}
-                    {" · "}EN {p.content.en.ready ? "ready" : "not ready"} · AR {p.content.ar.ready ? "ready" : "not ready"}
+                    {" · "}Draft EN {localeIssues(p.content.en).length === 0 ? "ready" : "not ready"} · AR {localeIssues(p.content.ar).length === 0 ? "ready" : "not ready"}
                   </p>
+                  {p.published && (
+                    <p className="truncate text-xs text-muted-foreground">
+                      Live: /blog/{p.published.slug} · {p.published.title.en || p.published.title.ar}
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button type="button" variant="secondary" onClick={() => setEditing(p)}>
                     <Pencil className="h-4 w-4" /> {canManage ? "Edit" : "View"}
                   </Button>
-                  {canManage && p.status !== "published" && <DeleteArticleButton id={p.id} />}
                 </div>
               </Card>
             )
@@ -256,41 +260,6 @@ function ImportBriefsButton() {
   )
 }
 
-function DeleteArticleButton({ id }: { id: string }) {
-  const router = useRouter()
-  const [pending, start] = useTransition()
-  const [confirm, setConfirm] = useState(false)
-  if (!confirm) {
-    return (
-      <Button type="button" variant="ghost" onClick={() => setConfirm(true)} aria-label="Delete article">
-        <Trash2 className="h-4 w-4" />
-      </Button>
-    )
-  }
-  return (
-    <div className="flex items-center gap-1.5">
-      <Button
-        type="button"
-        variant="danger"
-        disabled={pending}
-        onClick={() =>
-          start(async () => {
-            const r = await deleteArticle(id)
-            if (!r.ok) window.alert(r.error)
-            setConfirm(false)
-            router.refresh()
-          })
-        }
-      >
-        {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
-      </Button>
-      <Button type="button" variant="ghost" onClick={() => setConfirm(false)}>
-        Cancel
-      </Button>
-    </div>
-  )
-}
-
 /* --------------------------------- Editor --------------------------------- */
 
 function ArticleEditor({
@@ -355,7 +324,8 @@ function ArticleEditor({
           </h2>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge>{WORKFLOW_LABEL[a.workflow]}</Badge>
-            <span>{a.status === "published" ? "Published" : "Not published"}</span>
+            <span>{a.status === "published" ? "Live version exists" : "Not published"}</span>
+            {a.draftAhead && <Badge>Unpublished changes</Badge>}
             {a.reviewedBy && a.reviewedAt && (
               <span>
                 · Reviewed by {a.reviewedBy} on {new Date(a.reviewedAt).toLocaleDateString()}
@@ -363,6 +333,12 @@ function ArticleEditor({
             )}
             {a.key && <span>· {a.key}</span>}
           </div>
+          {a.published && (
+            <p className="text-xs text-muted-foreground">
+              Live: /blog/{a.published.slug} · {a.published.locales.map((l) => l.toUpperCase()).join(" + ")}
+              {" · "}{a.published.title.en || a.published.title.ar}
+            </p>
+          )}
         </div>
         <Button type="button" variant="ghost" onClick={onClose}>
           Back to list
@@ -553,7 +529,7 @@ function ArticleEditor({
 
       {canManage && (
         <div className="flex flex-col gap-3">
-          {a.status !== "published" && issuesIfPublished.length > 0 && (
+          {issuesIfPublished.length > 0 && (
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer">Before this can be published ({issuesIfPublished.length})</summary>
               <ul className="mt-2 list-disc ps-5 leading-relaxed">
@@ -566,7 +542,7 @@ function ArticleEditor({
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" disabled={pending} onClick={() => run("save")}>
               {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {a.status === "published" ? "Save live changes" : "Save draft"}
+              Save draft
             </Button>
             {(a.workflow === "brief" || a.workflow === "draft") && (
               <Button type="button" variant="secondary" disabled={pending} onClick={() => run("save", { workflow: "in_review" })}>
@@ -578,9 +554,9 @@ function ArticleEditor({
                 Approve
               </Button>
             )}
-            {a.status !== "published" && a.workflow === "approved" && (
+            {a.workflow === "approved" && (
               <Button type="button" variant="success" disabled={pending || issuesIfPublished.length > 0} onClick={() => run("publish")}>
-                Publish
+                {a.status === "published" ? "Publish changes" : "Publish"}
               </Button>
             )}
             {a.status === "published" && (

@@ -1,7 +1,7 @@
 import "server-only"
 import { createServiceClient } from "@/lib/supabase/server"
 import { rowToArticle, isLocaleLive, type Article, type ArticleLang } from "@/lib/article-model"
-import { draftRowToArticle, type DraftRow } from "@/lib/article-drafts"
+import { draftRowToArticle, withPublishedSnapshot, type DraftRow } from "@/lib/article-drafts"
 
 export type { Article } from "@/lib/article-model"
 
@@ -39,6 +39,17 @@ export async function getPublishedArticle(slug: string): Promise<Article | null>
 /** Every private draft (briefs, drafts, approved, live) for the control center editor. */
 export async function listAllArticles(): Promise<Article[]> {
   const svc = createServiceClient()
-  const { data } = await svc.from("article_drafts").select("*").order("updated_at", { ascending: false })
-  return ((data ?? []) as DraftRow[]).map(draftRowToArticle)
+  const [drafts, posts] = await Promise.all([
+    svc.from("article_drafts").select("*").order("updated_at", { ascending: false }),
+    svc.from("blog_posts").select("*").eq("status", "published"),
+  ])
+  if (drafts.error) throw drafts.error
+  if (posts.error) throw posts.error
+  const live = new Map((posts.data ?? []).map((row) => {
+    const article = rowToArticle(row as Record<string, unknown>)
+    return [article.key, article] as const
+  }))
+  return ((drafts.data ?? []) as DraftRow[]).map((row) =>
+    withPublishedSnapshot(draftRowToArticle(row), live.get(row.article_key) ?? null),
+  )
 }

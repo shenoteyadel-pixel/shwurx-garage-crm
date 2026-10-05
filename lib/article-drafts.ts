@@ -2,6 +2,7 @@ import {
   articleToRow,
   emptyCopy,
   localeIssues,
+  liveLocales,
   rowToArticle,
   type Article,
   type ArticleLang,
@@ -51,6 +52,23 @@ export function draftRowToArticle(row: DraftRow): DraftArticle {
   })
   // Draft docs are always bilingual; never treat a missing locale as a legacy post.
   return { ...a, legacy: false, draftAhead: live && row.published_revision !== row.revision }
+}
+
+/** Keep editable copy separate from what visitors can currently read. */
+export function withPublishedSnapshot(draft: DraftArticle, live: Article | null): DraftArticle {
+  return {
+    ...draft,
+    published: live?.status === "published" ? {
+      slug: live.slug,
+      brandSlug: live.brandSlug,
+      title: { en: live.content.en.title, ar: live.content.ar.title },
+      excerpt: { en: live.content.en.excerpt, ar: live.content.ar.excerpt },
+      coverUrl: live.coverUrl,
+      locales: liveLocales(live),
+      publishedAt: live.publishedAt,
+      revision: live.revision,
+    } : null,
+  }
 }
 
 /**

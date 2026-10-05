@@ -1,4 +1,5 @@
 import type { L10n, SeoFields, WebsiteDocument } from "./types"
+import type { PublishedArticleSummary } from "@/lib/article-model"
 import { isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic, publicTeamMembers } from "./normalize"
 
 /**
@@ -41,6 +42,10 @@ export interface InventoryPost {
   status: string
   excerpt: string | null
   coverUrl: string | null
+  titleAr?: string
+  complete?: { en: boolean; ar: boolean }
+  draftAhead?: boolean
+  published?: PublishedArticleSummary | null
 }
 
 const filled = (v: string | undefined) => !!v && v.trim().length > 0
@@ -212,18 +217,23 @@ export function buildInventory(
     edit: { kind: "blog" },
   })
   for (const post of posts) {
+    const published = post.status === "published" ? post.published : null
     const flags: string[] = []
-    if (!filled(post.excerpt ?? "")) flags.push("No excerpt (used as description)")
-    if (!post.coverUrl) flags.push("No cover image")
+    const excerpt = published ? published.excerpt.en || published.excerpt.ar : post.excerpt
+    if (!filled(excerpt ?? "")) flags.push("No excerpt (used as description)")
+    if (!(published ? published.coverUrl : post.coverUrl)) flags.push("No cover image")
+    if (post.status === "published" && !published) flags.push("Live snapshot metadata unavailable")
     items.push({
       key: `post:${post.id}`,
       type: "blog",
-      title: { en: post.title, ar: "" },
-      path: `/blog/${post.slug}`,
+      title: published?.title ?? { en: post.title, ar: post.titleAr ?? "" },
+      path: `/blog/${published?.slug ?? post.slug}`,
       status: post.status === "published" ? "published" : "draft",
-      changed: false,
-      // Blog posts are written in one language.
-      complete: { en: filled(post.title), ar: filled(post.title) },
+      changed: post.draftAhead === true,
+      complete: published
+        ? { en: published.locales.includes("en"), ar: published.locales.includes("ar") }
+        : post.status === "published" ? { en: false, ar: false }
+        : post.complete ?? { en: filled(post.title), ar: filled(post.titleAr) },
       flags,
       edit: { kind: "blog", postId: post.id },
     })

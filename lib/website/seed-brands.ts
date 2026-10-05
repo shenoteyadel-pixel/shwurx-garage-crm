@@ -364,7 +364,7 @@ const SEEDS: BrandSeed[] = [
         "Does a new battery need coding on my Audi?",
         "هل تحتاج البطارية الجديدة إلى ترميز في سيارتي أودي؟",
         "On many Audi models the battery is registered to the energy management system. We check this when replacing it.",
-        "في كثير من موديلات أودي تُسجّل البطارية في نظام إدارة الطاقة. نتحقق من ذلك ��ند الاستبدال.",
+        "في كثير من موديلات أودي تُسجّل البطارية في نظام إدارة الطاقة. نتحقق من ذلك عند الاستبدال.",
       ),
       f(
         "Can you repair a dented RS 6 panel?",
@@ -453,7 +453,7 @@ const SEEDS: BrandSeed[] = [
         "Hydraulic suspension",
         "التعليق الهيدروليكي",
         "Linked hydraulic suspension on models such as the 720S is checked for pressure, leaks and accumulator condition.",
-        "نفحص التعليق الهيدروليكي المترابط في موديلات مثل 720S من حيث الض��ط والتسريب وحالة المراكم.",
+        "نفحص التعليق الهيدروليكي المترابط في موديلات مثل 720S من حيث الضغط والتسريب وحالة المراكم.",
       ),
       k(
         "Twin-turbo V8 heat",

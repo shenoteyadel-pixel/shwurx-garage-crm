@@ -15,7 +15,7 @@ import {
   type DefaultCover,
   type EditorialArticle,
 } from "@/lib/article-model"
-import { articleToDoc, draftRowToArticle, fillMissing, publicSnapshot, type DraftRow } from "@/lib/article-drafts"
+import { articleToDoc, draftRowToArticle, fillMissing, publicSnapshot, withPublishedSnapshot, type DraftRow } from "@/lib/article-drafts"
 import matrix from "@/data/editorial/matrix-75.json"
 import editorial from "@/data/editorial/articles-75.json"
 import brandHeroes from "@/data/editorial/brand-heroes-v2.json"
@@ -42,11 +42,15 @@ const CONFLICT = "Someone else changed this article since you opened it. Reload 
 const reviewedFingerprint = (a: Article) =>
   JSON.stringify([a.slug, a.content, a.sources, a.brandSlug, a.serviceSlugs, a.relatedKeys, a.coverUrl, a.coverIllustrative])
 
-function revalidateArticle(slug: string, brandSlug: string | null) {
-  for (const p of ["/blog", `/blog/${slug}`, "/ar/blog", `/ar/blog/${slug}`]) revalidatePath(p)
-  if (brandSlug) revalidatePath(`/brands/${brandSlug}`)
-  revalidatePath("/sitemap.xml")
-  revalidatePath("/marketing")
+function revalidateArticle(article: Article, previous: Article["published"]) {
+  const paths = new Set(["/blog", "/ar/blog", "/sitemap.xml", "/marketing"])
+  for (const slug of [article.slug, previous?.slug]) {
+    if (slug) for (const prefix of ["", "/ar"]) paths.add(`${prefix}/blog/${slug}`)
+  }
+  for (const brand of [article.brandSlug, previous?.brandSlug]) {
+    if (brand) for (const prefix of ["", "/ar"]) paths.add(`${prefix}/brands/${brand}`)
+  }
+  for (const path of paths) revalidatePath(path)
 }
 
 function rpcError(error: NonNullable<PgError>, slug?: string): SaveArticleResult {
@@ -59,8 +63,17 @@ function rpcError(error: NonNullable<PgError>, slug?: string): SaveArticleResult
 }
 
 async function readDraft(svc: Svc, id: string) {
-  const { data } = await svc.from("article_drafts").select("*").eq("id", id).maybeSingle()
-  return data ? draftRowToArticle(data as DraftRow) : null
+  const { data, error } = await svc.from("article_drafts").select("*").eq("id", id).maybeSingle()
+  if (error) throw error
+  return data ? editorArticle(svc, data as DraftRow) : null
+}
+
+async function editorArticle(svc: Svc, row: DraftRow) {
+  const draft = draftRowToArticle(row)
+  if (row.published_revision == null) return withPublishedSnapshot(draft, null)
+  const { data, error } = await svc.from("blog_posts").select("*").eq("article_key", row.article_key).eq("status", "published").maybeSingle()
+  if (error) throw error
+  return withPublishedSnapshot(draft, data ? rowToArticle(data as Record<string, unknown>) : null)
 }
 
 async function saveDraft(
@@ -125,7 +138,7 @@ export async function saveArticle(input: Article, expectedRevision: number | nul
     const saved = await readDraft(svc, existing.id)
     if (!saved) return { ok: false, error: "Article disappeared after the update. Reload the list." }
     await logAction(ctx, intent === "publish" ? "article_published" : "article_unpublished", "article_draft", saved.id)
-    revalidateArticle(saved.slug, saved.brandSlug)
+    revalidateArticle(saved, existing.published)
     return { ok: true, article: saved }
   }
 
@@ -151,7 +164,7 @@ export async function saveArticle(input: Article, expectedRevision: number | nul
   if (error) return rpcError(error, slug)
   if (!data) return { ok: false, conflict: true, error: CONFLICT }
 
-  const saved = draftRowToArticle(data)
+  const saved = await editorArticle(svc, data)
   await logAction(ctx, intent === "approve" ? "article_approved" : existing ? "article_updated" : "article_created", "article_draft", saved.id)
   revalidatePath("/marketing")
   return { ok: true, article: saved }

@@ -6,8 +6,6 @@ import { Sun, Moon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/lib/i18n/provider"
 import type { Locale } from "@/lib/i18n/config"
-import { usePathname } from "next/navigation"
-import { switchLocalePath } from "@/lib/website/paths"
 
 function Segment({
   active,
@@ -48,14 +46,9 @@ function Group({ children }: { children: React.ReactNode }) {
 
 export function LanguageToggle() {
   const { lang, setLang, dict } = useI18n()
-  const pathname = usePathname()
-  // On website pages the language lives in the URL (/ar/...), so switch by
-  // navigating to the equivalent page; elsewhere keep the cookie behaviour.
-  const set = (l: Locale) => () => {
-    const target = switchLocalePath(pathname, l)
-    setLang(l)
-    if (target && target !== pathname) window.location.assign(target + window.location.search)
-  }
+  // The provider navigates to the other-language URL on website pages and
+  // uses the cookie only inside the CRM.
+  const set = (l: Locale) => () => setLang(l)
   return (
     <Group>
       <Segment active={lang === "en"} onClick={set("en")} label={dict.controls.english}>

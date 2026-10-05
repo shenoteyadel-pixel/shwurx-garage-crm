@@ -5,7 +5,8 @@ import { cookies } from "next/headers"
 import { put } from "@vercel/blob"
 import { createServiceClient } from "@/lib/supabase/server"
 import { requirePermission, logAction } from "@/lib/rbac/context"
-import { normalizeDocument, validateDocument, type ValidationIssue } from "@/lib/website/normalize"
+import { normalizeDocument, parseDocument, validateDocument, type ValidationIssue } from "@/lib/website/normalize"
+import { canMutateCms, PREVIEW_MUTATION_MESSAGE } from "@/lib/website/env"
 import { legacyDocument, readDocumentRow, PREVIEW_COOKIE } from "@/lib/website/store"
 import type { MediaAsset, WebsiteDocument } from "@/lib/website/types"
 
@@ -17,14 +18,36 @@ function refreshPublic() {
   revalidatePath("/", "layout")
 }
 
+/** Permission first, then the deployment policy; only then any data is read. */
 async function guard() {
   const ctx = await requirePermission("website.manage")
+  if (!canMutateCms()) throw new CmsBlocked()
   const { available, row } = await readDocumentRow()
   return { ctx, available, row }
 }
 
+class CmsBlocked extends Error {}
+
+/** Runs a mutation, turning the preview block into a normal error result. */
+async function mutation<T>(fn: () => Promise<Result<T>>): Promise<Result<T>> {
+  try {
+    return await fn()
+  } catch (e) {
+    if (e instanceof CmsBlocked) return { ok: false, error: PREVIEW_MUTATION_MESSAGE }
+    throw e
+  }
+}
+
+function validVersion(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v > 0
+}
+const BAD_VERSION = "Missing draft version. Reload the Website Center and try again."
+
 /** One-time import: shipped defaults + existing site_content overrides become draft v1. */
 export async function initialiseWebsite(): Promise<Result<{ version: number }>> {
+  return mutation(initialiseInner)
+}
+async function initialiseInner(): Promise<Result<{ version: number }>> {
   const { ctx, available, row } = await guard()
   if (!available) return { ok: false, error: UNAVAILABLE }
   if (row) return { ok: false, error: "Already initialised." }
@@ -51,10 +74,16 @@ export async function initialiseWebsite(): Promise<Result<{ version: number }>> 
 }
 
 export async function saveWebsiteDraft(input: unknown, expectedVersion: number): Promise<Result<{ version: number }>> {
+  return mutation(() => saveInner(input, expectedVersion))
+}
+async function saveInner(input: unknown, expectedVersion: number): Promise<Result<{ version: number }>> {
   const { ctx, available, row } = await guard()
   if (!available) return { ok: false, error: UNAVAILABLE }
   if (!row) return { ok: false, error: "Initialise the website first." }
-  const doc = normalizeDocument(input)
+  if (!validVersion(expectedVersion)) return { ok: false, error: BAD_VERSION, currentVersion: row.draft_version }
+  const shape = parseDocument(input)
+  if (!shape.ok) return { ok: false, error: "The draft has invalid structure.", issues: shape.issues }
+  const doc = shape.doc
   const svc = createServiceClient()
   const { data, error } = await svc.rpc("website_save_draft", {
     p_expected_version: expectedVersion,
@@ -75,10 +104,24 @@ export async function saveWebsiteDraft(input: unknown, expectedVersion: number):
   return { ok: true, version: res.version! }
 }
 
-export async function publishWebsite(expectedVersion: number, note: string): Promise<Result<{ revisionId: number }>> {
+export async function publishWebsite(
+  expectedVersion: number,
+  note: string,
+): Promise<Result<{ revisionId: number; version: number }>> {
+  return mutation(() => publishInner(expectedVersion, note))
+}
+async function publishInner(expectedVersion: number, note: string): Promise<Result<{ revisionId: number; version: number }>> {
   const { ctx, available, row } = await guard()
   if (!available) return { ok: false, error: UNAVAILABLE }
   if (!row) return { ok: false, error: "Initialise the website first." }
+  if (!validVersion(expectedVersion)) return { ok: false, error: BAD_VERSION, currentVersion: row.draft_version }
+  if (expectedVersion !== row.draft_version) {
+    return {
+      ok: false,
+      error: "The draft changed since you loaded it. Reload, review, then publish.",
+      currentVersion: row.draft_version,
+    }
+  }
   const issues = validateDocument(normalizeDocument(row.draft))
   if (issues.some((i) => i.level === "error")) {
     return { ok: false, error: "Fix the errors before publishing.", issues }
@@ -101,23 +144,29 @@ export async function publishWebsite(expectedVersion: number, note: string): Pro
   }
   await logAction(ctx, "website.publish", "website", String(res.revision_id), { version: expectedVersion, note })
   refreshPublic()
-  return { ok: true, revisionId: res.revision_id! }
+  return { ok: true, revisionId: res.revision_id!, version: expectedVersion }
 }
 
 /** Copies a revision into the draft. It goes live only after the next publish. */
 export async function restoreRevisionToDraft(revisionId: number, expectedVersion: number): Promise<Result<{ version: number }>> {
-  const { ctx, available } = await guard()
-  if (!available) return { ok: false, error: UNAVAILABLE }
-  const svc = createServiceClient()
-  const { data } = await svc.from("website_revisions").select("document").eq("id", revisionId).maybeSingle()
-  if (!data) return { ok: false, error: "Revision not found." }
-  const res = await saveWebsiteDraft(data.document, expectedVersion)
-  if (res.ok) await logAction(ctx, "website.restore_revision", "website", String(revisionId))
-  return res
+  return mutation(async () => {
+    const { ctx, available } = await guard()
+    if (!available) return { ok: false, error: UNAVAILABLE }
+    if (!validVersion(revisionId)) return { ok: false, error: "Revision not found." }
+    const svc = createServiceClient()
+    const { data } = await svc.from("website_revisions").select("document").eq("id", revisionId).maybeSingle()
+    if (!data) return { ok: false, error: "Revision not found." }
+    const res = await saveInner(data.document, expectedVersion)
+    if (res.ok) await logAction(ctx, "website.restore_revision", "website", String(revisionId), { version: res.version })
+    return res
+  })
 }
 
 /** Instant rollback: point the live site at an earlier published revision. */
 export async function rollbackToRevision(revisionId: number): Promise<Result> {
+  return mutation(() => rollbackInner(revisionId))
+}
+async function rollbackInner(revisionId: number): Promise<Result> {
   const { ctx, available } = await guard()
   if (!available) return { ok: false, error: UNAVAILABLE }
   const svc = createServiceClient()
@@ -138,13 +187,32 @@ export async function setWebsitePreview(mode: "draft" | `rev:${number}` | "off")
   return { ok: true }
 }
 
+/**
+ * Read-only, so it is allowed on previews. Contains the draft, the live
+ * published document and the full revision history so it can be restored.
+ */
 export async function exportWebsiteBackup(): Promise<Result<{ json: string }>> {
-  const { ctx, available, row } = await guard()
+  const ctx = await requirePermission("website.manage")
+  const { available, row } = await readDocumentRow()
+  let revisions: unknown[] = []
+  let published: unknown = null
+  if (available && row) {
+    const svc = createServiceClient()
+    const { data } = await svc
+      .from("website_revisions")
+      .select("id, kind, draft_version, note, created_at, created_by_name, document")
+      .order("id", { ascending: true })
+    revisions = data ?? []
+    published = (data ?? []).find((r) => r.id === row.published_revision_id)?.document ?? null
+  }
   const payload = {
+    format: "shwurx-website-backup/v2",
     exportedAt: new Date().toISOString(),
     draftVersion: row?.draft_version ?? 0,
     publishedRevisionId: row?.published_revision_id ?? null,
     draft: row ? normalizeDocument(row.draft) : await legacyDocument(),
+    published,
+    revisions,
     cmsAvailable: available,
   }
   await logAction(ctx, "website.export", "website", "1")
@@ -164,6 +232,7 @@ const IMAGE_TYPES: Record<string, string> = {
  */
 export async function uploadWebsiteMedia(formData: FormData): Promise<Result<{ asset: MediaAsset }>> {
   const ctx = await requirePermission("website.manage")
+  if (!canMutateCms()) return { ok: false, error: PREVIEW_MUTATION_MESSAGE }
   const file = formData.get("file")
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose an image." }
   const ext = IMAGE_TYPES[file.type]

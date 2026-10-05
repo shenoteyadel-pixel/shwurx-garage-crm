@@ -1,5 +1,7 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { deploymentMode } from "@/lib/website/env"
+import { isSitePath } from "@/lib/website/paths"
 
 // Routes that must be reachable WITHOUT staff authentication.
 //
@@ -59,16 +61,20 @@ function isPublicPath(path: string): boolean {
 // default, so Node globals and heavier deps (@supabase/ssr) are fully supported.
 // Public website pages that exist in both languages. English is unprefixed;
 // Arabic lives under /ar and is rewritten to the same page with a locale header.
-const SITE_ROOTS = ["/brands", "/services", "/about", "/contact", "/appointment", "/blog", "/privacy", "/pages"]
-function isSitePath(p: string): boolean {
-  return p === "/" || SITE_ROOTS.some((r) => p === r || p.startsWith(r + "/"))
-}
-
 function withLocale(request: NextRequest, locale: "en" | "ar") {
   const headers = new Headers(request.headers)
   headers.set("x-site-locale", locale)
   headers.set("x-site-path", request.nextUrl.pathname)
   return headers
+}
+
+// Draft/revision previews are never cached or indexed; neither is any
+// non-production deployment (robots.txt alone does not stop indexing).
+function siteHeaders(request: NextRequest, res: NextResponse) {
+  const previewing = !!request.cookies.get("shwurx_site_preview")?.value
+  if (previewing) res.headers.set("Cache-Control", "private, no-store, max-age=0")
+  if (previewing || deploymentMode() !== "production") res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+  return res
 }
 
 export async function proxy(request: NextRequest) {
@@ -81,10 +87,10 @@ export async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone()
     // Unknown /ar/* paths must 404 rather than expose CRM routes under /ar.
     url.pathname = isSitePath(rest) ? rest : "/pages/__not-found"
-    return NextResponse.rewrite(url, { request: { headers: withLocale(request, "ar") } })
+    return siteHeaders(request, NextResponse.rewrite(url, { request: { headers: withLocale(request, "ar") } }))
   }
   if (isSitePath(path)) {
-    return NextResponse.next({ request: { headers: withLocale(request, "en") } })
+    return siteHeaders(request, NextResponse.next({ request: { headers: withLocale(request, "en") } }))
   }
 
   const isPublic = isPublicPath(path)

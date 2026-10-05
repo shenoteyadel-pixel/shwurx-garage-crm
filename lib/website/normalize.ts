@@ -5,14 +5,49 @@ const MAX_STR = 8000
 const MAX_ITEMS = 300
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-/** Only same-site paths or https URLs; never javascript:, data: or protocol-relative. */
+// Backslashes, whitespace and control characters let browsers reinterpret a
+// "relative" path as another origin (e.g. "/\evil.example").
+// eslint-disable-next-line no-control-regex
+const UNSAFE_CHARS = /[\\\u0000-\u001f\u007f\s]/
+const PROBE = "https://probe.invalid"
+
+/** A same-site path such as "/brands/porsche?x=1#faq". */
+export function safeInternalPath(v: string): string {
+  const s = v.trim()
+  if (!s.startsWith("/") || s.startsWith("//") || UNSAFE_CHARS.test(s)) return ""
+  try {
+    const u = new URL(s, PROBE)
+    return u.origin === PROBE ? u.pathname + u.search + u.hash : ""
+  } catch {
+    return ""
+  }
+}
+
+/** Absolute https URL (external links, maps, uploaded media). */
+export function safeHttpsUrl(v: string): string {
+  const s = v.trim()
+  if (!s || UNSAFE_CHARS.test(s)) return ""
+  try {
+    const u = new URL(s)
+    return u.protocol === "https:" && !!u.hostname && !u.username && !u.password ? u.href : ""
+  } catch {
+    return ""
+  }
+}
+
+/** Media may be a site-relative asset or an https URL. */
+export function safeMediaUrl(v: string): string {
+  return safeInternalPath(v) || safeHttpsUrl(v)
+}
+
+/** Link targets: internal path, https, tel or mailto. */
 export function safeUrl(v: string): string {
   const s = v.trim()
   if (!s) return ""
-  if (s.startsWith("/") && !s.startsWith("//")) return s
-  if (/^https:\/\/[^\s]+$/i.test(s)) return s
-  if (/^tel:\+?[0-9 ]+$/.test(s) || /^mailto:[^\s]+$/.test(s)) return s
-  return ""
+  if (s.startsWith("/")) return safeInternalPath(s)
+  if (/^tel:\+?[0-9 ()-]{3,30}$/.test(s)) return s.replace(/[ ()-]/g, "")
+  if (/^mailto:[^\s@\\]+@[^\s@\\]+\.[^\s@\\]+$/.test(s)) return s
+  return safeHttpsUrl(s)
 }
 
 const URL_KEYS = new Set(["url", "href", "mapUrl", "from", "to"])
@@ -37,30 +72,104 @@ function sanitize(value: unknown, key: string, depth: number): unknown {
   return null
 }
 
+const L = { en: "", ar: "" }
+const SEO = { title: L, description: L, indexable: true }
+
+/**
+ * Item templates for arrays that are empty in the seed (so the seed cannot
+ * describe their items). Keyed by the array's property name.
+ */
+const ITEM_TEMPLATES: Record<string, unknown> = {
+  custom: { slug: "", title: L, visible: false, blocks: [], seo: SEO },
+  caseStudies: { id: "", title: L, body: L, mediaIds: [""], documented: false },
+  redirects: { from: "", to: "", permanent: true },
+  galleryIds: "",
+  mediaIds: "",
+  tags: "",
+  usedBy: "",
+}
+
+const ENUMS: Record<string, readonly string[]> = {
+  approval: ["approved", "needs_review", "rejected"],
+  source: ["workshop_original", "existing_site_asset", "upload"],
+}
+
 /** Shape `input` like `template`: wrong types fall back to the template value. */
-function shape(input: unknown, template: unknown): unknown {
+function shape(input: unknown, template: unknown, key = "", drops?: string[], path = ""): unknown {
   if (template === null || template === undefined) return input ?? template
-  if (typeof template === "string") return typeof input === "string" ? input : template
+  if (typeof template === "string") {
+    if (typeof input !== "string") return template
+    if (ENUMS[key] && !ENUMS[key].includes(input)) {
+      drops?.push(`${path}: "${input}" is not an allowed value`)
+      return template
+    }
+    return input
+  }
   if (typeof template === "number") return typeof input === "number" ? input : template
   if (typeof template === "boolean") return typeof input === "boolean" ? input : template
   if (Array.isArray(template)) {
     if (!Array.isArray(input)) return template
-    const itemTpl = template[0]
-    return itemTpl === undefined ? input : input.map((v) => shape(v, itemTpl))
+    const itemTpl = template[0] ?? ITEM_TEMPLATES[key]
+    if (itemTpl === undefined) return input.filter((v) => typeof v === "string")
+    const isObjTpl = typeof itemTpl === "object" && itemTpl !== null
+    const out: unknown[] = []
+    input.forEach((v, i) => {
+      const ok = isObjTpl ? isObj(v) : typeof v === typeof itemTpl
+      if (!ok) {
+        drops?.push(`${path}[${i}]: expected ${isObjTpl ? "an object" : typeof itemTpl}`)
+        return
+      }
+      out.push(shape(v, itemTpl, key, drops, `${path}[${i}]`))
+    })
+    return out
   }
   if (typeof template === "object") {
-    const src = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : {}
+    const src = isObj(input) ? (input as Record<string, unknown>) : {}
     const out: Record<string, unknown> = { ...src }
-    for (const [k, tv] of Object.entries(template as Record<string, unknown>)) out[k] = shape(src[k], tv)
+    for (const [k, tv] of Object.entries(template as Record<string, unknown>)) {
+      out[k] = shape(src[k], tv, k, drops, path ? `${path}.${k}` : k)
+    }
     return out
   }
   return input
 }
 
-export function normalizeDocument(input: unknown): WebsiteDocument {
+/**
+ * Strict entry point for saves: malformed items are reported (not silently
+ * persisted) together with broken IDs and relations.
+ */
+export function parseDocument(
+  input: unknown,
+): { ok: true; doc: WebsiteDocument } | { ok: false; issues: ValidationIssue[] } {
+  if (!isObj(input)) return { ok: false, issues: [{ level: "error", where: "Document", message: "Expected an object." }] }
+  const drops: string[] = []
+  const doc = normalizeDocument(input, drops)
+  const issues: ValidationIssue[] = drops.map((d) => ({ level: "error", where: d.split(":")[0], message: d }))
+  const ids = new Set<string>()
+  for (const m of doc.media) {
+    if (!m.id || ids.has(m.id)) issues.push({ level: "error", where: "Media", message: `Missing or duplicate media id "${m.id}".` })
+    ids.add(m.id)
+    if (!safeMediaUrl(m.url)) issues.push({ level: "error", where: `Media ${m.id}`, message: "Image URL must be a site path or https." })
+  }
+  for (const owner of [...doc.brands, ...doc.services]) {
+    for (const g of owner.galleryIds) {
+      if (!ids.has(g)) issues.push({ level: "warning", where: owner.slug, message: `Gallery references missing photo "${g}".` })
+    }
+  }
+  const caseIds = new Set<string>()
+  for (const b of doc.brands) {
+    for (const c of b.caseStudies) {
+      if (!c.id || caseIds.has(c.id)) issues.push({ level: "error", where: `Brand: ${b.slug}`, message: "Case study needs a unique id." })
+      caseIds.add(c.id)
+    }
+  }
+  return issues.some((i) => i.level === "error") ? { ok: false, issues } : { ok: true, doc }
+}
+
+export function normalizeDocument(input: unknown, drops?: string[]): WebsiteDocument {
   const seed = seedDocument()
   const clean = sanitize(input, "", 0)
-  const doc = shape(clean, seed) as WebsiteDocument
+  const doc = shape(clean, seed, "", drops) as WebsiteDocument
   // Free-form legacy dictionary overrides keep their own nested shape.
   const raw = (clean && typeof clean === "object" ? (clean as Record<string, unknown>) : {}) as {
     strings?: { en?: unknown; ar?: unknown }
@@ -73,7 +182,7 @@ export function normalizeDocument(input: unknown): WebsiteDocument {
   doc.images = {}
   if (isObj(raw.images)) {
     for (const [k, v] of Object.entries(raw.images as Record<string, unknown>)) {
-      const u = typeof v === "string" ? safeUrl(v) : ""
+      const u = typeof v === "string" ? safeMediaUrl(v) : ""
       if (u) doc.images[k] = u
     }
   }

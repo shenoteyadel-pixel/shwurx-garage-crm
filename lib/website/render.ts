@@ -2,21 +2,11 @@ import "server-only"
 import type { Metadata } from "next"
 import { getServerLocale } from "@/lib/i18n/server"
 import { getRenderDocument } from "./store"
+import { isIndexableDeployment, resolveSiteOrigin } from "./env"
 import type { L10n, Lang, MediaAsset, SeoFields, WebsiteDocument } from "./types"
 
-// Canonical origin. Falls back to the production domain when the env var is
-// unset or mis-entered (e.g. the variable NAME pasted as its value).
-function resolveSiteUrl(): string {
-  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim()
-  if (raw) {
-    try {
-      const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`)
-      if (u.hostname.includes(".") && !/localhost/i.test(u.hostname)) return u.origin
-    } catch {}
-  }
-  return "https://swurxauto.com"
-}
-export const SITE_URL = resolveSiteUrl()
+// The live apex 308-redirects to www, so canonicals always use the www origin.
+export const SITE_URL = resolveSiteOrigin()
 
 /** Arabic falls back to English only when the Arabic field is empty. */
 export function pick(v: L10n | undefined, lang: Lang): string {
@@ -43,7 +33,13 @@ export async function siteContext() {
   return { lang, ...render }
 }
 
-export function buildMetadata(doc: WebsiteDocument, lang: Lang, path: string, seo: SeoFields): Metadata {
+export function buildMetadata(
+  doc: WebsiteDocument,
+  lang: Lang,
+  path: string,
+  seo: SeoFields,
+  preview = false,
+): Metadata {
   const title = pick(seo.title, lang) + pick(doc.seo.titleSuffix, lang)
   const description = pick(seo.description, lang) || pick(doc.seo.defaultDescription, lang)
   const og = publicMedia(doc, seo.ogImageId) ?? publicMedia(doc, doc.seo.defaultOgImageId)
@@ -67,6 +63,10 @@ export function buildMetadata(doc: WebsiteDocument, lang: Lang, path: string, se
       locale: lang === "ar" ? "ar_AE" : "en_AE",
       images: og ? [{ url: og.url.startsWith("/") ? `${SITE_URL}${og.url}` : og.url, alt: pick(og.alt, lang) }] : undefined,
     },
-    robots: seo.noindex ? { index: false, follow: true } : undefined,
+    robots: !isIndexableDeployment() || preview
+      ? { index: false, follow: false, nocache: true }
+      : seo.noindex
+        ? { index: false, follow: true }
+        : undefined,
   }
 }

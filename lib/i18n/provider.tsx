@@ -11,6 +11,7 @@ import {
   type Locale,
 } from "./config"
 import { getDictionary, mergeDict, interpolate, type Dict } from "./dictionaries"
+import { isSitePath, stripLocale, switchLocalePath } from "@/lib/website/paths"
 
 /** Editable text overrides for each locale, passed from the server layout. */
 export type DictOverrides = { en?: Record<string, unknown>; ar?: Record<string, unknown> }
@@ -32,6 +33,13 @@ function writeCookie(locale: Locale) {
   document.cookie = `${LOCALE_COOKIE}=${locale}; path=/; max-age=${LOCALE_COOKIE_MAX_AGE}; samesite=lax`
 }
 
+/** On public website pages the URL is the only source of language. */
+function urlLocale(pathname: string | null): Locale | null {
+  if (!pathname) return null
+  const { lang, path } = stripLocale(pathname)
+  return isSitePath(path) ? lang : null
+}
+
 export function LanguageProvider({
   initialLang,
   overrides,
@@ -43,31 +51,29 @@ export function LanguageProvider({
 }) {
   const router = useRouter()
   const pathname = usePathname()
-  const [lang, setLangState] = React.useState<Locale>(initialLang)
+  const fromUrl = urlLocale(pathname)
+  const [crmLang, setCrmLang] = React.useState<Locale>(initialLang)
+  const lang: Locale = fromUrl ?? crmLang
 
-  // On first mount, honour a returning visitor's saved choice / device language
-  // if no explicit cookie was set yet (the server already applied any cookie).
+  // CRM only: honour a returning visitor's saved choice / device language when
+  // no cookie exists yet. Website pages never auto-switch away from their URL.
   React.useEffect(() => {
-    if (typeof document === "undefined") return
-    const hasCookie = document.cookie.includes(`${LOCALE_COOKIE}=`)
-    if (hasCookie) return
+    if (fromUrl) return
+    if (document.cookie.includes(`${LOCALE_COOKIE}=`)) return
     const stored = window.localStorage.getItem(LOCALE_COOKIE)
     const device = navigator.language?.toLowerCase().startsWith("ar") ? "ar" : "en"
     const detected: Locale = isLocale(stored) ? stored : device
-    if (detected !== lang) {
+    if (detected !== crmLang) {
       writeCookie(detected)
       window.localStorage.setItem(LOCALE_COOKIE, detected)
-      setLangState(detected)
-      // Defer to a macrotask so the App Router is fully initialized before we
-      // dispatch a refresh — calling it synchronously on first mount (or during
-      // an HMR refresh) throws "Router action dispatched before initialization".
+      setCrmLang(detected)
+      // Deferred: refreshing before the App Router initialises throws.
       const id = window.setTimeout(() => router.refresh(), 0)
       return () => window.clearTimeout(id)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Keep the document's lang/dir in sync across the website and the CRM.
   React.useEffect(() => {
     const el = document.documentElement
     el.lang = lang
@@ -77,13 +83,21 @@ export function LanguageProvider({
   const setLang = React.useCallback(
     (next: Locale) => {
       if (next === lang) return
+      if (pathname && fromUrl) {
+        const target = switchLocalePath(pathname, next)
+        if (target) {
+          // Full navigation so metadata, canonical and hreflang are re-rendered
+          // for the new URL. Query and hash are preserved.
+          window.location.assign(target + window.location.search + window.location.hash)
+          return
+        }
+      }
       writeCookie(next)
       window.localStorage.setItem(LOCALE_COOKIE, next)
-      setLangState(next)
-      // Re-render server components (pages/footer) with the new cookie.
+      setCrmLang(next)
       router.refresh()
     },
-    [lang, router],
+    [lang, pathname, fromUrl, router],
   )
 
   const value = React.useMemo<LangContextValue>(() => {
@@ -104,7 +118,6 @@ export function LanguageProvider({
 export function useI18n(): LangContextValue {
   const ctx = React.useContext(LangContext)
   if (!ctx) {
-    // Safe fallback so a stray client component never crashes the tree.
     const dict = getDictionary(DEFAULT_LOCALE)
     return {
       lang: DEFAULT_LOCALE,

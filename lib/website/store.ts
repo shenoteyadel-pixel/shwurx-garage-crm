@@ -5,12 +5,13 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { getSessionContext, ctxCan } from "@/lib/rbac/context"
 import { normalizeDocument } from "./normalize"
 import { seedDocument } from "./seed"
+import { deploymentMode } from "./env"
 import type { RevisionSummary, WebsiteDocument } from "./types"
 
 export const PREVIEW_COOKIE = "shwurx_site_preview"
 
 /** Where the rendered document came from — shown in the editor and preview bar. */
-export type DocSource = "published" | "seed" | "draft-preview" | "revision-preview"
+export type DocSource = "published" | "legacy" | "seed" | "draft-preview" | "revision-preview"
 
 export interface RenderDocument {
   doc: WebsiteDocument
@@ -94,13 +95,38 @@ export const legacyDocument = cache(async (): Promise<WebsiteDocument> => {
   return normalizeDocument(doc)
 })
 
-const getPublished = cache(async (): Promise<{ doc: WebsiteDocument; source: DocSource; available: boolean }> => {
-  const { available, row } = await readDocumentRow()
-  if (available && row?.published_revision_id) {
-    const doc = await readRevision(row.published_revision_id)
-    if (doc) return { doc, source: "published", available }
+/**
+ * Production before the first explicit publication: only what the legacy site
+ * already had. New brand/service detail pages and custom pages stay hidden so
+ * shipping code never publishes seeded content by itself.
+ */
+function legacyOnly(doc: WebsiteDocument): WebsiteDocument {
+  return {
+    ...doc,
+    brands: doc.brands.map((b) => ({ ...b, visible: false })),
+    services: doc.services.map((s) => ({ ...s, visible: false })),
+    pages: { ...doc.pages, custom: doc.pages.custom.map((p) => ({ ...p, visible: false })) },
+    seo: { ...doc.seo, redirects: [] },
   }
-  return { doc: await legacyDocument(), source: "seed", available }
+}
+
+export class PublishedReadError extends Error {}
+
+const getPublished = cache(async (): Promise<{ doc: WebsiteDocument; source: DocSource; available: boolean }> => {
+  const { available, row, error } = await readDocumentRow()
+  // A real DB error is not "nothing published": never substitute seeds for a
+  // publication that may exist.
+  if (error) throw new PublishedReadError(`Website content unavailable: ${error}`)
+  if (available && row?.published_revision_id) {
+    let doc = await readRevision(row.published_revision_id).catch(() => null)
+    if (!doc) doc = await readRevision(row.published_revision_id).catch(() => null)
+    if (!doc) throw new PublishedReadError(`Published revision #${row.published_revision_id} could not be read`)
+    return { doc, source: "published", available }
+  }
+  const legacy = await legacyDocument()
+  if (deploymentMode() === "production") return { doc: legacyOnly(legacy), source: "legacy", available }
+  // Non-production previews (noindex) may review the seeded content.
+  return { doc: legacy, source: "seed", available }
 })
 
 /** Published (or legacy) document only — never a draft. Used by public intake. */

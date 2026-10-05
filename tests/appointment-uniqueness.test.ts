@@ -107,6 +107,30 @@ test("060: rows without a submission id are unaffected, and rollback drops the i
   await db.close()
 })
 
+test("060: explicit JSON null submission ids pass the pre-check, are preserved, and replay cleanly", async () => {
+  const db = await freshDb()
+  const nullMeta = JSON.stringify({ submission_id: null, form_key: "appointment" })
+  await db.query("select public.submit_appointment('A', '1', p_metadata => $1::jsonb)", [nullMeta])
+  await db.query("select public.submit_appointment('B', '2', p_metadata => $1::jsonb)", [nullMeta])
+
+  await db.exec(migration)
+  const idx = await db.query("select 1 from pg_indexes where indexname = 'appointments_submission_id_uniq'")
+  assert.equal(idx.rows.length, 1)
+
+  await db.query("select public.submit_appointment('C', '3', p_metadata => $1::jsonb)", [nullMeta])
+  await db.exec(migration)
+
+  const nulls = await db.query<{ n: number }>(
+    "select count(*)::int as n from public.appointments where metadata ? 'submission_id' and metadata->>'submission_id' is null",
+  )
+  assert.equal(nulls.rows[0].n, 3, "all JSON-null rows are kept")
+
+  const { insert } = routeAdapters(db, SID)
+  assert.equal((await insert()).ok, true)
+  assert.equal((await insert()).ok, false, "real ids remain unique after replay")
+  await db.close()
+})
+
 test("submitOnce: a non-unique insert failure is reported, not masked as duplicate", async () => {
   const r = await submitOnce({
     submissionId: SID,

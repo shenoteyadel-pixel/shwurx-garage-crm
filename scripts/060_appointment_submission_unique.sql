@@ -9,8 +9,11 @@
 -- Pre-check: aborts (nothing changed) if duplicate submission ids already exist.
 -- Inspect them first with:
 --   select metadata->>'submission_id' as sid, array_agg(id order by created_at)
---   from public.appointments where metadata ? 'submission_id'
+--   from public.appointments
+--   where metadata ? 'submission_id' and metadata->>'submission_id' is not null
 --   group by 1 having count(*) > 1;
+-- Explicit JSON null submission ids map to SQL NULL, which the unique index
+-- accepts any number of times, so the pre-check ignores them too.
 
 begin;
 
@@ -19,7 +22,7 @@ declare v_dupes int;
 begin
   select count(*) into v_dupes from (
     select 1 from public.appointments
-    where metadata ? 'submission_id'
+    where metadata ? 'submission_id' and metadata->>'submission_id' is not null
     group by metadata->>'submission_id'
     having count(*) > 1
   ) d;

@@ -25,12 +25,30 @@ export function AnalyticsEditor({ data, canEdit }: { data: AnalyticsSectionDTO; 
   const [pending, start] = useTransition()
   const editCount = useRef(0)
   const [syncedFrom, setSyncedFrom] = useState(data.config)
+  // Revisions the local config was based on. Publish compares against these,
+  // not the latest props, so a refresh can never rebase stale local edits.
+  const [base, setBase] = useState({ draftVersion: data.draftVersion, liveRevisionId: data.liveRevisionId ?? 0 })
 
   // Adopt the server's latest config after router.refresh() only when there
   // are no pending local edits (mirrors the main builder).
   if (syncedFrom !== data.config) {
     setSyncedFrom(data.config)
-    if (!dirty) setConfig(data.config)
+    if (!dirty) {
+      setConfig(data.config)
+      setBase({ draftVersion: data.draftVersion, liveRevisionId: data.liveRevisionId ?? 0 })
+    }
+  }
+
+  const conflict =
+    dirty && (base.draftVersion !== data.draftVersion || base.liveRevisionId !== (data.liveRevisionId ?? 0))
+
+  const reloadLatest = () => {
+    editCount.current += 1
+    setConfig(data.config)
+    setBase({ draftVersion: data.draftVersion, liveRevisionId: data.liveRevisionId ?? 0 })
+    setDirty(false)
+    setIssues(null)
+    setMessage(null)
   }
 
   const doc = { analytics: config } as WebsiteDocument
@@ -77,18 +95,23 @@ export function AnalyticsEditor({ data, canEdit }: { data: AnalyticsSectionDTO; 
                 />
               </div>
               <Button
-                disabled={pending || !dirty}
+                disabled={pending || !dirty || conflict}
                 onClick={() =>
                   start(async () => {
                     setMessage(null)
                     const sentAt = editCount.current
-                    const r = await publishAnalyticsConfig(config, data.draftVersion, data.liveRevisionId ?? 0, note)
+                    const r = await publishAnalyticsConfig(config, base.draftVersion, base.liveRevisionId, note)
                     if (!r.ok) {
                       setIssues(r.issues ?? null)
                       return setMessage({ tone: "error", text: r.error })
                     }
                     setIssues(null)
-                    // Edits typed while publishing were not sent; keep them pending.
+                    // Edits typed while publishing were not sent; keep them pending
+                    // on top of the revision this publish just created.
+                    setBase((prev) => ({
+                      draftVersion: r.draftVersion ?? prev.draftVersion,
+                      liveRevisionId: r.liveRevisionId ?? prev.liveRevisionId,
+                    }))
                     setDirty(editCount.current !== sentAt)
                     setNote("")
                     setMessage({ tone: "ok", text: "Analytics published. Only analytics changed on the live site." })
@@ -100,6 +123,17 @@ export function AnalyticsEditor({ data, canEdit }: { data: AnalyticsSectionDTO; 
               </Button>
             </div>
           )
+        )}
+        {conflict && !blocked && (
+          <div role="alert" className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm md:flex-row md:items-center md:justify-between">
+            <p className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              Someone else changed the website since you started editing. Publishing is paused so their changes aren&apos;t overwritten.
+            </p>
+            <Button variant="outline" size="sm" onClick={reloadLatest} disabled={pending}>
+              Discard my changes and load latest
+            </Button>
+          </div>
         )}
         {message && (
           <p role="status" className={message.tone === "ok" ? "text-sm text-primary" : "text-sm text-destructive"}>

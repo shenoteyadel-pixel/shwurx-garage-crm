@@ -24,7 +24,8 @@ import { resolveImage } from "@/lib/site-content"
 import { interpolate } from "@/lib/i18n/dictionaries"
 import { TrackLink } from "@/components/site/track-link"
 import { listPublishedPosts } from "@/lib/blog"
-import { isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
+import { isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
+import { IllustrativeStrip } from "@/components/site/team-grid"
 import { buildMetadata, localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
 import type { HomeSection, HomeSectionKey, ServiceKind, WebsiteDocument, Lang } from "@/lib/website/types"
 
@@ -102,9 +103,20 @@ export default async function HomePage() {
   const heroVisible = visibleKeys.has("hero")
   const sec = (key: HomeSectionKey) => home.sections.find((s) => s.key === key)
   const highlights = home.highlights.filter((h) => pick(h.title, lang))
-  const teamMembers = isTeamPagePublic(doc)
+  const heroIllustrative = heroMedia?.source === "ai_illustration"
+  const heroCaption = heroIllustrative ? pick(heroMedia.caption, lang) : ""
+  const teamPublic = isTeamPagePublic(doc)
+  const teamMembers = teamPublic
     ? doc.pages.team.members.filter((m) => !m.archived && isPublicTeamMember(m)).slice(0, 4)
     : []
+  const teamIllustrative =
+    teamPublic && teamMembers.length === 0 && doc.pages.team.showIllustrative
+      ? doc.pages.team.members
+          .filter((m) => !m.archived && isIllustrativeMedia(doc, m.photoId))
+          .map((m) => publicMedia(doc, m.photoId))
+          .filter((p): p is NonNullable<typeof p> => !!p)
+          .slice(0, 6)
+      : []
   const ctas = [
     { cta: home.primaryCta, label: "hero primary", primary: true },
     { cta: home.secondaryCta, label: "hero secondary", primary: false },
@@ -121,6 +133,11 @@ export default async function HomePage() {
               <span key={w} className="text-3xl font-black uppercase tracking-wide text-foreground/[0.07]">{w}</span>
             ))}
           </div>
+          {heroCaption && (
+            <p className="absolute bottom-3 right-4 z-10 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground rtl:left-4 rtl:right-auto">
+              {heroCaption}
+            </p>
+          )}
         </div>
 
         <div className="relative z-10 mx-auto max-w-7xl px-4 lg:px-8">
@@ -173,6 +190,11 @@ export default async function HomePage() {
             <div className="relative -mx-4 h-64 sm:h-80 lg:hidden">
               <Image src={heroImg || "/placeholder.svg"} alt={heroAlt} fill priority sizes="100vw" className="object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+              {heroCaption && (
+                <p className="absolute bottom-2 left-4 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground rtl:left-auto rtl:right-4">
+                  {heroCaption}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -294,7 +316,21 @@ export default async function HomePage() {
       </section>
     ),
 
-    team: teamMembers.length > 0 && (
+    team: teamMembers.length === 0 && teamIllustrative.length > 0 ? (
+      <section key="team" className="bg-background" aria-labelledby="home-team">
+        <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
+          <SectionHeader
+            id="home-team"
+            section={sec("team")}
+            lang={lang}
+            fallback={pick(doc.pages.team.title, lang)}
+            href={lp("/team")}
+            linkLabel={dict.cta.learnMore}
+          />
+          <IllustrativeStrip photos={teamIllustrative} lang={lang} compact />
+        </div>
+      </section>
+    ) : teamMembers.length > 0 && (
       <section key="team" className="bg-background" aria-labelledby="home-team">
         <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
           <SectionHeader
@@ -307,7 +343,7 @@ export default async function HomePage() {
           />
           <ul className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
             {teamMembers.map((m) => {
-              const photo = publicMedia(doc, m.photoId)
+              const photo = isIllustrativeMedia(doc, m.photoId) ? null : publicMedia(doc, m.photoId)
               return (
                 <li key={m.id} className="overflow-hidden rounded-lg border border-border bg-card">
                   <div className="relative aspect-[4/5] bg-muted">

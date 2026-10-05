@@ -1,5 +1,17 @@
 import type { MediaSource, WebsiteDocument } from "./types"
-import { blankTeamMember, HOME_SECTION_DEFAULTS, seedDocument, TEAM_NAV_FOOTER, TEAM_NAV_HEADER } from "./seed"
+import {
+  blankTeamMember,
+  HERO_CONCEPT_ID,
+  HOME_SECTION_DEFAULTS,
+  ILLUSTRATIVE_SEED,
+  illustrativeMedia,
+  illustrativePortraitId,
+  seedDocument,
+  TEAM_NAV_FOOTER,
+  TEAM_NAV_HEADER,
+  TEAM_SCAFFOLD_SIZE,
+  teamSlotId,
+} from "./seed"
 import { analyticsIssues, sanitizeAnalytics } from "./analytics"
 
 const MAX_STR = 8000
@@ -108,7 +120,7 @@ const ITEM_TEMPLATES: Record<string, unknown> = {
 
 const ENUMS: Record<string, readonly string[]> = {
   approval: ["approved", "needs_review", "rejected"],
-  source: ["workshop_original", "existing_site_asset", "brand_mark", "upload"] satisfies MediaSource[],
+  source: ["workshop_original", "existing_site_asset", "brand_mark", "upload", "ai_illustration"] satisfies MediaSource[],
   template: ["standard", "landing"],
 }
 
@@ -254,6 +266,7 @@ export function normalizeDocument(input: unknown, drops?: string[]): WebsiteDocu
   }
   migrateTeam(doc, clean)
   migrateHomeSections(doc, clean)
+  applyIllustrativeSeed(doc, clean)
   doc.schemaVersion = 1
   return doc
 }
@@ -312,6 +325,37 @@ function migrateTeam(doc: WebsiteDocument, clean: unknown) {
     .map((m, i) => ({ m, i }))
     .sort((a, b) => a.m.sortOrder - b.m.sortOrder || a.i - b.i)
     .map(({ m }, i) => ({ ...m, sortOrder: i }))
+}
+
+/**
+ * Additive, once-only merge of the illustrative hero + 18 portraits into older
+ * documents. Never overwrites: media is appended by missing id, a portrait is
+ * attached only to an untouched seeded slot (no name, title or photo), and the
+ * hero swaps only from the previous seed default. Owner deletions afterwards
+ * stick because the marker is recorded.
+ */
+export function applyIllustrativeSeed(doc: WebsiteDocument, clean: unknown) {
+  const rawApplied = isObj(clean) ? (clean as { appliedSeeds?: unknown }).appliedSeeds : undefined
+  const applied = Array.isArray(rawApplied) ? rawApplied.filter((s): s is string => typeof s === "string") : []
+  doc.appliedSeeds = [...new Set(applied)]
+  if (applied.includes(ILLUSTRATIVE_SEED)) return
+  const ids = new Set(doc.media.map((m) => m.id))
+  for (const m of illustrativeMedia()) if (!ids.has(m.id)) doc.media.push(m)
+  if (doc.pages.home.heroImageId === "site-hero" || doc.pages.home.heroImageId === null) {
+    doc.pages.home.heroImageId = HERO_CONCEPT_ID
+  }
+  for (let n = 1; n <= TEAM_SCAFFOLD_SIZE; n++) {
+    const m = doc.pages.team.members.find((x) => x.id === teamSlotId(n))
+    if (!m || m.photoId) continue
+    const untouched = ![m.name.en, m.name.ar, m.jobTitle.en, m.jobTitle.ar, m.bio.en, m.bio.ar].some((s) => s.trim())
+    if (untouched) m.photoId = illustrativePortraitId(n)
+  }
+  doc.appliedSeeds.push(ILLUSTRATIVE_SEED)
+}
+
+/** True when the media item is generated concept artwork rather than a real photo. */
+export function isIllustrativeMedia(doc: WebsiteDocument, id: string | null | undefined): boolean {
+  return !!id && doc.media.some((m) => m.id === id && m.source === "ai_illustration")
 }
 
 /** Complete (both languages), visible and not archived. Photo is optional. */

@@ -3,9 +3,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowRight } from "lucide-react"
 import { buildMetadata, localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
-import { isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
+import { isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
 import { publicSiteInfo } from "@/lib/site-info"
-import { TeamGrid, type TeamCard } from "@/components/site/team-grid"
+import { IllustrativeStrip, TeamGrid, type TeamCard } from "@/components/site/team-grid"
 import { ContactActions } from "@/components/site/contact-actions"
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -21,8 +21,19 @@ export default async function TeamPage() {
   if (!preview && !isTeamPagePublic(doc)) notFound()
 
   const members = page.members.filter((m) => !m.archived && (preview || isPublicTeamMember(m)))
+  // Unfilled slots with AI portraits appear live only as an anonymous, labelled strip.
+  const illustrative = preview
+    ? []
+    : page.showIllustrative
+      ? page.members
+          .filter((m) => !m.archived && !isPublicTeamMember(m) && isIllustrativeMedia(doc, m.photoId))
+          .map((m) => publicMedia(doc, m.photoId))
+          .filter((p): p is NonNullable<typeof p> => !!p)
+      : []
   const cards: TeamCard[] = members.map((m) => {
-    const photo = publicMedia(doc, m.photoId)
+    const aiPhoto = isIllustrativeMedia(doc, m.photoId)
+    // A named public member must never be shown with an AI portrait as if it were their photo.
+    const photo = aiPhoto && !preview ? null : publicMedia(doc, m.photoId)
     return {
       id: m.id,
       name: pick(m.name, lang),
@@ -31,6 +42,7 @@ export default async function TeamPage() {
       department: pick(m.department, lang),
       photo: photo ? { url: photo.url, alt: pick(photo.alt, lang) || pick(m.name, lang), focalX: photo.focalX, focalY: photo.focalY } : null,
       draft: !isPublicTeamMember(m),
+      illustrative: aiPhoto,
     }
   })
   const intro = pick(page.intro, lang).split(/\n{2,}/).filter(Boolean)
@@ -53,8 +65,15 @@ export default async function TeamPage() {
       )}
 
       {cards.length > 0 && (
-        <TeamGrid cards={cards} draftLabel={ar ? "مسودة — غير منشور" : "Draft — not public"} emptyName={ar ? "عضو بدون اسم" : "Unnamed member"} />
+        <TeamGrid
+          cards={cards}
+          draftLabel={ar ? "مسودة — غير منشور" : "Draft — not public"}
+          emptyName={ar ? "مكان مخصص — أضف الاسم في مركز الموقع" : "Placeholder — add name in Website Center"}
+          illustrativeLabel={ar ? "صورة توضيحية" : "Illustrative"}
+        />
       )}
+
+      {illustrative.length > 0 && <IllustrativeStrip photos={illustrative} lang={lang} />}
 
       <section
         aria-labelledby="team-contact"

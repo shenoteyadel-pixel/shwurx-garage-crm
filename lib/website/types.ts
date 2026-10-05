@@ -32,6 +32,7 @@ export type MediaSource =
   | "existing_site_asset" // shipped with the previous site; origin must be reviewed
   | "brand_mark" // manufacturer logo used only to identify the brand
   | "upload"
+  | "ai_illustration" // generated concept artwork; must be captioned as illustrative, never shown as real staff/work
 
 export type MediaApproval = "approved" | "needs_review" | "rejected"
 
@@ -212,6 +213,8 @@ export interface TeamPage {
   title: L10n
   intro: L10n
   members: TeamMember[]
+  /** show unfilled slots' AI portraits publicly, as a labelled illustrative strip (no names, no Person schema) */
+  showIllustrative: boolean
   seo: SeoFields
 }
 
@@ -291,6 +294,8 @@ export interface WebsiteDocument {
   strings: { en: Record<string, unknown>; ar: Record<string, unknown> }
   /** legacy named image slots (previous site_content.images) */
   images: Record<string, string>
+  /** additive seed packs already merged into this document (each applied at most once) */
+  appliedSeeds: string[]
 }
 
 export interface RevisionSummary {

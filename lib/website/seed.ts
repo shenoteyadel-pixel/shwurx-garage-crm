@@ -53,6 +53,55 @@ const pageSeo = (titleEn: string, titleAr: string, descEn: string, descAr: strin
 })
 
 export const TEAM_SCAFFOLD_SIZE = 18
+export const ILLUSTRATIVE_SEED = "illustrative-assets-v1"
+export const HERO_CONCEPT_ID = "site-hero-concept"
+export const illustrativePortraitId = (n: number) => `team-illustrative-${String(n).padStart(2, "0")}`
+export const teamSlotId = (n: number) => `team-slot-${String(n).padStart(2, "0")}`
+
+/**
+ * Owner-supplied AI concept artwork (2026-10). Not photographs of SHWURX
+ * premises, staff or customer cars; always captioned as illustrative.
+ */
+export function illustrativeMedia(): MediaAsset[] {
+  const now = "2026-10-05T00:00:00.000Z"
+  const hero: MediaAsset = {
+    id: HERO_CONCEPT_ID,
+    url: "/site/shwurx-workshop-facade-concept-illustration.webp",
+    source: "ai_illustration",
+    approval: "approved",
+    alt: t(
+      "Illustration of a SHWURX-branded workshop with a beige industrial exterior, purple trim and a black and lime sign, two sports cars inside the open service bay at sunset",
+      "رسم توضيحي لورشة تحمل علامة شوركس بواجهة صناعية بيج وإطار بنفسجي ولافتة سوداء وخضراء ليمونية، وبداخل باب الصيانة المفتوح سيارتان رياضيتان عند الغروب",
+    ),
+    caption: t("Illustrative concept image — not a photograph of the workshop", "صورة توضيحية تصورية — ليست صورة فوتوغرافية للورشة"),
+    tags: ["hero", "illustration"],
+    width: 1672,
+    height: 941,
+    focalX: 66,
+    focalY: 55,
+    publicSafe: true,
+    uploadedAt: now,
+  }
+  const portraits: MediaAsset[] = Array.from({ length: TEAM_SCAFFOLD_SIZE }, (_, i) => ({
+    id: illustrativePortraitId(i + 1),
+    url: `/site/team/illustrative-team-portrait-${String(i + 1).padStart(2, "0")}.webp`,
+    source: "ai_illustration" as const,
+    approval: "approved" as const,
+    alt: t(
+      `Illustrative AI-generated portrait ${i + 1} in a SHWURX uniform — not a staff photograph`,
+      `صورة شخصية توضيحية مولّدة بالذكاء الاصطناعي رقم ${i + 1} بزي شوركس — ليست صورة لأحد الموظفين`,
+    ),
+    caption: t("Illustrative portrait — real profile coming soon", "صورة توضيحية — الملف الحقيقي قريباً"),
+    tags: ["team", "illustration"],
+    width: 256,
+    height: 341,
+    focalX: 50,
+    focalY: 35,
+    publicSafe: true,
+    uploadedAt: now,
+  }))
+  return [hero, ...portraits]
+}
 export const TEAM_NAV_HEADER = { id: "nav-team", label: t("Team", "فريقنا"), href: "/team", visible: true }
 export const TEAM_NAV_FOOTER = { id: "ft-team", label: t("Our team", "فريق العمل"), href: "/team", visible: true }
 
@@ -79,9 +128,11 @@ export function seedTeamPage(): TeamPage {
       "The people who inspect, quote, repair and hand back your car at SHWURX.",
       "الأشخاص الذين يفحصون سيارتك ويقدّمون عرض السعر ويصلحونها ويسلّمونها لك في شوركس.",
     ),
-    members: Array.from({ length: TEAM_SCAFFOLD_SIZE }, (_, i) =>
-      blankTeamMember(`team-slot-${String(i + 1).padStart(2, "0")}`, i),
-    ),
+    members: Array.from({ length: TEAM_SCAFFOLD_SIZE }, (_, i) => ({
+      ...blankTeamMember(teamSlotId(i + 1), i),
+      photoId: illustrativePortraitId(i + 1),
+    })),
+    showIllustrative: true,
     seo: pageSeo(
       "Our Team — SHWURX Auto Service Center",
       "فريقنا — مركز شوركس لخدمة السيارات",
@@ -143,7 +194,7 @@ function media(): MediaAsset[] {
     publicSafe: true,
     uploadedAt: now,
   }))
-  return [...logos, ...site]
+  return [...logos, ...site, ...illustrativeMedia()]
 }
 
 export function seedDocument(): WebsiteDocument {
@@ -186,7 +237,7 @@ export function seedDocument(): WebsiteDocument {
           "Mechanical, diagnostics, bodywork, paint and programming for 2016+ premium and sports cars. Inspection first, written quotation, and nothing done without your approval.",
           "ميكانيكا وتشخيص وهيكل ودهان وبرمجة للسيارات الفاخرة والرياضية موديلات 2016 وأحدث. الفحص أولاً، عرض سعر مكتوب، ولا يُنفّذ شيء دون موافقتك.",
         ),
-        heroImageId: "site-hero",
+        heroImageId: HERO_CONCEPT_ID,
         primaryCta: { label: t("Request a quote", "اطلب عرض سعر"), href: "/contact" },
         secondaryCta: { label: t("Book an inspection", "احجز فحصاً"), href: "/appointment" },
         highlights: [
@@ -321,5 +372,6 @@ export function seedDocument(): WebsiteDocument {
     analytics: structuredClone(DEFAULT_ANALYTICS),
     strings: { en: {}, ar: {} },
     images: {},
+    appliedSeeds: [ILLUSTRATIVE_SEED],
   }
 }

@@ -1,18 +1,34 @@
 import type React from "react"
+import type { Metadata } from "next"
 import { SiteHeader } from "@/components/site/site-header"
 import { SiteFooter } from "@/components/site/site-footer"
 import { TrackingGate } from "@/components/site/tracking-gate"
 import { PreviewBar } from "@/components/site/preview-bar"
 import { SiteTracking } from "@/components/site-tracking"
 import { localePath, pick, siteContext } from "@/lib/website/render"
-import { siteAnalytics } from "@/lib/website/analytics-server"
+import { effectiveAnalytics, siteAnalytics } from "@/lib/website/analytics-server"
+import { normalizeRuntime } from "@/lib/website/analytics"
 import { ConsentBanner } from "@/components/site/consent-banner"
+
+export async function generateMetadata(): Promise<Metadata> {
+  try {
+    const { doc } = await siteContext()
+    const token = (await effectiveAnalytics(doc)).searchConsoleToken
+    return token ? { verification: { google: token } } : {}
+  } catch {
+    return {}
+  }
+}
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
   const { doc, lang, preview, previewLabel } = await siteContext()
   // Master switch, preview, non-production deployments and the host allowlist
   // are all applied in one place.
-  const tags = await siteAnalytics(doc, preview)
+  const tags = normalizeRuntime(await siteAnalytics(doc, preview).catch((e) => {
+      console.error("site analytics unavailable; tags disabled for this render", e)
+      return null
+    }),
+  )
   const ar = lang === "ar"
 
   return (

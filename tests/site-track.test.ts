@@ -43,21 +43,27 @@ function visit(path: string, search = "") {
 test("first touch is immutable; latest moves on a later campaign; both reach the API separately", async () => {
   const track = await load()
   local.clear()
+  track.beginPageLoad()
   visit("/brands/porsche", "?utm_source=google&utm_campaign=spring")
   const v1 = track.captureAttribution()
   assert.equal(v1.first.utm_campaign, "spring")
   assert.equal(v1.latest.utm_campaign, "spring")
 
+  track.beginPageLoad()
   visit("/services", "")
   const organic = track.captureAttribution()
   assert.equal(organic.latest.utm_campaign, "spring", "a non-campaign visit keeps the latest campaign")
 
-  visit("/contact", "?utm_source=meta&utm_campaign=summer&gclid=abc")
+  // Same document: a client-side navigation never re-evaluates the entry.
+  visit("/contact", "?utm_source=meta&utm_campaign=summer&gclid=Cj0KCQjwabc123_XYZ")
+  assert.equal(track.captureAttribution().latest.utm_campaign, "spring")
+
+  track.beginPageLoad()
   const v2 = track.captureAttribution()
   assert.equal(v2.first.utm_campaign, "spring")
   assert.equal(v2.first.landingPath, "/brands/porsche")
   assert.equal(v2.latest.utm_campaign, "summer")
-  assert.equal(v2.latest.gclid, "abc")
+  assert.equal(v2.latest.gclid, "Cj0KCQjwabc123_XYZ")
 
   const read = track.getAttribution()
   assert.notDeepEqual(read.first, read.latest)
@@ -70,9 +76,10 @@ test("same lead id emitted twice before the provider is ready dispatches generat
   local.clear()
   mock.timers.enable({ apis: ["setTimeout"] })
   try {
-    win.__shwurxTrack = false
+    win.__shwurxTrack = true
     win.__shwurxThirdParty = true
     win.__shwurxTagMode = "ga4"
+    visit("/contact")
     delete win.gtag
     const calls: unknown[][] = []
 
@@ -104,9 +111,11 @@ test("a marker written elsewhere while a retry is queued cancels the queued disp
   try {
     win.__shwurxThirdParty = true
     win.__shwurxTagMode = "gtm"
+    win.__shwurxTrack = true
+    visit("/contact")
     delete win.dataLayer
     track.emitConversion("lead-3", { form: "enquiry" })
-    local.setItem("shwurx_conv3_lead-3", "1")
+    local.setItem("shwurx_conv4_lead_lead-3", String(Date.now()))
     win.dataLayer = []
     mock.timers.tick(5000)
     assert.equal((win.dataLayer as unknown[]).length, 0)

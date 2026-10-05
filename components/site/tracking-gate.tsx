@@ -4,7 +4,7 @@ import { useEffect } from "react"
 import { usePathname } from "next/navigation"
 import { captureAttribution, emitClick, track } from "@/lib/site-track"
 import { isPublicSitePath } from "@/lib/website/paths"
-import type { RuntimeTags } from "@/lib/website/analytics"
+import { normalizeRuntime, type RuntimeTags } from "@/lib/website/analytics"
 
 /** Which intent a link expresses, or null for an ordinary link. */
 export function clickKind(href: string): "phone_click" | "whatsapp_click" | null {
@@ -26,7 +26,8 @@ export function clickKind(href: string): "phone_click" | "whatsapp_click" | null
  * performs a full page load so no provider script (or its automatic page
  * tracking) survives onto that surface.
  */
-export function TrackingGate({ tags }: { tags: RuntimeTags }) {
+export function TrackingGate({ tags: input }: { tags?: RuntimeTags | null }) {
+  const tags = normalizeRuntime(input)
   const { firstParty, thirdParty, mode } = tags
   // Assigned during render so child effects (which run first) already see it.
   if (typeof window !== "undefined") {

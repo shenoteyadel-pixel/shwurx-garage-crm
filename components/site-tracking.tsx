@@ -1,5 +1,5 @@
 import Script from "next/script"
-import type { RuntimeTags } from "@/lib/website/analytics"
+import { normalizeRuntime, type RuntimeTags } from "@/lib/website/analytics"
 import { CONSENT_KEY, LEGACY_CONSENT_KEY } from "@/lib/consent"
 
 /**
@@ -39,7 +39,8 @@ w.__shwurxApplyConsent(st);
 }
 
 /** Mounted only in the public website layout — never on CRM, auth, portal or token routes. */
-export function SiteTracking({ tags }: { tags: RuntimeTags }) {
+export function SiteTracking({ tags: input }: { tags?: RuntimeTags | null }) {
+  const tags = normalizeRuntime(input)
   return (
     <>
       {/* Search Console verification is independent of tag loading and consent. */}

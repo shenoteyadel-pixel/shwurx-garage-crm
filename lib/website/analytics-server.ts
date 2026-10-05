@@ -1,14 +1,26 @@
 import "server-only"
 import { headers } from "next/headers"
 import { getSettings } from "@/lib/settings"
-import { analyticsFromLegacy, resolveRuntime, type AnalyticsConfig, type RuntimeTags } from "./analytics"
+import {
+  analyticsFromLegacy,
+  resolveRuntime,
+  sanitizeAnalytics,
+  SEED_ANALYTICS,
+  type AnalyticsConfig,
+  type RuntimeTags,
+} from "./analytics"
 import { isIndexableDeployment, resolveSiteOrigin } from "./env"
 import type { WebsiteDocument } from "./types"
 
 /** Website Center config once managed there; the legacy settings row until then. */
-export async function effectiveAnalytics(doc: WebsiteDocument): Promise<AnalyticsConfig> {
-  if (doc.analytics.managed) return doc.analytics
-  return analyticsFromLegacy(await getSettings(), resolveSiteOrigin())
+export async function effectiveAnalytics(doc: WebsiteDocument | null | undefined): Promise<AnalyticsConfig> {
+  const stored = doc?.analytics ? sanitizeAnalytics(doc.analytics) : null
+  if (stored?.managed) return stored
+  try {
+    return analyticsFromLegacy(await getSettings(), resolveSiteOrigin())
+  } catch {
+    return structuredClone(SEED_ANALYTICS)
+  }
 }
 
 export async function requestHost(): Promise<string> {

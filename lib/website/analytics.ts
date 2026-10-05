@@ -68,10 +68,19 @@ export const SEED_ANALYTICS: AnalyticsConfig = {
   ...DEFAULT_ANALYTICS,
   owner: "gtm",
   gtmId: "GTM-P6C37X8X",
+  // GA4 property 557376682 / stream 16044011724; Ads conversion ID. Under the GTM
+  // owner these are references for the container setup and are never loaded directly.
+  ga4Id: "G-YV9FVWM29N",
+  adsId: "AW-18492310896",
   adsCustomerId: "154-133-2403",
   searchConsoleToken: "onMwYj2YCnJTx5G20r0FRfjJwvS6BA_X1qX1fRcaE5I",
   allowedHosts: ["www.swurxauto.com", "swurxauto.com"],
-  adsLabels: { ...DEFAULT_ANALYTICS.adsLabels },
+  adsLabels: {
+    lead: "GZQOCNmf1ZEdEPCK6fFE",
+    appointment: "",
+    phone_click: "Urt4CNyf1ZEdEPCK6fFE",
+    whatsapp_click: "YYStCN-f1ZEdEPCK6fFE",
+  },
   events: { ...DEFAULT_EVENTS },
 }
 
@@ -199,7 +208,8 @@ export function analyticsFromLegacy(s: LegacyTrackingSettings, siteOrigin: strin
     gtmId: s.gtm_container_id ?? "",
     ga4Id: s.gtm_container_id ? "" : (s.ga4_measurement_id ?? ""),
     metaPixelId: s.meta_pixel_id ?? "",
-    searchConsoleToken: s.google_site_verification ?? "",
+    // A public ownership token, safe to keep live before Website Center takes over.
+    searchConsoleToken: s.google_site_verification || SEED_ANALYTICS.searchConsoleToken,
     allowedHosts: hostVariants(siteOrigin),
     consentRequired: true,
   })
@@ -226,11 +236,62 @@ export interface RuntimeTags {
   blockedBy: string[]
 }
 
+/** Fully-off runtime used whenever config is missing or malformed. */
+export const OFF_RUNTIME: RuntimeTags = {
+  firstParty: false,
+  thirdParty: false,
+  mode: "none",
+  gtmId: null,
+  ga4Id: null,
+  adsId: null,
+  adsLabels: { ...DEFAULT_ANALYTICS.adsLabels },
+  events: { ...DEFAULT_EVENTS },
+  metaPixelId: null,
+  consentRequired: true,
+  retentionDays: DEFAULT_ANALYTICS.retentionDays,
+  verificationToken: null,
+  blockedBy: ["analytics not configured"],
+}
+
+/**
+ * Backward-compatible guard for render boundaries: a stale document, cached
+ * payload or older caller may hand over undefined or a partial object.
+ */
+export function normalizeRuntime(input: unknown): RuntimeTags {
+  if (!isObj(input)) return structuredClone(OFF_RUNTIME)
+  const t = input as Partial<RuntimeTags>
+  const s = (v: unknown) => (typeof v === "string" && v ? v : null)
+  const rec = (v: unknown, base: Record<ConversionKey, string>) => {
+    const o = isObj(v) ? v : {}
+    const out = { ...base }
+    for (const k of CONVERSION_KEYS) if (typeof o[k] === "string") out[k] = o[k] as string
+    return out
+  }
+  const mode = t.mode === "gtm" || t.mode === "ga4" ? t.mode : "none"
+  return {
+    firstParty: t.firstParty === true,
+    thirdParty: t.thirdParty === true,
+    mode,
+    gtmId: s(t.gtmId),
+    ga4Id: s(t.ga4Id),
+    adsId: s(t.adsId),
+    adsLabels: rec(t.adsLabels, DEFAULT_ANALYTICS.adsLabels),
+    events: rec(t.events, DEFAULT_EVENTS),
+    metaPixelId: s(t.metaPixelId),
+    consentRequired: t.consentRequired !== false,
+    retentionDays: typeof t.retentionDays === "number" ? t.retentionDays : DEFAULT_ANALYTICS.retentionDays,
+    verificationToken: s(t.verificationToken),
+    blockedBy: Array.isArray(t.blockedBy) ? t.blockedBy.filter((x): x is string => typeof x === "string") : [],
+  }
+}
+
 export function resolveRuntime(
-  cfg: AnalyticsConfig,
+  rawCfg: AnalyticsConfig | null | undefined,
   host: string,
   env: { preview: boolean; indexable: boolean },
 ): RuntimeTags {
+  // Re-shape so a partially-populated stored config can never throw here.
+  const cfg = isObj(rawCfg) ? sanitizeAnalytics(rawCfg) : structuredClone(SEED_ANALYTICS)
   const blockedBy: string[] = []
   if (!cfg.enabled) blockedBy.push("tracking is switched off")
   if (env.preview) blockedBy.push("editor preview")
@@ -284,13 +345,13 @@ export function analyticsIssues(cfg: AnalyticsConfig): AnalyticsIssue[] {
     issues.push({
       level: "warning",
       where,
-      message: "GTM owns all Google tags: GA4/Ads IDs here are not loaded directly. Configure them inside the GTM container to avoid double counting.",
+      message: "GTM owns all Google tags: the GA4/Ads IDs and labels here are references for the container and are not loaded directly (prevents double counting).",
     })
   }
   if (cfg.owner === "gtag" && cfg.adsId && !cfg.adsLabels.lead) {
     issues.push({ level: "warning", where, message: "Google Ads ID is set without a lead conversion label; form leads will not count in Ads." })
   }
-  if (cfg.owner !== "gtag" && CONVERSION_KEYS.some((k) => cfg.adsLabels[k])) {
+  if (cfg.owner === "none" && CONVERSION_KEYS.some((k) => cfg.adsLabels[k])) {
     issues.push({ level: "warning", where, message: "Ads conversion labels are only used when the tag owner is direct Google tag." })
   }
   const names = CONVERSION_KEYS.map((k) => cfg.events[k])

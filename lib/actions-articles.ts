@@ -5,20 +5,17 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { requirePermission, logAction } from "@/lib/rbac/context"
 import { canMutateCms, PREVIEW_MUTATION_MESSAGE } from "@/lib/website/env"
 import {
-  articleToRow,
   matrixToRows,
   publishIssues,
   rowToArticle,
   WORKFLOWS,
+  editorialToArticle,
   type Article,
   type ArticleWorkflow,
-} from "@/lib/article-model"
-import {
-  editorialToArticle,
-  isEmptyBrief,
   type DefaultCover,
   type EditorialArticle,
 } from "@/lib/article-model"
+import { articleToDoc, draftRowToArticle, fillMissing, publicSnapshot, type DraftRow } from "@/lib/article-drafts"
 import matrix from "@/data/editorial/matrix-75.json"
 import editorial from "@/data/editorial/articles-75.json"
 import brandHeroes from "@/data/editorial/brand-heroes-v2.json"
@@ -35,10 +32,15 @@ export type SaveArticleResult =
   | { ok: true; article: Article }
   | { ok: false; error: string; issues?: string[]; conflict?: boolean }
 
+type Svc = ReturnType<typeof createServiceClient>
+type PgError = { code?: string; message: string } | null
+
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const CONFLICT = "Someone else changed this article since you opened it. Reload to see their changes first."
 
 /** Fields an approval covers; changing any of them after approval sends it back to review. */
-const reviewedFingerprint = (a: Article) => JSON.stringify([a.content, a.sources, a.brandSlug, a.serviceSlugs, a.coverUrl])
+const reviewedFingerprint = (a: Article) =>
+  JSON.stringify([a.slug, a.content, a.sources, a.brandSlug, a.serviceSlugs, a.relatedKeys, a.coverUrl, a.coverIllustrative])
 
 function revalidateArticle(slug: string, brandSlug: string | null) {
   for (const p of ["/blog", `/blog/${slug}`, "/ar/blog", `/ar/blog/${slug}`]) revalidatePath(p)
@@ -47,10 +49,45 @@ function revalidateArticle(slug: string, brandSlug: string | null) {
   revalidatePath("/marketing")
 }
 
+function rpcError(error: NonNullable<PgError>, slug?: string): SaveArticleResult {
+  if (error.code === "40001") return { ok: false, conflict: true, error: CONFLICT }
+  if (error.code === "23505") {
+    return { ok: false, error: /article_key/.test(error.message) ? "Another article already uses this matrix key." : `The slug "${slug}" is already used by another article.` }
+  }
+  if (error.code === "55000") return { ok: false, error: "Approve the article before publishing it." }
+  return { ok: false, error: error.message }
+}
+
+async function readDraft(svc: Svc, id: string) {
+  const { data } = await svc.from("article_drafts").select("*").eq("id", id).maybeSingle()
+  return data ? draftRowToArticle(data as DraftRow) : null
+}
+
+async function saveDraft(
+  svc: Svc,
+  a: Article,
+  expectedRevision: number | null,
+  action: "create" | "save" | "approve" | "import",
+  actor: string,
+): Promise<{ data: DraftRow | null; error: PgError }> {
+  const { data, error } = await svc.rpc("article_save", {
+    p_id: a.id || null,
+    p_expected_revision: a.id ? expectedRevision : null,
+    p_key: a.key || a.slug,
+    p_slug: a.slug,
+    p_brand: a.brandSlug,
+    p_workflow: a.workflow,
+    p_doc: articleToDoc(a),
+    p_action: action,
+    p_actor: actor,
+  })
+  return { data: (data as DraftRow | null) ?? null, error }
+}
+
 /**
- * Create or update an article. `expectedRevision` makes concurrent edits fail
- * loudly instead of overwriting each other. Publishing is only accepted when
- * every rule in `publishIssues` holds on the server copy.
+ * Saves, approves, publishes or unpublishes a private draft. Saving never
+ * touches the live article; only `publish` copies a redacted snapshot of the
+ * stored, approved draft to `blog_posts`. Every write is revision-checked.
  */
 export async function saveArticle(input: Article, expectedRevision: number | null, intent: ArticleIntent = "save"): Promise<SaveArticleResult> {
   const ctx = await guard()
@@ -60,141 +97,118 @@ export async function saveArticle(input: Article, expectedRevision: number | nul
   if (!SLUG.test(slug)) return { ok: false, error: "Slug must be lowercase ASCII words separated by hyphens (e.g. porsche-pdk-service)." }
   if (!WORKFLOWS.includes(input.workflow)) return { ok: false, error: "Unknown workflow stage." }
 
-  const existingRow = input.id ? (await svc.from("blog_posts").select("*").eq("id", input.id).maybeSingle()).data : null
-  if (input.id && !existingRow) return { ok: false, error: "This article no longer exists. Reload the list." }
-  const existing = existingRow ? rowToArticle(existingRow as Record<string, unknown>) : null
-  if (existing && expectedRevision !== existing.revision) {
-    return { ok: false, conflict: true, error: "Someone else saved this article since you opened it. Reload to see their changes before saving." }
-  }
+  const existing = input.id ? await readDraft(svc, input.id) : null
+  if (input.id && !existing) return { ok: false, error: "This article no longer exists. Reload the list." }
+  if (existing && expectedRevision !== existing.revision) return { ok: false, conflict: true, error: CONFLICT }
 
   const next: Article = { ...input, slug, brandSlug: input.brandSlug || null, serviceSlugs: [...new Set(input.serviceSlugs)] }
-  let workflow: ArticleWorkflow = next.workflow
 
+  if (intent === "publish" || intent === "unpublish") {
+    if (!existing) return { ok: false, error: "Save the article first." }
+    if (reviewedFingerprint(existing) !== reviewedFingerprint(next) || JSON.stringify(existing.content) !== JSON.stringify(next.content)) {
+      return { ok: false, error: "You have unsaved changes. Save and approve them before changing what is live." }
+    }
+    if (intent === "publish") {
+      const issues = publishIssues({ ...existing, status: "published" })
+      if (issues.length) return { ok: false, issues, error: "Not ready to publish." }
+      const { error } = await svc.rpc("article_publish", {
+        p_id: existing.id,
+        p_expected_revision: existing.revision,
+        p_post: publicSnapshot(existing),
+        p_actor: ctx.name,
+      })
+      if (error) return rpcError(error, slug)
+    } else {
+      const { error } = await svc.rpc("article_unpublish", { p_id: existing.id, p_expected_revision: existing.revision, p_actor: ctx.name })
+      if (error) return rpcError(error, slug)
+    }
+    const saved = await readDraft(svc, existing.id)
+    if (!saved) return { ok: false, error: "Article disappeared after the update. Reload the list." }
+    await logAction(ctx, intent === "publish" ? "article_published" : "article_unpublished", "article_draft", saved.id)
+    revalidateArticle(saved.slug, saved.brandSlug)
+    return { ok: true, article: saved }
+  }
+
+  let workflow: ArticleWorkflow = next.workflow
   if (intent === "approve") {
     workflow = "approved"
     next.reviewedBy = ctx.name
     next.reviewedAt = new Date().toISOString()
   } else if (existing?.workflow === "approved" && reviewedFingerprint(existing) !== reviewedFingerprint(next)) {
-    // Approval covered the old copy; edited copy needs a fresh review.
     workflow = "in_review"
     next.reviewedBy = null
     next.reviewedAt = null
   } else if (workflow === "approved" && existing?.workflow !== "approved") {
     return { ok: false, error: "Use Approve to mark an article reviewed — that records who reviewed it." }
-  } else if (existing) {
-    next.reviewedBy = existing.reviewedBy
-    next.reviewedAt = existing.reviewedAt
+  } else {
+    next.reviewedBy = existing?.reviewedBy ?? null
+    next.reviewedAt = existing?.reviewedAt ?? null
   }
   next.workflow = workflow
+  next.author = existing?.author ?? ctx.name
 
-  let status = existing?.status ?? "draft"
-  if (intent === "publish") status = "published"
-  if (intent === "unpublish") status = "draft"
-  next.status = status
+  const { data, error } = await saveDraft(svc, next, expectedRevision, intent === "approve" ? "approve" : existing ? "save" : "create", ctx.name)
+  if (error) return rpcError(error, slug)
+  if (!data) return { ok: false, conflict: true, error: CONFLICT }
 
-  if (status === "published") {
-    const issues = publishIssues(next)
-    if (issues.length) {
-      return {
-        ok: false,
-        issues,
-        error: existing?.status === "published" && intent !== "publish"
-          ? "This live article would break publishing rules. Fix the issues or unpublish it first."
-          : "Not ready to publish.",
-      }
-    }
-  }
-
-  const row: Record<string, unknown> = {
-    ...articleToRow(next),
-    author: existing?.author ?? ctx.name,
-    updated_at: new Date().toISOString(),
-    revision: (existing?.revision ?? 0) + 1,
-  }
-  if (status === "published" && !existing?.publishedAt) row.published_at = new Date().toISOString()
-
-  const res = existing
-    ? await svc.from("blog_posts").update(row).eq("id", existing.id).eq("revision", existing.revision).select("*").maybeSingle()
-    : await svc.from("blog_posts").insert(row).select("*").maybeSingle()
-
-  if (res.error) {
-    if (res.error.code === "23505") {
-      return { ok: false, error: /article_key/.test(res.error.message) ? "Another article already uses this matrix key." : `The slug "${slug}" is already used by another article.` }
-    }
-    return { ok: false, error: res.error.message }
-  }
-  if (!res.data) return { ok: false, conflict: true, error: "Someone else saved this article at the same moment. Reload and try again." }
-
-  const saved = rowToArticle(res.data as Record<string, unknown>)
-  const action = intent === "publish" ? "article_published" : intent === "unpublish" ? "article_unpublished" : intent === "approve" ? "article_approved" : existing ? "article_updated" : "article_created"
-  await logAction(ctx, action, "blog_post", saved.id)
-
-  revalidateArticle(saved.slug, saved.brandSlug)
-  if (existing && existing.slug !== saved.slug) revalidateArticle(existing.slug, existing.brandSlug)
+  const saved = draftRowToArticle(data)
+  await logAction(ctx, intent === "approve" ? "article_approved" : existing ? "article_updated" : "article_created", "article_draft", saved.id)
+  revalidatePath("/marketing")
   return { ok: true, article: saved }
 }
 
-export async function deleteArticle(id: string): Promise<{ ok: boolean; error?: string }> {
-  const ctx = await guard()
-  const svc = createServiceClient()
-  const { data } = await svc.from("blog_posts").select("slug, brand_slug, status").eq("id", id).maybeSingle()
-  if (!data) return { ok: false, error: "Article not found." }
-  if (data.status === "published") return { ok: false, error: "Unpublish the article before deleting it." }
-  const { error } = await svc.from("blog_posts").delete().eq("id", id)
-  if (error) return { ok: false, error: error.message }
-  await logAction(ctx, "article_deleted", "blog_post", id)
-  revalidateArticle(data.slug as string, (data.brand_slug as string) ?? null)
-  return { ok: true }
+/** Drafts keep an append-only history, so they are retired (unpublished) rather than deleted. */
+export async function deleteArticle(_id: string): Promise<{ ok: boolean; error?: string }> {
+  await guard()
+  return { ok: false, error: "Articles keep an audit history and cannot be deleted. Unpublish it to take it off the site." }
 }
 
-/**
- * Creates one brief-stage draft per matrix topic that does not exist yet.
- * Never overwrites an existing article and never writes body copy — briefs
- * stay unpublishable until an editor writes and approves both locales.
- */
+async function readAllDrafts(svc: Svc) {
+  const { data, error } = await svc.from("article_drafts").select("*")
+  return { drafts: ((data ?? []) as DraftRow[]).map(draftRowToArticle), error }
+}
+
+/** Creates one private brief-stage draft per matrix topic that does not exist yet. */
 export async function importEditorialBriefs(): Promise<{ ok: boolean; created: number; skipped: string[]; error?: string }> {
   const ctx = await guard()
   const svc = createServiceClient()
-  const { data: existing, error: readError } = await svc.from("blog_posts").select("article_key, slug")
+  const { drafts, error: readError } = await readAllDrafts(svc)
   if (readError) return { ok: false, created: 0, skipped: [], error: readError.message }
 
-  const keys = new Set((existing ?? []).map((r) => r.article_key).filter(Boolean))
-  const slugs = new Set((existing ?? []).map((r) => r.slug))
+  const keys = new Set(drafts.map((d) => d.key))
+  const slugs = new Set(drafts.map((d) => d.slug))
   const skipped: string[] = []
-  const rows = matrixToRows((matrix as { articles: Parameters<typeof matrixToRows>[0] }).articles).filter((r) => {
-    if (keys.has(r.article_key)) return false
-    if (slugs.has(r.slug)) {
-      skipped.push(String(r.article_key))
-      return false
+  let created = 0
+  for (const row of matrixToRows((matrix as { articles: Parameters<typeof matrixToRows>[0] }).articles)) {
+    const a = { ...rowToArticle(row), id: "", legacy: false, author: ctx.name }
+    if (keys.has(a.key)) continue
+    if (slugs.has(a.slug)) {
+      skipped.push(String(a.key))
+      continue
     }
-    return true
-  })
-  if (rows.length === 0) return { ok: true, created: 0, skipped }
-
-  const now = new Date().toISOString()
-  const { error } = await svc.from("blog_posts").insert(rows.map((r) => ({ ...r, author: ctx.name, updated_at: now })))
-  if (error) return { ok: false, created: 0, skipped, error: error.message }
-  await logAction(ctx, "article_briefs_imported", "blog_post", String(rows.length))
+    const { error } = await saveDraft(svc, a, null, "import", ctx.name)
+    if (error) return { ok: false, created, skipped, error: error.message }
+    created++
+  }
+  if (created) await logAction(ctx, "article_briefs_imported", "article_draft", String(created))
   revalidatePath("/marketing")
-  return { ok: true, created: rows.length, skipped }
+  return { ok: true, created, skipped }
 }
 
 /**
- * Loads the 75 bilingual article bodies. New topics are inserted; topics that
- * are still untouched briefs get their copy filled in. Anything an editor has
- * already written, reviewed or published is left alone. Everything lands in
- * review as an unpublished draft with the brand's garage hero as an
- * illustrative default cover (an owner-set cover is kept).
+ * Loads the 75 bilingual bodies into private drafts. New topics are created in
+ * review; existing drafts only get fields that are still empty, so edited
+ * titles, SEO, taxonomy, sources, slugs and covers are never overwritten.
+ * Nothing is published and no locale is marked ready.
  */
 export async function importEditorialArticles(): Promise<{ ok: boolean; created: number; filled: number; skipped: string[]; error?: string }> {
   const ctx = await guard()
   const svc = createServiceClient()
-  const { data: existing, error: readError } = await svc.from("blog_posts").select("*")
+  const { drafts, error: readError } = await readAllDrafts(svc)
   if (readError) return { ok: false, created: 0, filled: 0, skipped: [], error: readError.message }
 
-  const rows = (existing ?? []).map((r) => rowToArticle(r as Record<string, unknown>))
-  const byKey = new Map(rows.filter((a) => a.key).map((a) => [a.key as string, a]))
-  const bySlug = new Map(rows.map((a) => [a.slug, a]))
+  const byKey = new Map(drafts.map((d) => [d.key as string, d]))
+  const slugs = new Set(drafts.map((d) => d.slug))
   const items = editorial as unknown as EditorialArticle[]
   const slugToKey = new Map(items.map((e) => [e.slug, e.id]))
   const covers = new Map<string, DefaultCover>(
@@ -204,39 +218,35 @@ export async function importEditorialArticles(): Promise<{ ok: boolean; created:
     ]),
   )
 
-  const inserts: Record<string, unknown>[] = []
   const skipped: string[] = []
+  let created = 0
   let filled = 0
-  const now = new Date().toISOString()
-
   for (const e of items) {
-    const base = byKey.get(e.id) ?? bySlug.get(e.slug) ?? null
-    const cover = covers.get(e.brandSlug) ?? null
+    const incoming = { ...editorialToArticle(e, slugToKey, covers.get(e.brandSlug) ?? null, null), author: ctx.name }
+    const base = byKey.get(e.id)
     if (!base) {
-      inserts.push({ ...articleToRow(editorialToArticle(e, slugToKey, cover, null)), author: ctx.name, updated_at: now })
+      if (slugs.has(e.slug)) {
+        skipped.push(e.id)
+        continue
+      }
+      const { error } = await saveDraft(svc, incoming, null, "import", ctx.name)
+      if (error) return { ok: false, created, filled, skipped, error: error.message }
+      created++
       continue
     }
-    if (!isEmptyBrief(base) || (base.key && base.key !== e.id)) {
-      skipped.push(e.id)
-      continue
+    const { next, changed } = fillMissing(base, incoming)
+    if (!changed) continue
+    const { error } = await saveDraft(svc, next, base.revision, "import", ctx.name)
+    if (error) {
+      if (error.code === "40001") {
+        skipped.push(e.id)
+        continue
+      }
+      return { ok: false, created, filled, skipped, error: error.message }
     }
-    const next = editorialToArticle(e, slugToKey, cover, base)
-    const { data, error } = await svc
-      .from("blog_posts")
-      .update({ ...articleToRow(next), revision: base.revision + 1, updated_at: now })
-      .eq("id", base.id)
-      .eq("revision", base.revision)
-      .select("id")
-    if (error) return { ok: false, created: 0, filled, skipped, error: error.message }
-    if (data?.length) filled++
-    else skipped.push(e.id)
+    filled++
   }
-
-  if (inserts.length) {
-    const { error } = await svc.from("blog_posts").insert(inserts)
-    if (error) return { ok: false, created: 0, filled, skipped, error: error.message }
-  }
-  await logAction(ctx, "article_bodies_imported", "blog_post", `${inserts.length} new, ${filled} filled`)
+  if (created || filled) await logAction(ctx, "article_bodies_imported", "article_draft", `${created} new, ${filled} filled`)
   revalidatePath("/marketing")
-  return { ok: true, created: inserts.length, filled, skipped }
+  return { ok: true, created, filled, skipped }
 }

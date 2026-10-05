@@ -1,5 +1,5 @@
 import type { L10n, SeoFields, WebsiteDocument } from "./types"
-import { isTeamPagePublic, publicTeamMembers } from "./normalize"
+import { isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic, publicTeamMembers } from "./normalize"
 
 /**
  * Website Center inventory: one row per public page, derived from the real
@@ -156,10 +156,14 @@ export function buildInventory(
     const active = team.members.filter((m) => !m.archived)
     const ready = publicTeamMembers(draft)
     const flags: string[] = []
-    const drafts = active.length - ready.length
+    // Counts mirror the /team renderer: only isPublicTeamMember members render, and an AI portrait is never shown for a named member.
+    const hidden = active.filter((m) => !m.visible).length
+    const drafts = active.filter((m) => m.visible && !isPublicTeamMember(m)).length
     if (ready.length === 0) flags.push("No complete visible members yet — page shows intro and contact invitation")
-    else if (drafts > 0) flags.push(`${drafts} member slot(s) still draft`)
-    const noPhoto = ready.filter((m) => !m.photoId).length
+    else flags.push(`${ready.length} member(s) shown publicly`)
+    if (drafts > 0) flags.push(`${drafts} visible member slot(s) incomplete — not shown`)
+    if (hidden > 0) flags.push(`${hidden} member(s) hidden`)
+    const noPhoto = ready.filter((m) => !m.photoId || isIllustrativeMedia(draft, m.photoId) || !draft.media.some((x) => x.id === m.photoId)).length
     if (noPhoto) flags.push(`${noPhoto} public member(s) without a photo`)
     seoFlags(team.seo, flags)
     const liveTeamPublic = !!live && isTeamPagePublic(live)

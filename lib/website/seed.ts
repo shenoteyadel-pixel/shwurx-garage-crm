@@ -377,7 +377,7 @@ export function seedDocument(): WebsiteDocument {
           model: t("Model", "الموديل"),
           year: t("Year", "السنة"),
           service: t("Service", "الخدمة"),
-          details: t("What do you need? (optional)", "ماذا تحتاج؟ (اختياري)"),
+          details: t("What do you need?", "ماذا تحتاج؟"),
           submit: t("Send enquiry", "إرسال الاستفسار"),
         },
         privacyNote: t(

@@ -6,7 +6,9 @@ import { ArrowRight } from "lucide-react"
 import { localePath, pick, siteContext, SITE_URL } from "@/lib/website/render"
 import { isIndexableDeployment } from "@/lib/website/env"
 import { getPublishedArticle, listLiveArticles } from "@/lib/blog"
-import { bodyBlocks, isLocaleLive, liveLocales, relatedArticles, type Article, type ArticleLang } from "@/lib/article-model"
+import { isLocaleLive, liveLocales, relatedArticles, type Article, type ArticleLang } from "@/lib/article-model"
+import { withSuffix } from "@/lib/safe-markdown"
+import { ArticleBody } from "@/components/site/article-body"
 import { ArticleCard, articleHref, formatArticleDate } from "@/components/site/article-card"
 
 export const dynamic = "force-dynamic"
@@ -61,7 +63,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { doc, lang, preview, article } = await load(slug)
   if (!article) return { robots: { index: false, follow: false } }
   const c = article.content[lang]
-  const title = (c.seoTitle || c.title) + pick(doc.seo.titleSuffix, lang)
+  const title = withSuffix(c.seoTitle || c.title, pick(doc.seo.titleSuffix, lang))
   const description = c.seoDescription || c.excerpt
   const image = article.coverUrl ? (article.coverUrl.startsWith("/") ? `${SITE_URL}${article.coverUrl}` : article.coverUrl) : undefined
   return {
@@ -156,19 +158,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
         </figure>
       )}
 
-      <div className="mt-10 flex flex-col gap-5 text-base leading-relaxed text-foreground/90">
-        {bodyBlocks(c.body).map((b, i) =>
-          b.type === "h2" ? (
-            <h2 key={i} className="mt-4 text-pretty text-2xl font-semibold text-foreground">
-              {b.text}
-            </h2>
-          ) : (
-            <p key={i} className="whitespace-pre-line text-pretty">
-              {b.text}
-            </p>
-          ),
-        )}
-      </div>
+      <ArticleBody body={c.body} />
 
       <aside className="mt-12 rounded-2xl border border-border bg-card p-6" aria-labelledby="article-cta">
         <h2 id="article-cta" className="text-xl font-semibold">

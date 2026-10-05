@@ -61,6 +61,11 @@ const MSG = {
 
 type Field = "name" | "phone" | "year" | "details"
 
+/** Saved labels may already carry "(optional)"; the form appends its own marker. */
+function stripOptional(label: string) {
+  return label.replace(/\s*[(（]\s*(optional|اختياري)\s*[)）]\s*$/i, "").trim()
+}
+
 function newSubmissionId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -335,7 +340,7 @@ export function EnquiryForm(p: EnquiryFormProps) {
         </div>
         <div className="flex flex-col gap-1.5 sm:col-span-2">
           <label htmlFor={id("details")} className={label}>
-            {p.labels.details} <span className="font-normal text-muted-foreground">({m.optional})</span>
+            {stripOptional(p.labels.details)} <span className="font-normal text-muted-foreground">({m.optional})</span>
           </label>
           <textarea
             id={id("details")}

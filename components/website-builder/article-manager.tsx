@@ -275,7 +275,9 @@ function DeleteArticleButton({ id }: { id: string }) {
         disabled={pending}
         onClick={() =>
           start(async () => {
-            await deleteArticle(id)
+            const r = await deleteArticle(id)
+            if (!r.ok) window.alert(r.error)
+            setConfirm(false)
             router.refresh()
           })
         }

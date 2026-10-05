@@ -5,8 +5,6 @@ import { LanguageProvider } from "@/lib/i18n/provider"
 import { getServerLocale } from "@/lib/i18n/server"
 import { getSiteContentOverrides } from "@/lib/site-content"
 import { dirFor } from "@/lib/i18n/config"
-import { SiteTracking } from "@/components/site-tracking"
-import { Suspense } from "react"
 import "./globals.css"
 
 const geistSans = Geist({ subsets: ["latin"], variable: "--font-geist-sans" })
@@ -43,9 +41,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       className={`${geistSans.variable} ${geistMono.variable} ${plexArabic.variable} bg-background`}
     >
       <body className="font-sans antialiased">
-        <Suspense fallback={null}>
-          <SiteTracking />
-        </Suspense>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
           <LanguageProvider initialLang={locale} overrides={{ en: overrides.en, ar: overrides.ar }}>
             {children}

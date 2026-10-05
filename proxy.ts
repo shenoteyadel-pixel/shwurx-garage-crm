@@ -57,8 +57,36 @@ function isPublicPath(path: string): boolean {
 
 // Next.js 16 Proxy (formerly Middleware). Runs on the Node.js runtime by
 // default, so Node globals and heavier deps (@supabase/ssr) are fully supported.
+// Public website pages that exist in both languages. English is unprefixed;
+// Arabic lives under /ar and is rewritten to the same page with a locale header.
+const SITE_ROOTS = ["/brands", "/services", "/about", "/contact", "/appointment", "/blog", "/privacy", "/pages"]
+function isSitePath(p: string): boolean {
+  return p === "/" || SITE_ROOTS.some((r) => p === r || p.startsWith(r + "/"))
+}
+
+function withLocale(request: NextRequest, locale: "en" | "ar") {
+  const headers = new Headers(request.headers)
+  headers.set("x-site-locale", locale)
+  headers.set("x-site-path", request.nextUrl.pathname)
+  return headers
+}
+
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
+
+  if (path === "/robots.txt" || path === "/sitemap.xml") return NextResponse.next()
+
+  if (path === "/ar" || path.startsWith("/ar/")) {
+    const rest = path.slice(3) || "/"
+    const url = request.nextUrl.clone()
+    // Unknown /ar/* paths must 404 rather than expose CRM routes under /ar.
+    url.pathname = isSitePath(rest) ? rest : "/pages/__not-found"
+    return NextResponse.rewrite(url, { request: { headers: withLocale(request, "ar") } })
+  }
+  if (isSitePath(path)) {
+    return NextResponse.next({ request: { headers: withLocale(request, "en") } })
+  }
+
   const isPublic = isPublicPath(path)
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL

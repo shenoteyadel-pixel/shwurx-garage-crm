@@ -5,6 +5,9 @@ import { findBySubmission, intakeMetadata, SUBMISSION_UUID } from "@/lib/website
 import { conversionToken } from "@/lib/website/conversion-token"
 import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
 import { submitOnce } from "@/lib/website/submit-once"
+import { getPublishedDocumentStrict } from "@/lib/website/store"
+import { appointmentRequestIssue } from "@/lib/website/appointment"
+import { validateVehicleYear } from "@/lib/website/intake-validate"
 
 export const runtime = "nodejs"
 
@@ -28,6 +31,8 @@ export async function POST(request: Request) {
 
     if (!name) return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_name" }, 400)
     if (!phone) return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_phone" }, 400)
+    const year = validateVehicleYear(body?.vehicleYear ?? body?.vehicle_year)
+    if (!year.ok) return jsonWithCors(request, { ok: false, outcome: "invalid", error: "invalid_vehicle_year", fields: { year: year.error } }, 400)
 
     // Previews validate but never create bookings, staff alerts or emails.
     if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
@@ -37,6 +42,16 @@ export async function POST(request: Request) {
     const submissionId = typeof body.submissionId === "string" && SUBMISSION_UUID.test(body.submissionId) ? body.submissionId : null
     const persisted = (outcome: "received" | "duplicate", id: string) =>
       jsonWithCors(request, { ok: true, outcome, id, conversionToken: conversionToken("appointment", id) })
+    // A response-loss retry must still acknowledge an existing request after
+    // the owner closes booking or changes available options. This path cannot insert.
+    if (submissionId) {
+      const existing = await findBySubmission("appointments", submissionId)
+      if (existing) return persisted("duplicate", existing)
+    }
+    const website = await getPublishedDocumentStrict()
+    if (!website) return jsonWithCors(request, { ok: false, outcome: "unavailable", error: "booking_unavailable" }, 503)
+    const issue = appointmentRequestIssue(website, body)
+    if (issue) return jsonWithCors(request, { ok: false, outcome: "rejected", error: issue }, 400)
 
     const supabase = createServiceClient()
     const result = await submitOnce({
@@ -49,7 +64,7 @@ export async function POST(request: Request) {
       p_email: body?.email ?? null,
       p_vehicle_make: body?.vehicleMake ?? body?.vehicle_make ?? null,
       p_vehicle_model: body?.vehicleModel ?? body?.vehicle_model ?? null,
-      p_vehicle_year: body?.vehicleYear ?? body?.vehicle_year ?? null,
+      p_vehicle_year: year.year === null ? null : String(year.year),
       p_plate_number: body?.plateNumber ?? body?.plate_number ?? null,
       p_service_interest: body?.serviceInterest ?? body?.service_interest ?? null,
       p_preferred_date: body?.preferredDate ?? body?.preferred_date ?? null,

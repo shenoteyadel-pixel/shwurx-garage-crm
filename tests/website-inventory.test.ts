@@ -43,13 +43,13 @@ test("inventory includes blog posts that deep-link to the post editor", () => {
   assert.equal(post.path, "/blog/hello")
 })
 
-test("appointment row is never Hidden: the booking form is always public and not driven by the enquiry form", () => {
+test("appointment has its own page and form controls, independent of enquiry visibility", () => {
   const doc = seedDocument()
   doc.forms.enquiry.enabled = false
   for (const live of [doc, null]) {
     const row = buildInventory(doc, live, []).find((i) => i.key === "page:appointment")
     assert.ok(row)
-    assert.equal(row.status, "published")
-    assert.equal(row.edit.kind, "none")
+    assert.equal(row.status, live ? "published" : "draft")
+    assert.deepEqual(row.edit, { kind: "builder", section: "pages", recordId: "appointment" })
   }
 })

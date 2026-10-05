@@ -18,6 +18,7 @@ import {
 } from "@/lib/article-model"
 import type { ArticleTaxonomy } from "@/lib/website/control-center-data"
 import { Loader2, Plus, Pencil, Trash2, Upload, Download, AlertTriangle, Check } from "lucide-react"
+import { ReviewedArticleBatch } from "@/components/website-builder/reviewed-article-batch"
 
 const WORKFLOW_LABEL: Record<ArticleWorkflow, string> = {
   brief: "Brief",
@@ -111,6 +112,8 @@ export function ArticleManager({ posts, taxonomy, canManage, openPostId }: Props
           </div>
         )}
       </div>
+
+      {canManage && <ReviewedArticleBatch posts={posts} taxonomy={taxonomy} />}
 
       <div className="flex flex-wrap items-center gap-2">
         {(["all", "brief", "draft", "in_review", "approved", "published"] as const).map((f) => (

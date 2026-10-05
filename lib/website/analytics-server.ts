@@ -30,5 +30,8 @@ export async function requestHost(): Promise<string> {
 
 export async function siteAnalytics(doc: WebsiteDocument, preview: boolean): Promise<RuntimeTags> {
   const [cfg, host] = await Promise.all([effectiveAnalytics(doc), requestHost()])
-  return resolveRuntime(cfg, host, { preview, indexable: isIndexableDeployment() })
+  return {
+    ...resolveRuntime(cfg, host, { preview, indexable: isIndexableDeployment() }),
+    publicSlugs: { brands: doc.brands.filter((b) => b.visible).map((b) => b.slug), services: doc.services.filter((s) => s.visible).map((s) => s.slug) },
+  }
 }

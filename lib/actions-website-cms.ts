@@ -16,6 +16,7 @@ const UNAVAILABLE = "Website storage is not set up in this database yet. Apply s
 
 function refreshPublic() {
   revalidatePath("/", "layout")
+  revalidatePath("/sitemap.xml")
 }
 
 /** Permission first, then the deployment policy; only then any data is read. */

@@ -4,6 +4,7 @@ import brandHeroes from "@/data/editorial/brand-heroes-v2.json"
 import { seedServices } from "./seed-services"
 import { DEFAULT_ANALYTICS } from "./analytics"
 import type { HomeSection } from "./types"
+import { appointmentDefaults } from "./appointment"
 
 /** Default homepage bands, in display order. Also used to backfill older documents. */
 export const HOME_SECTION_DEFAULTS: HomeSection[] = [
@@ -257,6 +258,7 @@ export function seedDocument(): WebsiteDocument {
       ],
     },
     pages: {
+      appointment: appointmentDefaults().page,
       home: {
         eyebrow: t("Independent premium car workshop · Al Quoz, Dubai", "ورشة مستقلة للسيارات الفاخرة · القوز، دبي"),
         title: t("Premium car repair, diagnosed before it is quoted.", "إصلاح السيارات الفاخرة، بتشخيص يسبق عرض السعر."),
@@ -364,6 +366,7 @@ export function seedDocument(): WebsiteDocument {
       redirects: [],
     },
     forms: {
+      appointment: appointmentDefaults().form,
       enquiry: {
         heading: t("Send an enquiry", "أرسل استفساراً"),
         intro: t(

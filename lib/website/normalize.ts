@@ -16,6 +16,7 @@ import {
   teamSlotId,
 } from "./seed"
 import { analyticsIssues, sanitizeAnalytics } from "./analytics"
+import { appointmentDefaults, APPOINTMENT_TYPES } from "./appointment"
 
 const MAX_STR = 8000
 const MAX_ITEMS = 300
@@ -261,6 +262,11 @@ export function normalizeDocument(input: unknown, drops?: string[]): WebsiteDocu
     ar: isObj(raw.strings?.ar) ? (raw.strings!.ar as Record<string, unknown>) : {},
   }
   doc.images = {}
+  // Older saved documents inherit their original appointment dictionary overrides once.
+  const old = isObj(clean) ? clean as Record<string, unknown> : {}
+  const appointment = appointmentDefaults(doc.strings)
+  if (!isObj(old.pages) || !Object.prototype.hasOwnProperty.call(old.pages, "appointment")) doc.pages.appointment = appointment.page
+  if (!isObj(old.forms) || !Object.prototype.hasOwnProperty.call(old.forms, "appointment")) doc.forms.appointment = appointment.form
   if (isObj(raw.images)) {
     for (const [k, v] of Object.entries(raw.images as Record<string, unknown>)) {
       const u = typeof v === "string" ? safeMediaUrl(v) : ""
@@ -468,6 +474,9 @@ export function validateDocument(doc: WebsiteDocument): ValidationIssue[] {
   }
 
   const mediaIds = new Set(doc.media.map((m) => m.id))
+  if (doc.pages.appointment.visible && doc.forms.appointment.enabled && !APPOINTMENT_TYPES.some((t) => doc.forms.appointment.modes[t])) {
+    issues.push({ level: "error", where: "Appointment form", message: "Enable at least one booking type or disable the form." })
+  }
   const approved = new Set(doc.media.filter((m) => m.approval === "approved" && m.publicSafe).map((m) => m.id))
   for (const b of doc.brands.filter((x) => x.visible)) {
     if (!b.name.en.trim() || !b.name.ar.trim()) issues.push({ level: "error", where: `Brand: ${b.slug}`, message: "Name is required in English and Arabic." })

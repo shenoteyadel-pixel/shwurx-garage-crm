@@ -4,8 +4,9 @@ import { useRef, useState } from "react"
 import { CheckCircle2, Loader2, Car, Truck, MapPin } from "lucide-react"
 import { Button, Field, Input } from "@/components/ui"
 import { emitConversion, intakeEnvelope, newSubmissionId, submitAppointment } from "@/lib/site-track"
-import { SITE_SERVICES } from "@/lib/site-services"
-import { useI18n } from "@/lib/i18n/provider"
+import { APPOINTMENT_TYPES, type AppointmentFormConfig } from "@/lib/website/appointment"
+import type { Lang } from "@/lib/website/types"
+import { MIN_VEHICLE_YEAR } from "@/lib/website/intake-validate"
 import { DryRunNotice } from "@/components/site/dry-run-notice"
 
 type Status = "idle" | "submitting" | "done" | "error" | "dry_run"
@@ -27,12 +28,16 @@ const TYPE_ICON: Record<ApptType, typeof Car> = {
   pickup_delivery: Truck,
 }
 
-export function AppointmentForm() {
-  const { t, dir } = useI18n()
-  const f = t.appointmentForm
+export function AppointmentForm({ config, lang, services }: {
+  config: AppointmentFormConfig
+  lang: Lang
+  services: { value: string; label: string }[]
+}) {
+  const dir = lang === "ar" ? "rtl" : "ltr"
+  const f = config.copy[lang]
   const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState<string | null>(null)
-  const [apptType, setApptType] = useState<ApptType>("dropoff")
+  const [apptType, setApptType] = useState<ApptType>(() => APPOINTMENT_TYPES.find((t) => config.modes[t]) ?? "dropoff")
   const [sameAsPickup, setSameAsPickup] = useState(true)
   const submissionId = useRef<string>("")
   if (!submissionId.current && typeof window !== "undefined") submissionId.current = newSubmissionId()
@@ -44,7 +49,7 @@ export function AppointmentForm() {
     { value: "dropoff", label: f.types.dropoff.label, hint: f.types.dropoff.hint },
     { value: "pickup", label: f.types.pickup.label, hint: f.types.pickup.hint },
     { value: "pickup_delivery", label: f.types.pickup_delivery.label, hint: f.types.pickup_delivery.hint },
-  ]
+  ].filter((opt) => config.modes[opt.value as ApptType]) as { value: ApptType; label: string; hint: string }[]
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -138,11 +143,11 @@ export function AppointmentForm() {
           <Input id="name" name="name" required placeholder={f.fullNamePlaceholder} />
         </Field>
         <Field label={f.phone} htmlFor="phone">
-          <Input id="phone" name="phone" type="tel" required placeholder="05x xxx xxxx" />
+          <Input id="phone" name="phone" type="tel" required placeholder={f.phonePlaceholder} />
         </Field>
-        <Field label={f.email} htmlFor="email">
-          <Input id="email" name="email" type="email" placeholder="you@email.com" />
-        </Field>
+        {config.optionalFields.email && <Field label={f.email} htmlFor="email">
+          <Input id="email" name="email" type="email" placeholder={f.emailPlaceholder} />
+        </Field>}
         <Field label={f.carMake} htmlFor="vehicleMake">
           <Input id="vehicleMake" name="vehicleMake" placeholder={f.carMakePlaceholder} />
         </Field>
@@ -150,20 +155,20 @@ export function AppointmentForm() {
           <Input id="vehicleModel" name="vehicleModel" placeholder={f.carModelPlaceholder} />
         </Field>
         <Field label={f.year} htmlFor="vehicleYear">
-          <Input id="vehicleYear" name="vehicleYear" inputMode="numeric" placeholder="2021" />
+          <Input id="vehicleYear" name="vehicleYear" type="number" min={MIN_VEHICLE_YEAR} max={new Date().getFullYear() + 1} step={1} inputMode="numeric" placeholder={f.yearPlaceholder} />
         </Field>
-        <Field label={f.plate} htmlFor="plateNumber">
-          <Input id="plateNumber" name="plateNumber" placeholder="A 12345" />
-        </Field>
+        {config.optionalFields.plate && <Field label={f.plate} htmlFor="plateNumber">
+          <Input id="plateNumber" name="plateNumber" placeholder={f.platePlaceholder} />
+        </Field>}
         <Field label={f.serviceNeeded} htmlFor="serviceInterest" className="sm:col-span-2">
           <select id="serviceInterest" name="serviceInterest" defaultValue="" className={fieldInputClass}>
             <option value="">{f.selectService}</option>
-            {SITE_SERVICES.map((s) => (
-              <option key={s.slug} value={s.title}>
-                {t.services[s.slug as keyof typeof t.services]?.title ?? s.title}
+            {services.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
               </option>
             ))}
-            <option value="Other">{f.otherService}</option>
+            {config.allowOther && <option value="Other">{f.otherService}</option>}
           </select>
         </Field>
       </div>
@@ -234,7 +239,7 @@ export function AppointmentForm() {
               </select>
             </Field>
             <Field label={f.mapsLink} htmlFor="pickupMapsUrl">
-              <Input id="pickupMapsUrl" name="pickupMapsUrl" type="url" placeholder="https://maps.google.com/…" />
+              <Input id="pickupMapsUrl" name="pickupMapsUrl" type="url" placeholder={f.mapsPlaceholder} />
             </Field>
             <Field label={f.pickupDate} htmlFor="pickupDate">
               <Input id="pickupDate" name="pickupDate" type="date" />
@@ -285,7 +290,7 @@ export function AppointmentForm() {
                   />
                 </Field>
                 <Field label={f.mapsLink} htmlFor="deliveryMapsUrl" className="sm:col-span-2">
-                  <Input id="deliveryMapsUrl" name="deliveryMapsUrl" type="url" placeholder="https://maps.google.com/…" />
+                  <Input id="deliveryMapsUrl" name="deliveryMapsUrl" type="url" placeholder={f.mapsPlaceholder} />
                 </Field>
               </>
             )}
@@ -315,7 +320,7 @@ export function AppointmentForm() {
         <Field label={f.preferredTime} htmlFor="preferredTime">
           <Input id="preferredTime" name="preferredTime" type="time" />
         </Field>
-        <Field label={f.notes} htmlFor="notes" className="sm:col-span-2">
+        {config.optionalFields.notes && <Field label={f.notes} htmlFor="notes" className="sm:col-span-2">
           <textarea
             id="notes"
             name="notes"
@@ -323,7 +328,7 @@ export function AppointmentForm() {
             placeholder={f.notesPlaceholder}
             className={fieldInputClass}
           />
-        </Field>
+        </Field>}
       </div>
 
       {status === "dry_run" && <DryRunNotice />}

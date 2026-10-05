@@ -12,3 +12,8 @@ export function conversionToken(outcome: "lead" | "appointment", recordId: strin
   if (!secret || !recordId) return null
   return createHmac("sha256", secret).update(`shwurx-conv-v1:${outcome}:${recordId}`).digest("base64url").slice(0, 32)
 }
+
+/** Authenticated Website Center diagnostic only; never returns the key or a token. */
+export function conversionSigningReady(): boolean {
+  return !!(process.env.CONVERSION_TOKEN_SECRET || process.env.SUPABASE_JWT_SECRET)
+}

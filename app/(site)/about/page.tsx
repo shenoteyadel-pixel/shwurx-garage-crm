@@ -58,10 +58,10 @@ export default async function AboutPage() {
 
       <div className="mt-14 flex justify-center">
         <Link
-          href={localePath(lang, "/appointment")}
+          href={localePath(lang, doc.pages.appointment.visible ? "/appointment" : "/contact")}
           className="inline-flex h-12 items-center gap-2 rounded-lg bg-primary px-7 text-base font-semibold text-primary-foreground hover:opacity-90"
         >
-          {t.bookWithUs} <ArrowRight className="h-5 w-5 rtl:rotate-180" />
+          {doc.pages.appointment.visible ? t.bookWithUs : dict.cta.contactUs} <ArrowRight className="h-5 w-5 rtl:rotate-180" />
         </Link>
       </div>
     </div>

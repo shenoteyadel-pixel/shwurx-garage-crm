@@ -55,8 +55,9 @@ export function AnalyticsSection({
     })
 
   const diagnostics = useMemo(() => {
-    const clean = sanitizeAnalytics({ ...a, managed: true })
-    const issues = analyticsIssues(clean)
+    const drops: string[] = []
+    const clean = sanitizeAnalytics({ ...a, managed: true }, drops)
+    const issues = [...drops.map((message) => ({ level: "error" as const, where: "Analytics", message })), ...analyticsIssues(clean)]
     const hosts = clean.allowedHosts.length ? clean.allowedHosts : ["(no host allowed)"]
     const runtimes = hosts.map((h) => ({ host: h, rt: resolveRuntime(clean, h, { preview: false, indexable: true }) }))
     return { issues, runtimes }
@@ -156,8 +157,8 @@ export function AnalyticsSection({
 
         <div className="grid gap-4 md:grid-cols-2">
           {idField("gtmId", "GTM container ID", "The only script loaded when GTM is the owner.")}
-          {idField("ga4Id", "GA4 measurement ID", a.owner === "gtm" ? "Reference only: configure it inside GTM." : "Loaded directly by the site.")}
-          {idField("adsId", "Google Ads conversion ID", a.owner === "gtm" ? "Reference only: configure it inside GTM." : "Loaded directly by the site.")}
+          {idField("ga4Id", "GA4 measurement ID", a.owner === "gtm" ? "Published routing value for the schema2 GTM tags. Applies after a full reload." : "Loaded directly by the site.")}
+          {idField("adsId", "Google Ads conversion ID", a.owner === "gtm" ? "Published routing value for the schema2 GTM tags. Applies after a full reload." : "Loaded directly by the site.")}
           {idField("adsCustomerId", "Google Ads customer ID", "Account reference for your team. Never loaded on the site.")}
           {idField("metaPixelId", "Meta pixel ID", "Optional. Loads only after marketing consent.")}
           {idField("searchConsoleToken", "Search Console verification token", "Paste the token or the whole <meta> tag. Published as a meta tag.")}
@@ -166,8 +167,8 @@ export function AnalyticsSection({
         <div className="flex flex-col gap-3">
           <p className="font-medium">Conversions</p>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Each conversion fires once per saved record, after the server confirms it. Event names go to the dataLayer
-            (GTM) or GA4; Ads labels are used only by the direct Google tag owner.
+            Confirmed enquiries and appointments are deduplicated per saved record. Phone and WhatsApp clicks measure contact intent.
+            Published names and Ads labels route through either the schema2 GTM tags or the direct Google owner.
           </p>
           <div className="flex flex-col gap-3">
             {CONVERSION_KEYS.map((k) => (

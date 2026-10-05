@@ -11,7 +11,14 @@ export const revalidate = 3600
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const doc = await getPublishedDocument()
   const now = new Date()
-  const paths: string[] = ["/", "/brands", "/services", "/about", "/contact", "/blog", "/privacy"]
+  const staticPages = [
+    ["/", doc.pages.home.seo], ["/brands", doc.pages.brandsIndex.seo],
+    ["/services", doc.pages.servicesIndex.seo], ["/about", doc.pages.about.seo],
+    ["/contact", doc.pages.contact.seo], ["/privacy", doc.pages.privacy.seo],
+  ] as const
+  const paths: string[] = staticPages.filter(([, seo]) => !seo.noindex).map(([path]) => path)
+  paths.push("/blog")
+  if (doc.pages.appointment.visible && !doc.pages.appointment.seo.noindex) paths.push("/appointment")
 
   if (isTeamPagePublic(doc) && !doc.pages.team.seo.noindex) paths.push("/team")
   for (const b of doc.brands) if (b.visible && !b.seo.noindex) paths.push(`/brands/${b.slug}`)
@@ -32,13 +39,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }))
   })
 
-  return [...paths.map((p) => ({
-    url: `${SITE_URL}${localePath("en", p)}`,
+  // Each language URL needs its own <loc>; hreflang children alone are not sitemap entries.
+  return [...paths.flatMap((p) => (["en", "ar"] as const).map((lang) => ({
+    url: `${SITE_URL}${localePath(lang, p)}`,
     lastModified: now,
     changeFrequency: "weekly" as const,
     priority: p === "/" ? 1 : p.split("/").length > 2 ? 0.7 : 0.8,
     alternates: {
       languages: { en: `${SITE_URL}${localePath("en", p)}`, ar: `${SITE_URL}${localePath("ar", p)}` },
     },
-  })), ...articles]
+  }))), ...articles]
 }

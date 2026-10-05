@@ -46,13 +46,20 @@ export const PREVIEW_MUTATION_MESSAGE =
  * Canonical origin. Only an https origin on swurxauto.com (or its www host) is
  * accepted from config; anything malformed falls back to the verified host.
  */
-export function resolveSiteOrigin(raw = process.env.NEXT_PUBLIC_SITE_URL): string {
+export function siteOriginDiagnostic(raw = process.env.NEXT_PUBLIC_SITE_URL): {
+  origin: string
+  source: "configured" | "fallback"
+} {
   const v = raw?.trim()
   if (v && /^https:\/\/[^\s/\\]+\/?$/i.test(v)) {
     try {
       const u = new URL(v)
-      if (u.hostname === "www.swurxauto.com") return u.origin
+      if (u.hostname === "www.swurxauto.com") return { origin: u.origin, source: "configured" }
     } catch {}
   }
-  return CANONICAL_ORIGIN
+  return { origin: CANONICAL_ORIGIN, source: "fallback" }
+}
+
+export function resolveSiteOrigin(raw = process.env.NEXT_PUBLIC_SITE_URL): string {
+  return siteOriginDiagnostic(raw).origin
 }

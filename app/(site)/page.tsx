@@ -35,7 +35,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 const HERO_ICONS = [UserCog, Cpu, BadgeCheck]
-const WALL_WORDS = ["DIAGNOSE", "REPAIR", "PROGRAM", "MAINTAIN", "PERFORM"]
 const ABOUT_ICONS = [Star, Cpu, BadgeCheck, ClipboardCheck, HeartHandshake]
 
 const SERVICE_ICONS: Record<ServiceKind, LucideIcon> = {
@@ -110,8 +109,7 @@ export default async function HomePage() {
   const heroVisible = visibleKeys.has("hero")
   const sec = (key: HomeSectionKey) => home.sections.find((s) => s.key === key)
   const highlights = home.highlights.filter((h) => pick(h.title, lang))
-  const heroIllustrative = isIllustrativeMedia(doc, heroMedia?.id)
-  const heroCaption = heroIllustrative && heroMedia ? pick(heroMedia.caption, lang) : ""
+  const heroCaption = heroMedia ? pick(heroMedia.caption, lang) : ""
   const teamPublic = isTeamPagePublic(doc)
   const teamMembers = teamPublic
     ? doc.pages.team.members.filter((m) => !m.archived && isPublicTeamMember(m)).slice(0, 4)
@@ -130,35 +128,18 @@ export default async function HomePage() {
 
   const sections: Partial<Record<HomeSectionKey, React.ReactNode>> = {
     hero: (
-      <section key="hero" className="relative isolate overflow-hidden border-b border-border bg-background">
-        {heroImg && (
-        <div className="absolute inset-y-0 right-0 z-0 hidden w-[62%] lg:block rtl:left-0 rtl:right-auto">
-          <Image src={heroImg} alt={heroAlt} fill priority sizes="62vw" className="object-cover object-center" />
-          <div className="absolute inset-0 bg-gradient-to-r from-background via-background/45 to-transparent rtl:bg-gradient-to-l" />
-          <div className="absolute inset-y-0 right-8 hidden flex-col justify-center gap-2 text-right xl:flex" aria-hidden="true">
-            {WALL_WORDS.map((w) => (
-              <span key={w} className="text-3xl font-black uppercase tracking-wide text-foreground/[0.07]">{w}</span>
-            ))}
-          </div>
-          {heroCaption && (
-            <p className="absolute bottom-3 right-4 z-10 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground rtl:left-4 rtl:right-auto">
-              {heroCaption}
-            </p>
-          )}
-        </div>
-        )}
-
-        <div className="relative z-10 mx-auto max-w-7xl px-4 lg:px-8">
-          <div className="grid items-center gap-8 lg:grid-cols-2">
-            <div className="py-14 lg:py-28">
+      <section key="hero" className="overflow-hidden border-b border-border bg-background">
+        <div className="mx-auto max-w-[1600px] px-4 py-10 sm:px-6 sm:py-12 lg:px-10 lg:py-16">
+          <div className="grid items-center gap-8 lg:grid-cols-12 lg:gap-10 xl:gap-14">
+            <div className={`min-w-0 ${heroImg ? "lg:col-span-5" : "lg:col-span-12 lg:max-w-3xl"}`}>
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">{pick(home.eyebrow, lang)}</p>
-              <h1 className="mt-5 text-balance text-4xl font-black leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl">
+              <h1 className="mt-5 text-balance text-4xl font-black leading-[1.05] tracking-tight sm:text-5xl lg:text-[2.625rem] xl:text-5xl 2xl:text-[3.5rem]">
                 {pick(home.title, lang)}
               </h1>
-              <p className="mt-5 max-w-md text-pretty text-base leading-relaxed text-muted-foreground">{pick(home.subtitle, lang)}</p>
+              <p className="mt-5 max-w-xl text-pretty text-base leading-relaxed text-muted-foreground">{pick(home.subtitle, lang)}</p>
 
               {ctas.length > 0 && (
-                <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                   {ctas.map(({ cta, label, primary }) => (
                     <TrackLink
                       key={label}
@@ -178,7 +159,7 @@ export default async function HomePage() {
               )}
 
               {highlights.length > 0 && (
-                <ul className="mt-12 grid max-w-lg grid-cols-1 gap-6 sm:grid-cols-3">
+                <ul className="mt-10 grid max-w-xl grid-cols-1 gap-5 sm:grid-cols-3">
                   {highlights.map((h, i) => {
                     const Icon = HERO_ICONS[i] ?? BadgeCheck
                     return (
@@ -196,15 +177,20 @@ export default async function HomePage() {
             </div>
 
             {heroImg && (
-              <div className="relative -mx-4 h-64 sm:h-80 lg:hidden">
-                <Image src={heroImg} alt={heroAlt} fill priority sizes="100vw" className="object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
-                {heroCaption && (
-                  <p className="absolute bottom-2 left-4 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground rtl:left-auto rtl:right-4">
-                    {heroCaption}
-                  </p>
-                )}
-              </div>
+              <figure className="min-w-0 lg:col-span-7">
+                <div className="relative aspect-[1672/941] overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+                  <Image
+                    src={heroImg}
+                    alt={heroAlt}
+                    fill
+                    priority
+                    sizes="(min-width: 1600px) 850px, (min-width: 1024px) 56vw, 100vw"
+                    className="object-cover"
+                    style={{ objectPosition: `${heroMedia?.focalX ?? 50}% ${heroMedia?.focalY ?? 50}%` }}
+                  />
+                </div>
+                {heroCaption && <figcaption className="mt-3 text-sm text-muted-foreground">{heroCaption}</figcaption>}
+              </figure>
             )}
           </div>
         </div>

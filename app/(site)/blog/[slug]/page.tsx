@@ -4,6 +4,7 @@ import Image from "next/image"
 import { notFound } from "next/navigation"
 import { ArrowRight } from "lucide-react"
 import { localePath, pick, siteContext, SITE_URL } from "@/lib/website/render"
+import { displayImageAlt, displayImageCaption } from "@/lib/website/media-display"
 import { isIndexableDeployment } from "@/lib/website/env"
 import { getPublishedArticle, listLiveArticles } from "@/lib/blog"
 import { isLocaleLive, liveLocales, relatedArticles, type Article, type ArticleLang } from "@/lib/article-model"
@@ -79,7 +80,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       locale: lang === "ar" ? "ar_AE" : "en_AE",
       publishedTime: article.publishedAt ?? undefined,
       modifiedTime: article.updatedAt || undefined,
-      images: image ? [{ url: image, alt: c.coverAlt }] : undefined,
+      images: image ? [{ url: image, alt: displayImageAlt(c.coverAlt, c.title, article.coverIllustrative) }] : undefined,
     },
     robots: !isIndexableDeployment() || preview ? { index: false, follow: false, nocache: true } : undefined,
   }
@@ -91,6 +92,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
   if (!article) notFound()
   const u = UI[lang]
   const c = article.content[lang]
+  const coverCaption = displayImageCaption(c.coverCaption, article.coverIllustrative)
 
   const brand = article.brandSlug ? doc.brands.find((b) => b.slug === article.brandSlug && b.visible) : undefined
   const brandName = brand ? pick(brand.name, lang) : ""
@@ -154,9 +156,9 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
       {article.coverUrl && (
         <figure className="mt-8">
           <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl bg-muted">
-            <Image src={article.coverUrl || "/placeholder.svg"} alt={c.coverAlt} fill sizes="(min-width: 768px) 768px, 100vw" className="object-cover" priority />
+            <Image src={article.coverUrl || "/placeholder.svg"} alt={displayImageAlt(c.coverAlt, c.title, article.coverIllustrative)} fill sizes="(min-width: 768px) 768px, 100vw" className="object-cover" priority />
           </div>
-          {c.coverCaption && <figcaption className="mt-2 text-sm text-muted-foreground">{c.coverCaption}</figcaption>}
+          {coverCaption && <figcaption className="mt-2 text-sm text-muted-foreground">{coverCaption}</figcaption>}
         </figure>
       )}
 

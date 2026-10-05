@@ -3,7 +3,8 @@ import type { Metadata } from "next"
 import { getServerLocale } from "@/lib/i18n/server"
 import { getRenderDocument } from "./store"
 import { isIndexableDeployment, resolveSiteOrigin } from "./env"
-import { isTeamPagePublic } from "./normalize"
+import { isIllustrativeSource, isTeamPagePublic } from "./normalize"
+import { displayImageAlt, displayImageCaption } from "./media-display"
 import type { L10n, Lang, MediaAsset, NavLink, SeoFields, WebsiteDocument } from "./types"
 
 // The live apex 308-redirects to www, so canonicals always use the www origin.
@@ -32,7 +33,20 @@ export function visibleNav(doc: WebsiteDocument, links: NavLink[]): NavLink[] {
 export function publicMedia(doc: WebsiteDocument, id: string | null | undefined): MediaAsset | null {
   if (!id) return null
   const m = doc.media.find((x) => x.id === id)
-  return m && m.approval === "approved" && m.publicSafe ? m : null
+  if (!m || m.approval !== "approved" || !m.publicSafe) return null
+  if (!isIllustrativeSource(m.source)) return m
+  // Render a copy so the CMS keeps the original source and owner-written captions.
+  const portrait = m.tags.includes("team")
+  const alt: L10n = portrait
+    ? { en: "Team profile placeholder in a SHWURX uniform", ar: "صورة مؤقتة لملف عضو الفريق بزي شوركس" }
+    : {
+        en: displayImageAlt(m.alt.en, "SHWURX Auto Service Center", true),
+        ar: displayImageAlt(m.alt.ar, "مركز شوركس لخدمة السيارات", true),
+      }
+  return { ...m, alt, caption: {
+    en: displayImageCaption(m.caption.en, true),
+    ar: displayImageCaption(m.caption.ar, true),
+  } }
 }
 
 export async function siteContext() {

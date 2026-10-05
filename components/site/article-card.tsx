@@ -1,5 +1,6 @@
 import Link from "next/link"
 import Image from "next/image"
+import { displayImageAlt } from "@/lib/website/media-display"
 import type { Article, ArticleLang } from "@/lib/article-model"
 
 export function formatArticleDate(iso: string | null, lang: ArticleLang) {
@@ -24,7 +25,7 @@ export function ArticleCard({ article, lang, brandName }: { article: Article; la
         {article.coverUrl ? (
           <Image
             src={article.coverUrl || "/placeholder.svg"}
-            alt={c.coverAlt}
+            alt={displayImageAlt(c.coverAlt, c.title, article.coverIllustrative)}
             fill
             sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
             className="object-cover transition duration-300 group-hover:scale-105"

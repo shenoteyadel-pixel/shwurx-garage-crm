@@ -9,7 +9,7 @@ import { after } from "next/server"
 import { VAT_RATE, type Stage } from "@/lib/constants"
 import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
-import { attachJobVehicleImage } from "@/lib/vehicle-image-attach"
+import { attachJobVehicleImage, attachVehicleMasterImage } from "@/lib/vehicle-image-attach"
 import { sanitizeMileage } from "@/lib/utils"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import { requireJobWork } from "@/lib/rbac/job-access"
@@ -463,11 +463,71 @@ export async function updateJobDetails(jobId: string, formData: FormData) {
   if (formData.has("estimated_completion")) {
     patch.estimated_completion = String(formData.get("estimated_completion") || "") || null
   }
-  const { error } = await supabase.from("jobs").update(patch).eq("id", jobId)
+  const { data: before } = await supabase
+    .from("jobs")
+    .select("vehicle_id, vehicle_make, vehicle_model, variant, vehicle_year, color, vehicle_image_source")
+    .eq("id", jobId)
+    .maybeSingle()
+
+  const norm = (v: unknown) => String(v ?? "").trim().toLowerCase()
+  const changed = (field: string, prev: unknown) => field in patch && norm(patch[field]) !== norm(prev)
+  const identityChanged =
+    !!before &&
+    (changed("vehicle_make", before.vehicle_make) ||
+      changed("vehicle_model", before.vehicle_model) ||
+      changed("variant", before.variant) ||
+      changed("vehicle_year", before.vehicle_year) ||
+      changed("color", before.color))
+  const regenerateImage = identityChanged && before?.vehicle_image_source !== "custom"
+  if (regenerateImage) {
+    // The old studio render shows the previous model — clear it so the board
+    // shows the silhouette until the correct image is generated.
+    patch.vehicle_reference_image_url = null
+    patch.vehicle_image_source = null
+  }
+
+  const { data: saved, error } = await supabase
+    .from("jobs")
+    .update(patch)
+    .eq("id", jobId)
+    .select("vehicle_id, vehicle_make, vehicle_model, variant, vehicle_year, color, vin, body_type")
+    .single()
   if (error) throw new Error(error.message)
+
+  // Keep the master vehicle record in sync so the corrected make/model sticks
+  // for future visits and isn't re-copied from the old (wrong) profile.
+  if (saved?.vehicle_id && identityChanged) {
+    await supabase
+      .from("vehicles")
+      .update({
+        make: saved.vehicle_make,
+        model: saved.vehicle_model,
+        variant: saved.variant,
+        year: saved.vehicle_year,
+        color: saved.color,
+        ...(saved.vin ? { vin: saved.vin } : {}),
+        ...(saved.body_type ? { body_type: saved.body_type } : {}),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", saved.vehicle_id)
+  }
+
+  if (regenerateImage && saved) {
+    const identity = {
+      make: saved.vehicle_make,
+      model: saved.vehicle_model,
+      year: saved.vehicle_year,
+      color: saved.color,
+      trim: saved.variant,
+    }
+    const vehicleId = saved.vehicle_id as string | null
+    after(() => (vehicleId ? attachVehicleMasterImage(vehicleId, identity) : attachJobVehicleImage(jobId, identity)))
+  }
+
   await logCurrent("job.update_details", "job", jobId)
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/crm")
+  revalidatePath("/flow")
 }
 
 /**

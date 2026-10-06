@@ -40,3 +40,39 @@ export async function attachJobVehicleImage(
     console.log("[v0] attachJobVehicleImage failed:", (err as Error).message)
   }
 }
+
+/**
+ * Regenerate the studio image for a master vehicle after its identity changed
+ * (e.g. corrected from GLC to G-Class on a job card) and push it onto every
+ * job for that vehicle. Background-only; never clobbers custom photos.
+ */
+export async function attachVehicleMasterImage(
+  vehicleId: string,
+  vehicle: { make: string | null; model: string | null; year: number | null; color: string | null; trim?: string | null },
+): Promise<void> {
+  try {
+    const image = await resolveVehicleImage(vehicle)
+    if (!image) return
+    const svc = createServiceClient()
+    const stamp = new Date().toISOString()
+    await svc
+      .from("vehicles")
+      .update({ reference_image_url: image.url, image_source: image.source, image_resolved_at: stamp })
+      .eq("id", vehicleId)
+      .or("image_source.is.null,image_source.neq.custom")
+    await svc
+      .from("jobs")
+      .update({
+        vehicle_reference_image_url: image.url,
+        vehicle_image_source: image.source,
+        vehicle_image_resolved_at: stamp,
+      })
+      .eq("vehicle_id", vehicleId)
+      .or("vehicle_image_source.is.null,vehicle_image_source.neq.custom")
+    revalidatePath("/crm")
+    revalidatePath("/flow")
+    revalidatePath(`/vehicles/${vehicleId}`)
+  } catch (err) {
+    console.log("[v0] attachVehicleMasterImage failed:", (err as Error).message)
+  }
+}

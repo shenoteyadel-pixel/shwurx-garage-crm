@@ -42,7 +42,7 @@ function cacheKey(year: string, make: string, model: string, color: string, trim
   // Bump the version prefix whenever the prompt changes so every vehicle
   // regenerates instead of serving a stale cached render.
   return createHash("sha1")
-    .update(`v10|${year}|${make}|${model}|${generation}|${trim}|${color}`.toLowerCase())
+    .update(`v12|${year}|${make}|${model}|${generation}|${trim}|${color}`.toLowerCase())
     .digest("hex")
     .slice(0, 20)
 }
@@ -83,6 +83,53 @@ function paintPhrase(color: string): string {
   return map[c] || (color ? color.toUpperCase() : "factory-colour")
 }
 
+// gpt-image-1's native transparency (and earlier white/charcoal flood-fills)
+// erased light silver/white body panels along with the backdrop, leaving a
+// faded "sketch" of the car. A saturated chroma key never matches real paint,
+// so it can be removed exactly. Green cars use a magenta key instead.
+type KeyColor = "green" | "magenta"
+function keyFor(color: string): KeyColor {
+  return /green|lime|olive|teal|mint|emerald/i.test(color) ? "magenta" : "green"
+}
+const keyName = (color: string) => (keyFor(color) === "green" ? "bright green" : "bright magenta")
+const keyHex = (color: string) => (keyFor(color) === "green" ? "#00FF00" : "#FF00FF")
+
+async function removeChromaKey(input: Buffer, key: KeyColor): Promise<Buffer> {
+  const { data, info } = await sharp(input, { failOn: "none" })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+  for (let o = 0; o < data.length; o += 4) {
+    const r = data[o]
+    const g = data[o + 1]
+    const b = data[o + 2]
+    // How strongly this pixel leans toward the key colour.
+    const spill = key === "green" ? g - Math.max(r, b) : Math.min(r, b) - g
+    // Reflected key light tints glass and paint; the car is never the key
+    // colour, so clamp that channel back to neutral everywhere.
+    if (key === "green" && g > Math.max(r, b)) data[o + 1] = Math.max(r, b)
+    if (key === "magenta" && Math.min(r, b) > g) {
+      const excess = Math.min(r, b) - g
+      data[o] = r - excess
+      data[o + 2] = b - excess
+    }
+    if (spill <= 25) continue
+    if (spill >= 90) {
+      data[o + 3] = 0
+      continue
+    }
+    // Soft edge: fade alpha and strip the key tint (despill).
+    data[o + 3] = Math.round(255 * (1 - (spill - 25) / 65))
+    if (key === "green") data[o + 1] = Math.max(r, b)
+    else {
+      const m = g
+      data[o] = Math.min(r, m + 10)
+      data[o + 2] = Math.min(b, m + 10)
+    }
+  }
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer()
+}
+
 function buildPrompt(year: string, make: string, model: string, color: string, trim: string, body: BodyType | undefined, generation: string) {
   const brand = [make, model].filter(Boolean).join(" ").trim()
   const yearText = year ? `${year} ` : ""
@@ -115,7 +162,7 @@ function buildPrompt(year: string, make: string, model: string, color: string, t
     `Exact factory-correct body shape and proportions for a ${brand}, with the correct genuine ${make} manufacturer badge and grille — never another car brand's logo.${genClause}${trimClause}${bodyClause}`,
     "Three-quarter front view from a slightly low angle, the front of the car facing to the left, the whole vehicle centred and fully in frame with even margin on all sides, always the same camera distance and framing.",
     "All four tyres, the wheels, windscreen and windows are fully and solidly rendered with realistic glass tint and black rubber tyres.",
-    "Isolated on a fully transparent background, with soft professional automotive studio lighting, no scenery, no floor, no shadow, no reflection.",
+    `Isolated on a perfectly flat, uniform, pure chroma-key ${keyName(color)} background (${keyHex(color)}) filling the whole frame edge to edge, with soft professional automotive studio lighting, no scenery, no floor, no shadow, no reflection. The ${keyName(color)} must never appear on the car itself.`,
     // Critical: stop the model baking the year / a number plate / captions onto the car.
     "Absolutely no text, no numbers, no license plate, no captions, no watermark, no extra logos anywhere in the image. The number plate area must be blank.",
     "Sharp focus, high detail, centered composition.",
@@ -145,14 +192,12 @@ export async function generateVehicleImage(v: VehicleForImage): Promise<string |
       model: gateway.imageModel(IMAGE_MODEL),
       prompt: buildPrompt(year, make, model, color, trim, body, generation),
       size: IMAGE_SIZE,
-      // Native transparency keeps every dark detail (tyres, glass, grille).
-      // The old charcoal-backdrop flood-fill erased those, leaving a ghostly
-      // white sketch of the car.
-      providerOptions: { openai: { background: "transparent", quality: "medium", output_format: "png" } },
+      providerOptions: { openai: { background: "opaque", quality: "medium", output_format: "png" } },
       abortSignal: AbortSignal.timeout(110000),
     })
     const raw = Buffer.from(image.uint8Array)
-    const trimmed = await trimTransparent(raw)
+    const keyed = await removeChromaKey(raw, keyFor(color))
+    const trimmed = await trimTransparent(keyed)
     const url = await uploadVehiclePng(trimmed, PREFIX, key)
     if (!url) return null
     // Cache-bust so a regenerated key is picked up immediately.

@@ -27,6 +27,7 @@ const fetcher = (url: string) =>
   })
 
 const DISMISS_KEY = "shwurx_dismissed_alerts"
+const AUTO_SHOWN_KEY = "shwurx_alerts_auto_shown"
 
 function readDismissed(): string[] {
   try {
@@ -58,11 +59,21 @@ export function CrmAssist() {
   const pending = alerts.filter((a) => !dismissed.includes(a.id))
   const guideDue = !!data && data.guideSeenVersion < GUIDE_VERSION
 
+  // Alerts auto-open at most once per browser session; otherwise they reappear on every page
+  // navigation (the shell remounts per page) and interrupt staff mid-form on tablets.
   useEffect(() => {
     if (!data || autoShown) return
     setAutoShown(true)
-    if (guideDue) setGuideOpen(true)
-    else if (pending.some((a) => a.severity !== "info")) setAlertsOpen(true)
+    if (guideDue) {
+      setGuideOpen(true)
+      return
+    }
+    let alreadyShown = false
+    try {
+      alreadyShown = sessionStorage.getItem(AUTO_SHOWN_KEY) === "1"
+      sessionStorage.setItem(AUTO_SHOWN_KEY, "1")
+    } catch {}
+    if (!alreadyShown && pending.some((a) => a.severity !== "info")) setAlertsOpen(true)
   }, [data, autoShown, guideDue, pending])
 
   const closeGuide = useCallback(() => {
@@ -76,7 +87,9 @@ export function CrmAssist() {
   const dismiss = (id: string) => {
     const next = [...dismissed, id]
     setDismissed(next)
-    sessionStorage.setItem(DISMISS_KEY, JSON.stringify(next))
+    try {
+      sessionStorage.setItem(DISMISS_KEY, JSON.stringify(next))
+    } catch {}
   }
 
   return (

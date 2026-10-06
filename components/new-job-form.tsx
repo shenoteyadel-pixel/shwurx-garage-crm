@@ -477,7 +477,10 @@ function NewVehicleForm({
         return
       }
       // STEP 2-4 — real decode -> AI normalization -> catalog confirmation.
-      const res = await identifyVehicle({ vin })
+      const res = await identifyVehicle({
+        vin,
+        manual: { make, model, variant, year: draft.year ? String(draft.year) : "" },
+      })
       if (!res.ok) {
         setDecodeNote(res.error)
         setDecoding(false)

@@ -577,7 +577,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             />
           )}
 
-          {job.customer_id && <JobCustomerAccess jobId={job.id} />}
+          {job.customer_id && (
+            <JobCustomerAccess jobId={job.id} canEdit={sessionCtx?.permissions.has("customers.edit") ?? false} />
+          )}
 
           {showPrices && (
             <ApprovalsPanel

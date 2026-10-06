@@ -41,7 +41,7 @@ import {
   ScanSearch,
 } from "lucide-react"
 
-type Staff = { id: string; full_name: string | null; role: string }
+type Staff = { id: string; full_name: string | null; role: string; job_title?: string | null }
 type Customer = {
   id: string
   full_name: string
@@ -817,7 +817,7 @@ function VisitStep({
               <option value="">Unassigned</option>
               {staff.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.full_name || "Staff"} ({s.role})
+                  {s.full_name || "Staff"} ({s.job_title?.trim() || s.role})
                 </option>
               ))}
             </Select>

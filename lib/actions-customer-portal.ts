@@ -299,8 +299,12 @@ export async function autoProvisionCustomerPortal(customerId: string): Promise<v
 
 export type JobAccessInfo = {
   hasCustomer: boolean
+  customerId: string | null
   email: string | null
   mobile: string | null
+  whatsapp: string | null
+  altMobile: string | null
+  address: string | null
   customerName: string
   vehicleLabel: string
   portalStatus: "created" | "none"
@@ -323,8 +327,12 @@ export async function getJobCustomerAccess(jobId: string): Promise<JobAccessInfo
   const base = appBaseUrl()
   const empty: JobAccessInfo = {
     hasCustomer: false,
+    customerId: null,
     email: null,
     mobile: null,
+    whatsapp: null,
+    altMobile: null,
+    address: null,
     customerName: "",
     vehicleLabel: "Vehicle",
     portalStatus: "none",
@@ -348,7 +356,7 @@ export async function getJobCustomerAccess(jobId: string): Promise<JobAccessInfo
 
     const { data: customer } = await svc
       .from("customers")
-      .select("full_name, email, mobile")
+      .select("full_name, email, mobile, whatsapp, alt_mobile, address")
       .eq("id", job.customer_id)
       .maybeSingle()
 
@@ -390,8 +398,12 @@ export async function getJobCustomerAccess(jobId: string): Promise<JobAccessInfo
 
     return {
       hasCustomer: true,
+      customerId: job.customer_id,
       email: customer?.email ?? null,
       mobile: customer?.mobile ?? null,
+      whatsapp: customer?.whatsapp ?? null,
+      altMobile: customer?.alt_mobile ?? null,
+      address: customer?.address ?? null,
       customerName: customer?.full_name ?? "",
       vehicleLabel:
         [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle",
@@ -502,4 +514,102 @@ export async function regenerateJobTrackingLink(jobId: string): Promise<{ tracki
   await logAction(ctx, "portal.regenerate_tracking", "job", jobId)
   revalidatePath(`/jobs/${jobId}`)
   return { trackingUrl: `${appBaseUrl()}/track/${token}` }
+}
+
+export type JobCustomerDetailsInput = {
+  fullName: string
+  mobile: string
+  whatsapp: string
+  altMobile: string
+  email: string
+  address: string
+}
+
+export type JobCustomerDetailsResult = {
+  ok: boolean
+  error?: string
+  loginEmailUpdated?: boolean
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function clean(v: string, max: number): string | null {
+  const t = (v ?? "").trim().slice(0, max)
+  return t || null
+}
+
+/**
+ * Edit the customer's contact details from the Job Card (owner / service advisor).
+ * Fills in missing details, syncs name/mobile onto the customer's job cards and,
+ * when the customer already has a portal login, moves that login to the new email
+ * so their access keeps working.
+ */
+export async function updateJobCustomerDetails(
+  jobId: string,
+  input: JobCustomerDetailsInput,
+): Promise<JobCustomerDetailsResult> {
+  const ctx = await requirePermission("customers.edit")
+  const svc = createServiceClient()
+
+  const fullName = clean(input.fullName, 120)
+  const mobile = clean(input.mobile, 32)
+  const email = clean(input.email, 254)?.toLowerCase() ?? null
+  if (!fullName) return { ok: false, error: "Customer name is required." }
+  if (!mobile) return { ok: false, error: "Mobile number is required." }
+  if (mobile.replace(/[^\d]/g, "").length < 7) return { ok: false, error: "Mobile number looks too short." }
+  if (email && !EMAIL_RE.test(email)) return { ok: false, error: "Enter a valid email address." }
+
+  const { data: job } = await svc.from("jobs").select("customer_id").eq("id", jobId).maybeSingle()
+  if (!job?.customer_id) return { ok: false, error: "This job card has no linked customer." }
+  const customerId = job.customer_id as string
+
+  const { data: before } = await svc.from("customers").select("email").eq("id", customerId).maybeSingle()
+
+  const now = new Date().toISOString()
+  const { error } = await svc
+    .from("customers")
+    .update({
+      full_name: fullName,
+      mobile,
+      whatsapp: clean(input.whatsapp, 32),
+      alt_mobile: clean(input.altMobile, 32),
+      email,
+      address: clean(input.address, 500),
+      updated_at: now,
+    })
+    .eq("id", customerId)
+  if (error) return { ok: false, error: "Could not save customer details." }
+
+  await svc
+    .from("jobs")
+    .update({ customer_name: fullName, customer_mobile: mobile, updated_at: now })
+    .eq("customer_id", customerId)
+
+  let loginEmailUpdated = false
+  const emailChanged = (before?.email ?? "").trim().toLowerCase() !== (email ?? "")
+  if (emailChanged && email) {
+    const { data: profile } = await svc.from("profiles").select("id").eq("customer_id", customerId).maybeSingle()
+    if (profile?.id) {
+      const { error: authErr } = await svc.auth.admin.updateUserById(profile.id, { email, email_confirm: true })
+      if (authErr) {
+        return {
+          ok: false,
+          error: "Details saved, but the portal login email could not be changed (it may already be in use).",
+        }
+      }
+      loginEmailUpdated = true
+    }
+  }
+
+  await logAction(ctx, "customer.update", "customer", customerId, {
+    source: "job_card",
+    jobId,
+    emailChanged,
+    loginEmailUpdated,
+  })
+  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath(`/customers/${customerId}`)
+  revalidatePath("/customers")
+  revalidatePath("/jobs")
+  return { ok: true, loginEmailUpdated }
 }

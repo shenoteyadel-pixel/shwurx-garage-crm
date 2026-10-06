@@ -1,12 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { Card, Button } from "@/components/ui"
+import { useRouter } from "next/navigation"
+import { Card, Button, Input, Label } from "@/components/ui"
 import {
   getJobCustomerAccess,
   resendCheckInForJob,
   regenerateJobTrackingLink,
+  updateJobCustomerDetails,
+  inviteCustomerToPortal,
   type JobAccessInfo,
+  type JobCustomerDetailsInput,
 } from "@/lib/actions-customer-portal"
 import {
   Loader2,
@@ -19,12 +23,27 @@ import {
   ShieldCheck,
   Eye,
   RefreshCw,
+  Pencil,
+  UserPlus,
 } from "lucide-react"
 
 // Job Card "Customer access" panel. Self-loads the live portal/tracking status
 // so staff can see whether the customer was notified and re-share the link.
-export function JobCustomerAccess({ jobId }: { jobId: string }) {
+export function JobCustomerAccess({ jobId, canEdit = false }: { jobId: string; canEdit?: boolean }) {
+  const router = useRouter()
   const [info, setInfo] = React.useState<JobAccessInfo | null>(null)
+  const [editing, setEditing] = React.useState(false)
+  const [saving, setSaving] = React.useState(false)
+  const [inviting, setInviting] = React.useState(false)
+  const [formError, setFormError] = React.useState<string | null>(null)
+  const [form, setForm] = React.useState<JobCustomerDetailsInput>({
+    fullName: "",
+    mobile: "",
+    whatsapp: "",
+    altMobile: "",
+    email: "",
+    address: "",
+  })
   const [loading, setLoading] = React.useState(true)
   const [copied, setCopied] = React.useState(false)
   const [resending, setResending] = React.useState(false)
@@ -101,6 +120,58 @@ export function JobCustomerAccess({ jobId }: { jobId: string }) {
     }
   }
 
+  function startEdit() {
+    if (!info) return
+    setForm({
+      fullName: info.customerName ?? "",
+      mobile: info.mobile ?? "",
+      whatsapp: info.whatsapp ?? "",
+      altMobile: info.altMobile ?? "",
+      email: info.email ?? "",
+      address: info.address ?? "",
+    })
+    setFormError(null)
+    setEditing(true)
+  }
+
+  async function saveDetails(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setFormError(null)
+    try {
+      const res = await updateJobCustomerDetails(jobId, form)
+      if (!res.ok) {
+        setFormError(res.error ?? "Could not save customer details.")
+        return
+      }
+      const fresh = await getJobCustomerAccess(jobId)
+      setInfo(fresh)
+      setEditing(false)
+      setToast(res.loginEmailUpdated ? "Details saved. Portal login moved to the new email." : "Customer details saved.")
+      router.refresh()
+    } catch {
+      setFormError("Could not save customer details.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function createAccount() {
+    if (!info?.customerId) return
+    setInviting(true)
+    setToast(null)
+    try {
+      const res = await inviteCustomerToPortal(info.customerId)
+      const fresh = await getJobCustomerAccess(jobId)
+      setInfo(fresh)
+      setToast(res.emailSent ? "Portal account created — invite emailed to the customer." : "Portal account created, but the email could not be sent. Use WhatsApp instead.")
+    } catch (err) {
+      setToast((err as Error).message || "Could not create the portal account.")
+    } finally {
+      setInviting(false)
+    }
+  }
+
   if (loading) {
     return (
       <Card className="p-5">
@@ -114,12 +185,68 @@ export function JobCustomerAccess({ jobId }: { jobId: string }) {
 
   if (!info || !info.hasCustomer) return null
 
+  const missing = [
+    !info.email && "Email",
+    !info.whatsapp && "WhatsApp",
+    !info.address && "Address",
+  ].filter(Boolean) as string[]
+
   return (
     <Card className="p-5">
-      <div className="mb-4 flex items-center gap-2">
-        <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Customer access</h2>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Customer access</h2>
+        </div>
+        {canEdit && !editing && (
+          <Button type="button" variant="outline" size="sm" onClick={startEdit}>
+            <Pencil className="h-4 w-4" /> Edit details
+          </Button>
+        )}
       </div>
+
+      {editing ? (
+        <form onSubmit={saveDetails} className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <DetailField id="ca-name" label="Full name" required value={form.fullName} onChange={(v) => setForm({ ...form, fullName: v })} autoComplete="name" />
+            <DetailField id="ca-mobile" label="Mobile" required type="tel" inputMode="tel" value={form.mobile} onChange={(v) => setForm({ ...form, mobile: v })} autoComplete="tel" />
+            <DetailField id="ca-whatsapp" label="WhatsApp" type="tel" inputMode="tel" value={form.whatsapp} onChange={(v) => setForm({ ...form, whatsapp: v })} />
+            <DetailField id="ca-alt" label="Alternate mobile" type="tel" inputMode="tel" value={form.altMobile} onChange={(v) => setForm({ ...form, altMobile: v })} />
+            <DetailField id="ca-email" label="Email (portal login)" type="email" inputMode="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} autoComplete="email" />
+            <DetailField id="ca-address" label="Address" value={form.address} onChange={(v) => setForm({ ...form, address: v })} autoComplete="street-address" />
+          </div>
+          {info.portalStatus === "created" && (
+            <p className="text-xs text-muted-foreground">
+              Changing the email also moves the customer&apos;s portal login to the new address.
+            </p>
+          )}
+          {formError && (
+            <p role="alert" className="text-sm text-destructive">
+              {formError}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" size="sm" disabled={saving} className="min-h-11 px-5">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CircleCheck className="h-4 w-4" />} Save details
+            </Button>
+            <Button type="button" variant="outline" size="sm" disabled={saving} className="min-h-11 px-5" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <>
+      {missing.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+          <CircleAlert className="h-4 w-4 shrink-0 text-amber-500" />
+          <span className="text-foreground">Missing: {missing.join(", ")}</span>
+          {canEdit && (
+            <button type="button" onClick={startEdit} className="font-medium text-primary underline-offset-2 hover:underline">
+              Add now
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <Chip ok={info.portalStatus === "created"} label={info.portalStatus === "created" ? "Portal account" : "No account"} />
@@ -143,6 +270,12 @@ export function JobCustomerAccess({ jobId }: { jobId: string }) {
           <>This customer has no email on file — share the tracking link directly.</>
         )}
       </p>
+
+      {canEdit && info.portalStatus !== "created" && info.email && (
+        <Button type="button" size="sm" className="mt-3 min-h-11 px-4" onClick={createAccount} disabled={inviting}>
+          {inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Create portal account
+        </Button>
+      )}
 
       {info.trackingViews > 0 ? (
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm">
@@ -191,9 +324,54 @@ export function JobCustomerAccess({ jobId }: { jobId: string }) {
           </p>
         </div>
       )}
+        </>
+      )}
 
-      {toast && <p className="mt-2 text-xs text-muted-foreground">{toast}</p>}
+      {toast && (
+        <p role="status" className="mt-2 text-xs text-muted-foreground">
+          {toast}
+        </p>
+      )}
     </Card>
+  )
+}
+
+function DetailField({
+  id,
+  label,
+  value,
+  onChange,
+  required,
+  type = "text",
+  inputMode,
+  autoComplete,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (v: string) => void
+  required?: boolean
+  type?: string
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]
+  autoComplete?: string
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id}>
+        {label}
+        {required && <span className="text-destructive"> *</span>}
+      </Label>
+      <Input
+        id={id}
+        type={type}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
+        required={required}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-11 text-base sm:text-sm"
+      />
+    </div>
   )
 }
 

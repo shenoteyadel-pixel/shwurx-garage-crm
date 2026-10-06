@@ -12,6 +12,8 @@ import {
   localToIso,
   type AttendanceStatus,
 } from "@/lib/attendance"
+import type { AuthenticationResponseJSON } from "@simplewebauthn/server"
+import { verifyFaceIdForAttendance } from "@/lib/faceid"
 
 type Result = { ok: true; message?: string } | { ok: false; error: string }
 type Coords = { lat: number; lng: number; accuracy?: number | null } | null
@@ -51,12 +53,14 @@ async function locationCheck(coords: Coords) {
   return { svc, settings, c, distance }
 }
 
-export async function checkIn(coords: Coords, note?: string): Promise<Result> {
+export async function checkIn(coords: Coords, note?: string, faceId?: AuthenticationResponseJSON | null): Promise<Result> {
   const ctx = await requireStaff()
   if (ctx.role === "owner") return { ok: false, error: "The owner account is not tracked by attendance." }
   const chk = await locationCheck(coords)
   if ("error" in chk) return { ok: false, error: chk.error as string }
   const { svc, settings, c, distance } = chk
+  const face = await verifyFaceIdForAttendance(ctx.userId, faceId)
+  if ("error" in face) return { ok: false, error: face.error }
 
   const now = new Date()
   const today = localDate(now)
@@ -82,6 +86,7 @@ export async function checkIn(coords: Coords, note?: string): Promise<Result> {
     check_in_distance_m: distance,
     check_in_accuracy_m: c?.accuracy ?? null,
     check_in_note: note?.trim().slice(0, 300) || null,
+    check_in_verified: face.verified ?? "gps",
     status: late > 0 ? "late" : "present",
     source: "self",
     updated_at: iso,
@@ -94,11 +99,13 @@ export async function checkIn(coords: Coords, note?: string): Promise<Result> {
   return { ok: true, message: late > 0 ? `Checked in — ${late} min late` : "Checked in on time" }
 }
 
-export async function checkOut(coords: Coords, note?: string): Promise<Result> {
+export async function checkOut(coords: Coords, note?: string, faceId?: AuthenticationResponseJSON | null): Promise<Result> {
   const ctx = await requireStaff()
   const chk = await locationCheck(coords)
   if ("error" in chk) return { ok: false, error: chk.error as string }
   const { svc, c, distance } = chk
+  const face = await verifyFaceIdForAttendance(ctx.userId, faceId)
+  if ("error" in face) return { ok: false, error: face.error }
 
   const now = new Date()
   // Newest open shift within the last 20 hours, so a shift that runs past midnight can still be closed.
@@ -125,6 +132,7 @@ export async function checkOut(coords: Coords, note?: string): Promise<Result> {
       check_out_distance_m: distance,
       check_out_accuracy_m: c?.accuracy ?? null,
       check_out_note: note?.trim().slice(0, 300) || null,
+      check_out_verified: face.verified ?? "gps",
       updated_at: iso,
     })
     .eq("id", open.id)

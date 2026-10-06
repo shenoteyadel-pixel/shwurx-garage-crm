@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.74",
-    "@simplewebauthn/browser": "^14.0.0",
-    "@simplewebauthn/server": "^14.0.3",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.3",
     "@stripe/react-stripe-js": "^6.9.0",
     "@stripe/stripe-js": "^9.15.0",
     "@supabase/ssr": "latest",

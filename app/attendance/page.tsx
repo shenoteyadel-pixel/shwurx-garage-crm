@@ -4,6 +4,7 @@ import { getSettings } from "@/lib/settings"
 import { ctxCan, ctxCanAny, requireStaff } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
 import { AttendanceView } from "@/components/attendance-view"
+import { loadPasskeys } from "@/lib/faceid"
 import {
   RECORD_COLUMNS,
   buildPayroll,
@@ -29,7 +30,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const canEditSettings = ctxCanAny(ctx, ["attendance.manage", "settings.manage"])
 
   const supabase = await createClient()
-  const [shellUser, company, settings, staffRes, recordsRes, todayRes, salaryRes] = await Promise.all([
+  const [shellUser, company, settings, staffRes, recordsRes, todayRes, salaryRes, passkeys] = await Promise.all([
     getShellUser(),
     getSettings(),
     loadAttendanceSettings(supabase),
@@ -53,7 +54,13 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       const q = supabase.from("employee_salaries").select("user_id, monthly_salary")
       return canManage ? q : q.eq("user_id", ctx.userId)
     })(),
+    loadPasskeys(ctx.userId),
   ])
+  const faceIdDevices = passkeys.map((k) => ({
+    id: k.id as string,
+    label: (k.device_label as string | null) || "This device",
+    createdAt: k.created_at as string,
+  }))
 
   const isOwner = ctx.role === "owner"
   const staff = (
@@ -71,6 +78,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       <div className="mx-auto max-w-6xl">
         <AttendanceView
           me={{ id: ctx.userId, name: ctx.name }}
+          faceIdDevices={faceIdDevices}
           today={today}
           month={month}
           settings={settings}

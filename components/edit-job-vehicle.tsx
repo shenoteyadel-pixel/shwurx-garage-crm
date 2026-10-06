@@ -126,6 +126,7 @@ export function EditJobVehicle({
         const res = await identifyVehicle({
           vin: trimmedVin || undefined,
           query: q || trimmedVin || undefined,
+          manual: { make, model, variant, year },
         })
         if (!res.ok) {
           setIdNote(res.error)

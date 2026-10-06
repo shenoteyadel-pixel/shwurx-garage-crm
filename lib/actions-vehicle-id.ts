@@ -104,6 +104,39 @@ function buildConflicts(decoded: VinDecodeResult | null, id: VehicleIdentificati
   }
 }
 
+export type ManualVehicle = { make?: string; model?: string; variant?: string; year?: string }
+
+/**
+ * Values the advisor typed by hand always win over the chassis decode / AI —
+ * VIN decoding is not always right (e.g. a G-Class decoded as GLC). When the
+ * suggestion disagrees with a manual value we keep the manual one and record a
+ * conflict so the advisor sees what the chassis suggested.
+ */
+function applyManualPriority(id: VehicleIdentification, manual?: ManualVehicle): void {
+  if (!manual) return
+  const keys = ["make", "model", "variant", "year"] as const
+  let modelChanged = false
+  for (const key of keys) {
+    const typed = (manual[key] ?? "").trim()
+    if (!typed) continue
+    const suggested = id[key]?.value
+    if (suggested && norm(suggested) !== norm(typed)) {
+      id.conflicts = id.conflicts.filter((c) => c.field !== key)
+      id.conflicts.push({ field: key, values: [typed, suggested] })
+      if (key === "make" || key === "model") modelChanged = true
+    }
+    id[key] = { value: typed, confidence: "high" }
+  }
+  if (modelChanged) {
+    // The chassis-derived trim/generation/body belong to a different model.
+    if (!manual.variant?.trim()) id.variant = null
+    id.generation = null
+    const confirmed = confirmCatalog(id.make?.value, id.model?.value, id.variant?.value)
+    id.bodyType = confirmed.body ? { value: confirmed.body, confidence: "high" } : null
+    id.note = "Kept your manually entered details — the chassis suggested something different."
+  }
+}
+
 /**
  * Hybrid vehicle identification.
  *
@@ -117,6 +150,7 @@ export async function identifyVehicle(input: {
   vin?: string
   query?: string
   decoded?: VinDecodeResult
+  manual?: ManualVehicle
 }): Promise<IdentifyResponse> {
   let decoded: VinDecodeResult | null = input.decoded ?? null
 
@@ -192,7 +226,11 @@ export async function identifyVehicle(input: {
   const ai = await runAi(context)
 
   // Graceful fallback when AI is unavailable: use decode + catalog search only.
-  if (!ai) return fallbackIdentify(decoded, query || rawVin)
+  if (!ai) {
+    const fallback = fallbackIdentify(decoded, query || rawVin)
+    if (fallback.ok) applyManualPriority(fallback.data, input.manual)
+    return fallback
+  }
 
   // STEP 3 — confirm against the local catalog (canonical spellings + known flags).
   const confirmed = confirmCatalog(ai.make || decoded?.make, ai.model || decoded?.model, ai.variant || decoded?.trim)
@@ -217,6 +255,7 @@ export async function identifyVehicle(input: {
   id.bodyType = body ? { value: body, confidence: confirmed.body ? "high" : "medium" } : null
 
   buildConflicts(decoded, id)
+  applyManualPriority(id, input.manual)
 
   // REVIEW REQUIRED when core identity is low-confidence or sources disagree.
   const core = [id.make, id.model, id.year, id.variant]

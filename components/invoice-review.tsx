@@ -71,7 +71,7 @@ export type InvoiceItemRow = {
   unit_cost: number
   vat_rate: number
   inventory_item_id: string | null
-  match_status: "new" | "matched" | "ignore"
+  match_status: "new" | "matched" | "ignore" | "expense"
   job_id: string | null
   parts_request_id: string | null
   suggested_job_label: string | null
@@ -605,7 +605,10 @@ function DestinationMap({
   vat: number
   readOnly: boolean
 }) {
-  const active = lines.filter((l) => l.match_status !== "ignore")
+  const nonIgnored = lines.filter((l) => l.match_status !== "ignore")
+  const active = nonIgnored.filter((l) => l.match_status !== "expense")
+  const expenseLines = nonIgnored.filter((l) => l.match_status === "expense")
+  const carExpenseCount = expenseLines.filter((l) => l.job_id).length
   const supplierLabel =
     suppliers.find((s) => s.id === supplierId)?.name ||
     (invoice.supplier_name_raw ? `${invoice.supplier_name_raw} (new — will be created)` : null)
@@ -615,7 +618,18 @@ function DestinationMap({
   const rows: { field: string; dest: string; ok: boolean }[] = [
     { field: supplierLabel ?? "Supplier not set", dest: "Suppliers → Supplier Profile", ok: !!supplierLabel },
     { field: invoice.invoice_number ? `Invoice #${invoice.invoice_number}` : "Invoice # missing", dest: "Purchasing → Supplier Invoice", ok: !!invoice.invoice_number },
-    { field: `${active.length} part line${active.length === 1 ? "" : "s"}`, dest: "Parts / Inventory → Stock + Purchase History", ok: active.length > 0 },
+    { field: `${active.length} part line${active.length === 1 ? "" : "s"}`, dest: "Parts / Inventory → Stock + Purchase History", ok: active.length > 0 || expenseLines.length > 0 },
+    ...(expenseLines.length
+      ? [
+          {
+            field: `${expenseLines.length} expense line${expenseLines.length === 1 ? "" : "s"}`,
+            dest: carExpenseCount
+              ? `Job Card → Car Expenses (${carExpenseCount})${carExpenseCount < expenseLines.length ? " · rest as general cost" : ""}`
+              : "General purchase cost (no car chosen)",
+            ok: true,
+          },
+        ]
+      : []),
     { field: oemCount ? `${oemCount} OEM number${oemCount === 1 ? "" : "s"}` : "No OEM numbers", dest: "Part Master → OEM Number (CRM Part ID stays internal)", ok: true },
     { field: formatCurrency(subtotal), dest: "Finance → Purchase Cost / Payables", ok: true },
     { field: `VAT ${formatCurrency(vat)}`, dest: "Finance → Input VAT", ok: true },
@@ -785,11 +799,19 @@ function LineRow({
             ) : null}
           </span>
           <Select
-            value={line.match_status === "ignore" ? "__ignore" : line.inventory_item_id ?? "__new"}
+            value={
+              line.match_status === "ignore"
+                ? "__ignore"
+                : line.match_status === "expense"
+                  ? "__expense"
+                  : line.inventory_item_id ?? "__new"
+            }
             disabled={readOnly}
             onChange={(e) => {
               const v = e.target.value
               if (v === "__ignore") onChange({ match_status: "ignore" })
+              else if (v === "__expense")
+                onChange({ match_status: "expense", inventory_item_id: null, parts_request_id: null, suggested_sale_price: 0, markup_pct: 0 })
               else if (v === "__new") onChange({ match_status: "new", inventory_item_id: null })
               else {
                 const item = inventory.find((i) => i.id === v)
@@ -799,6 +821,7 @@ function LineRow({
             className="text-xs"
           >
             <option value="__new">+ Create new part</option>
+            <option value="__expense">Expense (not a part)</option>
             <option value="__ignore">Ignore (don&apos;t stock)</option>
             <optgroup label="Match existing">
               {inventory.map((i) => (
@@ -814,18 +837,22 @@ function LineRow({
         <NumCell
           label="Markup %"
           value={line.markup_pct}
-          disabled={readOnly || line.match_status === "ignore"}
+          disabled={readOnly || line.match_status === "ignore" || line.match_status === "expense"}
           onChange={(v) => onChange({ markup_pct: v })}
         />
         <NumCell
           label="Sale price"
           value={line.suggested_sale_price}
-          disabled={readOnly || line.match_status === "ignore"}
+          disabled={readOnly || line.match_status === "ignore" || line.match_status === "expense"}
           onChange={(v) => onChange({ suggested_sale_price: v })}
         />
         <div className="col-span-12 sm:col-span-3 flex items-center gap-2 pb-2">
-          {line.match_status !== "ignore" && (
-            <span className="text-[10px] text-muted-foreground">{margin}% margin</span>
+          {line.match_status === "expense" ? (
+            <Badge className="border-sky-500/30 bg-sky-500/15 text-sky-300">expense</Badge>
+          ) : (
+            line.match_status !== "ignore" && (
+              <span className="text-[10px] text-muted-foreground">{margin}% margin</span>
+            )
           )}
           {line.confidence !== null && line.confidence < 0.6 && (
             <Badge className="border-amber-500/30 bg-amber-500/15 text-amber-300">check</Badge>
@@ -844,7 +871,7 @@ function LineRow({
               onChange={(e) => onChange({ job_id: e.target.value === "__stock" ? null : e.target.value })}
               className="h-8 w-auto min-w-[220px] text-xs"
             >
-              <option value="__stock">General Stock</option>
+              <option value="__stock">{line.match_status === "expense" ? "No car (general cost)" : "General Stock"}</option>
               <optgroup label="Job Card / Vehicle">
                 {jobs.map((j) => (
                   <option key={j.id} value={j.id}>

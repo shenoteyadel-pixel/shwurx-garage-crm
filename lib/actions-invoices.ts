@@ -444,7 +444,7 @@ export type DraftLine = {
   unit_cost: number
   vat_rate: number
   inventory_item_id: string | null
-  match_status: "new" | "matched" | "ignore"
+  match_status: "new" | "matched" | "ignore" | "expense"
   job_id: string | null
   parts_request_id: string | null
   suggested_sale_price: number
@@ -680,6 +680,27 @@ async function applyConfirm(
     let itemId = it.inventory_item_id as string | null
     const created = !itemId
     const jobId = (it.job_id as string | null) ?? null
+
+    // Non-part lines (labour, towing, sublet, fees…) never touch stock. When a
+    // car is chosen they post to that job's Car Expenses; otherwise they stay on
+    // the invoice as a general purchase cost (already counted in payables).
+    if (it.match_status === "expense") {
+      const amount = Math.round(qty * cost * 100) / 100
+      if (jobId && amount > 0) {
+        const { error: expErr } = await supabase.from("car_expenses").insert({
+          job_id: jobId,
+          category: "other",
+          description: it.description || "Supplier invoice expense",
+          amount,
+          vendor: supplierName || null,
+          has_invoice: true,
+          reference,
+          created_by: userId,
+        })
+        if (expErr) throw new Error(`Could not add expense "${it.description}" to the car: ${expErr.message}`)
+      }
+      continue
+    }
 
     if (itemId) {
       // Existing part: top up stock, refresh cost and (if provided) sale price.

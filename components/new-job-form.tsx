@@ -65,7 +65,9 @@ type Vehicle = {
 
 const STEPS = ["Customer", "Vehicle", "Visit details"]
 
-export function NewJobForm({ staff }: { staff: Staff[] }) {
+type Viewer = { id: string; name: string; role: string }
+
+export function NewJobForm({ staff, viewer }: { staff: Staff[]; viewer: Viewer }) {
   const [step, setStep] = React.useState(0)
   const [customer, setCustomer] = React.useState<Customer | null>(null)
   const [vehicle, setVehicle] = React.useState<Vehicle | null>(null)
@@ -89,7 +91,7 @@ export function NewJobForm({ staff }: { staff: Staff[] }) {
         <VehicleStep customer={customer} onBack={() => setStep(0)} onSelect={goVehicle} />
       )}
       {step === 2 && customer && vehicle && (
-        <VisitStep customer={customer} vehicle={vehicle} staff={staff} onBack={() => setStep(1)} />
+        <VisitStep customer={customer} vehicle={vehicle} staff={staff} viewer={viewer} onBack={() => setStep(1)} />
       )}
     </div>
   )
@@ -692,13 +694,16 @@ function VisitStep({
   customer,
   vehicle,
   staff,
+  viewer,
   onBack,
 }: {
   customer: Customer
   vehicle: Vehicle
   staff: Staff[]
+  viewer: Viewer
   onBack: () => void
 }) {
+  const selfAdvisor = viewer.role === "service_advisor" || viewer.role === "advisor"
   const router = useRouter()
   const [vehiclePhotos, setVehiclePhotos] = React.useState<string[]>([])
   const [damagePhotos, setDamagePhotos] = React.useState<string[]>([])
@@ -802,14 +807,26 @@ function VisitStep({
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="advisor_id">Service advisor</Label>
-            <Select id="advisor_id" name="advisor_id" defaultValue="">
-              <option value="">Unassigned</option>
-              {staff.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.full_name || "Staff"} ({s.role})
-                </option>
-              ))}
-            </Select>
+            {selfAdvisor ? (
+              <>
+                <input type="hidden" name="advisor_id" value={viewer.id} />
+                <div
+                  id="advisor_id"
+                  className="flex min-h-10 items-center rounded-md border border-border bg-muted/40 px-3 text-sm text-foreground"
+                >
+                  {viewer.name} <span className="ml-1 text-muted-foreground">(you · auto-assigned)</span>
+                </div>
+              </>
+            ) : (
+              <Select id="advisor_id" name="advisor_id" defaultValue="">
+                <option value="">Unassigned</option>
+                {staff.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name || "Staff"} ({s.role})
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
           <div>
             <Label htmlFor="technician_id">Technician</Label>

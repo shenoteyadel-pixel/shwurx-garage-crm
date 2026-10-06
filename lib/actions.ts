@@ -143,7 +143,9 @@ export async function createJob(formData: FormData) {
     vin: String(formData.get("vin") || "") || null,
     mileage: sanitizeMileage(formData.get("mileage")),
     complaint: String(formData.get("complaint") || "") || null,
-    advisor_id: String(formData.get("advisor_id") || "") || null,
+    // A service advisor opening a job card owns it automatically; only the
+    // Owner may pick (or later change) a different advisor.
+    advisor_id: ctx.role === "service_advisor" ? ctx.userId : String(formData.get("advisor_id") || "") || null,
     technician_id: String(formData.get("technician_id") || "") || null,
     notes: String(formData.get("notes") || "") || null,
     stage: "check_in" as Stage,
@@ -160,8 +162,8 @@ export async function createJob(formData: FormData) {
   const photoUrls = String(formData.get("photo_urls") || "").split(",").filter(Boolean)
   const damageUrls = String(formData.get("damage_urls") || "").split(",").filter(Boolean)
   const rows = [
-    ...photoUrls.map((url) => ({ job_id: data.id, url, kind: "vehicle" })),
-    ...damageUrls.map((url) => ({ job_id: data.id, url, kind: "damage" })),
+    ...photoUrls.map((url) => ({ job_id: data.id, url, kind: "vehicle", uploaded_by: user.id })),
+    ...damageUrls.map((url) => ({ job_id: data.id, url, kind: "damage", uploaded_by: user.id })),
   ]
   if (rows.length) await supabase.from("vehicle_photos").insert(rows)
 
@@ -349,6 +351,9 @@ export async function refreshAllVehicleImages() {
 
 export async function assignStaff(jobId: string, field: "advisor_id" | "technician_id", value: string) {
   const { supabase, ctx } = await guard("jobs.assign")
+  if (field === "advisor_id" && ctx.role !== "owner") {
+    throw new Error("Only the Owner can change the service advisor.")
+  }
   const { error } = await supabase
     .from("jobs")
     .update({ [field]: value || null, updated_at: new Date().toISOString() })

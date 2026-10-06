@@ -16,6 +16,7 @@ import { photoKindsForTrade, tradeFromTitle, tradeUsesDiagnosis, type Trade } fr
 import { CarExpensesManager, type CarExpense } from "@/components/car-expenses-manager"
 import { EditJobVehicle } from "@/components/edit-job-vehicle"
 import { getSessionContext } from "@/lib/rbac/context"
+import { getAssignableStaff } from "@/lib/staff-directory"
 import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
 import { DiagnosticsPanel, type DiagnosticTest } from "@/components/diagnostics-panel"
@@ -238,12 +239,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     })),
   }
 
-  const { data: staffRows } = await supabase
-    .from("profiles")
-    .select("id, full_name, role, job_title, skills, is_active")
-    .neq("role", "customer")
-    .eq("is_active", true)
-    .order("full_name")
+  const staffRows = await getAssignableStaff()
 
   // Active workload per staff member (any job not yet delivered) so the
   // assignment dropdowns can show who is busy.

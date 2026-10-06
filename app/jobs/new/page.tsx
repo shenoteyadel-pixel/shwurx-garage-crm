@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { AppShell } from "@/components/app-shell"
 import { NewJobForm } from "@/components/new-job-form"
+import { getAssignableStaff } from "@/lib/staff-directory"
 
 export default async function NewJobPage() {
   const supabase = await createClient()
@@ -14,12 +15,7 @@ export default async function NewJobPage() {
     .eq("id", user!.id)
     .maybeSingle()
 
-  const { data: staff } = await supabase
-    .from("profiles")
-    .select("id, full_name, role")
-    .neq("role", "customer")
-    .eq("is_active", true)
-    .order("full_name")
+  const staff = await getAssignableStaff()
 
   return (
     <AppShell user={{ name: profile?.full_name || user!.email || "Staff", role: profile?.role || "advisor" }}>

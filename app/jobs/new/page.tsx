@@ -24,7 +24,10 @@ export default async function NewJobPage() {
           <h1 className="text-2xl font-bold tracking-tight">New Job Card</h1>
           <p className="text-sm text-muted-foreground">Check in a vehicle and start the workflow.</p>
         </div>
-        <NewJobForm staff={(staff ?? []) as any} />
+        <NewJobForm
+          staff={(staff ?? []) as any}
+          viewer={{ id: user!.id, name: profile?.full_name || user!.email || "You", role: profile?.role || "" }}
+        />
       </div>
     </AppShell>
   )

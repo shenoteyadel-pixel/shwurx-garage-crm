@@ -15,6 +15,7 @@ export function JobPhotos({
   coverUrl,
   allowedKinds,
   uploaderNames = {},
+  uploaderRoles = {},
   canManageCover = true,
   currentUserId,
 }: {
@@ -24,9 +25,11 @@ export function JobPhotos({
   /** Categories this viewer may upload to. Omit to allow every category. */
   allowedKinds?: PhotoKind[]
   uploaderNames?: Record<string, string>
+  uploaderRoles?: Record<string, string>
   canManageCover?: boolean
   currentUserId?: string | null
 }) {
+  const isWorkshop = (p: Photo) => !!p.uploaded_by && uploaderRoles[p.uploaded_by] === "technician"
   const [adding, setAdding] = React.useState<PhotoKind | null>(null)
   const [pending, setPending] = React.useState<string[]>([])
   const [saving, setSaving] = React.useState(false)
@@ -102,6 +105,7 @@ export function JobPhotos({
                 jobId={jobId}
                 coverUrl={coverUrl}
                 uploaderNames={uploaderNames}
+                isWorkshop={isWorkshop}
                 canManageCover={canManageCover}
                 canDelete={(p) => canManageCover || (!!currentUserId && p.uploaded_by === currentUserId)}
                 onAdd={
@@ -142,6 +146,7 @@ export function JobPhotos({
             jobId={jobId}
             coverUrl={coverUrl}
             uploaderNames={uploaderNames}
+            isWorkshop={isWorkshop}
             canManageCover={canManageCover}
             canDelete={() => canManageCover}
           />
@@ -159,6 +164,7 @@ function Section({
   coverUrl,
   onAdd,
   uploaderNames,
+  isWorkshop,
   canManageCover,
   canDelete,
 }: {
@@ -169,9 +175,15 @@ function Section({
   coverUrl?: string | null
   onAdd?: () => void
   uploaderNames: Record<string, string>
+  isWorkshop: (p: Photo) => boolean
   canManageCover: boolean
   canDelete: (p: Photo) => boolean
 }) {
+  const groups = [
+    { key: "advisor", label: "Service advisor", photos: photos.filter((p) => !isWorkshop(p)) },
+    { key: "workshop", label: "Technician", photos: photos.filter(isWorkshop) },
+  ].filter((g) => g.photos.length > 0)
+
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -193,8 +205,19 @@ function Section({
           {hint}
         </p>
       ) : (
+        <div className="flex flex-col gap-3">
+        {groups.map((g) => (
+        <div key={g.key}>
+        <p
+          className={
+            "mb-1.5 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold " +
+            (g.key === "workshop" ? "bg-primary/10 text-primary" : "bg-muted text-foreground")
+          }
+        >
+          {g.label} <span className="text-muted-foreground">({g.photos.length})</span>
+        </p>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {photos.map((p) => {
+          {g.photos.map((p) => {
             const isCover = coverUrl != null && p.url === coverUrl
             const by = p.uploaded_by ? uploaderNames[p.uploaded_by] : null
             return (
@@ -250,6 +273,9 @@ function Section({
               </div>
             )
           })}
+        </div>
+        </div>
+        ))}
         </div>
       )}
     </div>

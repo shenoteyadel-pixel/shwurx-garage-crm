@@ -31,6 +31,7 @@ export function StaffAssign({
   technicianId,
   technicians,
   canAssign = true,
+  canChangeAdvisor = false,
 }: {
   jobId: string
   staff: Staff[]
@@ -38,6 +39,8 @@ export function StaffAssign({
   technicianId: string | null
   technicians: JobTech[]
   canAssign?: boolean
+  /** Only the Owner can reassign the service advisor. */
+  canChangeAdvisor?: boolean
 }) {
   const [pick, setPick] = React.useState("")
   const [trade, setTrade] = React.useState<Trade>("mechanic")
@@ -66,8 +69,11 @@ export function StaffAssign({
       <div className="flex flex-col gap-5">
         <div>
           <Label>Service advisor</Label>
-          {canAssign ? (
-            <Select defaultValue={advisorId ?? ""} onChange={(e) => assignStaff(jobId, "advisor_id", e.target.value)}>
+          {canChangeAdvisor ? (
+            <Select
+              defaultValue={advisorId ?? ""}
+              onChange={(e) => run("advisor", () => assignStaff(jobId, "advisor_id", e.target.value))}
+            >
               <option value="">Unassigned</option>
               {staff.map((s) => (
                 <option key={s.id} value={s.id}>

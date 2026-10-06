@@ -267,7 +267,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .order("created_at")
   const jobTechs = (techRows ?? []) as JobTech[]
   const uploaderNames: Record<string, string> = {}
-  for (const s of staffRows ?? []) if (s.full_name) uploaderNames[s.id] = s.full_name
+  const uploaderRoles: Record<string, string> = {}
+  for (const s of staffRows ?? []) {
+    if (s.full_name) uploaderNames[s.id] = s.full_name
+    if (s.role) uploaderRoles[s.id] = s.role
+  }
   const viewerId = sessionCtx?.userId ?? null
   const viewerProfile = (staffRows ?? []).find((s) => s.id === viewerId)
   const viewerTrade: Trade =
@@ -402,6 +406,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 photos={(photos ?? []) as any}
                 coverUrl={coverPhoto}
                 uploaderNames={uploaderNames}
+                uploaderRoles={uploaderRoles}
                 currentUserId={viewerId}
               />
               <RepairDetails job={job as any} />
@@ -458,6 +463,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 coverUrl={coverPhoto}
                 allowedKinds={photoKindsForTrade(viewerTrade)}
                 uploaderNames={uploaderNames}
+                uploaderRoles={uploaderRoles}
                 canManageCover={false}
                 currentUserId={viewerId}
               />
@@ -567,6 +573,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             technicianId={job.technician_id}
             technicians={jobTechs}
             canAssign={canAssign}
+            canChangeAdvisor={isOwner}
           />
 
           {showPrices && (

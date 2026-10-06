@@ -4,7 +4,6 @@ import { CarFlow } from "@/components/car-flow"
 import { SyncVisualsButton } from "@/components/sync-visuals-button"
 import { ZONES } from "@/lib/constants"
 import type { JobCardData } from "@/components/job-card"
-import { buildJobCoverMap } from "@/lib/job-covers"
 
 export const dynamic = "force-dynamic"
 
@@ -37,7 +36,6 @@ export default async function FlowPage() {
   // photo taken of the actual car at check-in (kind = 'vehicle'). Only when a
   // job has neither does the card fall back to the AI studio render. Damage,
   // parts, and document photos can never become the cover.
-  const coverByJob = await buildJobCoverMap(supabase, jobs)
 
   // Resolve advisor / technician display names.
   const staffIds = Array.from(
@@ -81,7 +79,7 @@ export default async function FlowPage() {
 
   const jobCards: JobCardData[] = jobs.map((j) => ({
     ...(j as any),
-    cover: coverByJob.get(j.id) ?? null,
+    cover: null,
     advisor: j.advisor_id ? nameById.get(j.advisor_id) ?? null : null,
     technician: j.technician_id ? nameById.get(j.technician_id) ?? null : null,
     payment_status: paymentStatus(j.id),

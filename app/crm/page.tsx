@@ -12,7 +12,6 @@ import { Car, Clock, CheckCircle2, PackageSearch, DollarSign, Wrench, ClipboardC
 import { currentQuarter } from "@/lib/vat-report"
 import { Button } from "@/components/ui"
 import type { JobCardData } from "@/components/job-card"
-import { buildJobCoverMap } from "@/lib/job-covers"
 
 export default async function DashboardPage() {
   // getShellUser redirects unauthenticated users to login and customers to /portal.
@@ -37,7 +36,6 @@ export default async function DashboardPage() {
 
   // Cover = explicitly chosen cover, else the newest real exterior photo of the
   // actual car (kind = 'vehicle'); only then the AI studio render as fallback.
-  const coverByJob = await buildJobCoverMap(supabase, jobs)
 
   const { data: parts } = await supabase
     .from("parts_requests")
@@ -75,7 +73,7 @@ export default async function DashboardPage() {
 
   const jobCards: JobCardData[] = jobs.map((j) => ({
     ...(j as any),
-    cover: coverByJob.get(j.id) ?? null,
+    cover: null,
     payment_status: paymentStatus(j),
   }))
 

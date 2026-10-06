@@ -37,7 +37,7 @@ export default async function JobsPage({
   const cards: JobCardData[] = (jobs ?? []).map((j: any) => ({
     ...j,
     // Explicit cover only — a parts/document photo can never become the card image.
-    cover: j.cover_photo_url ?? null,
+    cover: null,
   }))
 
   return (

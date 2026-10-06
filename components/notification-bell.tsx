@@ -1,9 +1,11 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import { usePathname } from "next/navigation"
 import useSWR from "swr"
 import Link from "next/link"
-import { Bell, Check } from "lucide-react"
+import { Bell, Check, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { markNotificationRead, markAllNotificationsRead } from "@/lib/actions-notifications"
 import { PushToggle } from "@/components/push-toggle"
@@ -31,22 +33,21 @@ export function NotificationBell() {
   const notifications = data?.notifications ?? []
   const unread = data?.unread ?? 0
 
+  const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
+  useEffect(() => {
+    setOpen(false)
+  }, [pathname])
+
   useEffect(() => {
     if (!open) return
-    // The header uses backdrop-blur, which traps `position: fixed` overlays inside it,
-    // so outside taps are detected at the document level instead.
-    function onPointerDown(e: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
-    }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false)
     }
-    document.addEventListener("pointerdown", onPointerDown)
     document.addEventListener("keydown", onKeyDown)
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown)
-      document.removeEventListener("keydown", onKeyDown)
-    }
+    return () => document.removeEventListener("keydown", onKeyDown)
   }, [open])
 
   async function handleRead(id: string) {
@@ -75,19 +76,38 @@ export function NotificationBell() {
         )}
       </button>
 
-      {open && (
+      {open && mounted && createPortal(
         <>
-          <div className="absolute end-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-card shadow-xl">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          {/* Rendered in a body portal: the header's backdrop-blur would otherwise trap fixed overlays on tablets. */}
+          <div
+            aria-hidden="true"
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-[90] bg-background/40"
+          />
+          <div
+            role="dialog"
+            aria-label="Notifications"
+            className="fixed end-4 top-16 z-[100] flex max-h-[calc(100dvh-5rem)] w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xl"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2">
               <span className="text-sm font-semibold">Notifications</span>
-              {unread > 0 && (
-                <button onClick={handleReadAll} className="flex items-center gap-1 text-xs text-primary hover:underline">
-                  <Check className="h-3 w-3" /> Mark all read
+              <div className="flex items-center gap-1">
+                {unread > 0 && (
+                  <button onClick={handleReadAll} className="flex items-center gap-1 px-2 py-2 text-xs text-primary hover:underline">
+                    <Check className="h-3 w-3" /> Mark all read
+                  </button>
+                )}
+                <button
+                  onClick={() => setOpen(false)}
+                  aria-label="Close notifications"
+                  className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <X className="h-5 w-5" />
                 </button>
-              )}
+              </div>
             </div>
             <PushToggle />
-            <div className="max-h-96 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               {notifications.length === 0 ? (
                 <p className="px-4 py-8 text-center text-sm text-muted-foreground">You&apos;re all caught up.</p>
               ) : (
@@ -122,7 +142,8 @@ export function NotificationBell() {
               )}
             </div>
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   )

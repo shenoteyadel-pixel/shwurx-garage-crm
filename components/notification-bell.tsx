@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import useSWR from "swr"
 import Link from "next/link"
 import { Bell, Check } from "lucide-react"
@@ -22,6 +22,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
   const { data, mutate } = useSWR<{ notifications: Notif[]; unread: number }>(
     "/api/notifications",
     fetcher,
@@ -30,7 +31,26 @@ export function NotificationBell() {
   const notifications = data?.notifications ?? []
   const unread = data?.unread ?? 0
 
+  useEffect(() => {
+    if (!open) return
+    // The header uses backdrop-blur, which traps `position: fixed` overlays inside it,
+    // so outside taps are detected at the document level instead.
+    function onPointerDown(e: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    document.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown)
+      document.removeEventListener("keydown", onKeyDown)
+    }
+  }, [open])
+
   async function handleRead(id: string) {
+    setOpen(false)
     await markNotificationRead(id)
     mutate()
   }
@@ -40,9 +60,10 @@ export function NotificationBell() {
   }
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
         aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
         className="relative flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
       >
@@ -56,8 +77,7 @@ export function NotificationBell() {
 
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-card shadow-xl">
+          <div className="absolute end-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-card shadow-xl">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <span className="text-sm font-semibold">Notifications</span>
               {unread > 0 && (

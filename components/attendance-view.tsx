@@ -2,7 +2,14 @@
 
 import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useState, useTransition } from "react"
-import { FileDown, FileSpreadsheet, Loader2, LogIn, LogOut, MapPin, Pencil, Plus, Trash2, X } from "lucide-react"
+import { FileDown, FileSpreadsheet, Loader2, LogIn, LogOut, MapPin, Pencil, Plus, ScanFace, Trash2, X } from "lucide-react"
+import {
+  browserSupportsWebAuthn,
+  platformAuthenticatorIsAvailable,
+  startAuthentication,
+  startRegistration,
+} from "@simplewebauthn/browser"
+import { finishFaceIdEnrollment, removeFaceIdDevice, startFaceIdCheck, startFaceIdEnrollment } from "@/lib/actions-faceid"
 import { cn } from "@/lib/utils"
 import { Badge, Card, GhostButton, Input, Label, PrimaryButton, Select } from "@/components/ui"
 import { roleLabel } from "@/lib/rbac/roles"
@@ -79,6 +86,7 @@ function useNow(intervalMs = 1000) {
 
 export function AttendanceView(props: {
   me: { id: string; name: string }
+  faceIdDevices?: FaceIdDevice[]
   today: string
   month: string
   settings: AttendanceSettings
@@ -149,6 +157,7 @@ export function AttendanceView(props: {
 
 function MyAttendance({
   me,
+  faceIdDevices = [],
   today,
   month,
   settings,
@@ -164,6 +173,7 @@ function MyAttendance({
   const [note, setNote] = useState("")
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
+  const faceIdEnabled = faceIdDevices.length > 0
   const mine = todayRecords.find((r) => r.user_id === me.id)
   const openShift = mine?.check_in_at && !mine.check_out_at
   const done = mine?.check_in_at && mine.check_out_at
@@ -184,7 +194,17 @@ function MyAttendance({
     start(async () => {
       setMsg(null)
       const pos = await getPosition()
-      const res = kind === "in" ? await checkIn(pos, note) : await checkOut(pos, note)
+      let assertion = null
+      if (faceIdEnabled) {
+        const opts = await startFaceIdCheck()
+        if (!opts.ok) return setMsg({ ok: false, text: opts.error })
+        try {
+          assertion = await startAuthentication({ optionsJSON: opts.options })
+        } catch (e) {
+          return setMsg({ ok: false, text: faceIdErrorText(e) })
+        }
+      }
+      const res = kind === "in" ? await checkIn(pos, note, assertion) : await checkOut(pos, note, assertion)
       if (res.ok) {
         setNote("")
         setMsg({ ok: true, text: res.message ?? "Saved" })
@@ -237,12 +257,15 @@ function MyAttendance({
             >
               {pending ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
+              ) : faceIdEnabled ? (
+                <ScanFace className="h-5 w-5" />
               ) : openShift ? (
                 <LogOut className="h-5 w-5" />
               ) : (
                 <LogIn className="h-5 w-5" />
               )}
               {openShift ? "Check out" : "Check in"}
+              {faceIdEnabled && " with Face ID"}
             </PrimaryButton>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <MapPin className="h-3.5 w-3.5" />
@@ -259,6 +282,7 @@ function MyAttendance({
             {msg.text}
           </p>
         )}
+        <FaceIdPanel devices={faceIdDevices} />
       </Card>
 
       <Card className="flex flex-col gap-4 p-6 lg:col-span-2">
@@ -289,6 +313,109 @@ function MyAttendance({
         <RecordRows records={myRecords} settings={settings} names={new Map([[me.id, me.name]])} hideName />
       </Card>
     </div>
+  )
+}
+
+type FaceIdDevice = { id: string; label: string; createdAt: string }
+
+function faceIdErrorText(e: unknown) {
+  const name = e instanceof Error ? e.name : ""
+  if (name === "NotAllowedError") return "Face ID was cancelled or timed out. Try again."
+  if (name === "InvalidStateError") return "Face ID is already set up on this device."
+  if (name === "SecurityError" || name === "NotSupportedError")
+    return "Face ID is not available here. Open the app directly in Safari/Chrome on your phone."
+  return e instanceof Error ? e.message : "Face ID failed."
+}
+
+function deviceName() {
+  const ua = navigator.userAgent
+  if (/iPhone/.test(ua)) return "iPhone"
+  if (/iPad/.test(ua)) return "iPad"
+  if (/Android/.test(ua)) return "Android phone"
+  if (/Mac/.test(ua)) return "Mac"
+  if (/Windows/.test(ua)) return "Windows PC"
+  return "This device"
+}
+
+function FaceIdPanel({ devices }: { devices: FaceIdDevice[] }) {
+  const router = useRouter()
+  const [pending, start] = useTransition()
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const enroll = () =>
+    start(async () => {
+      setMsg(null)
+      if (!browserSupportsWebAuthn() || !(await platformAuthenticatorIsAvailable())) {
+        return setMsg({ ok: false, text: "This device does not support Face ID or fingerprint unlock." })
+      }
+      const opts = await startFaceIdEnrollment()
+      if (!opts.ok) return setMsg({ ok: false, text: opts.error })
+      try {
+        const reg = await startRegistration({ optionsJSON: opts.options })
+        const res = await finishFaceIdEnrollment(reg, deviceName())
+        if (!res.ok) return setMsg({ ok: false, text: res.error })
+        setMsg({ ok: true, text: "Face ID is on. You'll confirm with Face ID every check-in and check-out." })
+        router.refresh()
+      } catch (e) {
+        setMsg({ ok: false, text: faceIdErrorText(e) })
+      }
+    })
+
+  const remove = (id: string) =>
+    start(async () => {
+      setMsg(null)
+      const res = await removeFaceIdDevice(id)
+      if (!res.ok) return setMsg({ ok: false, text: res.error })
+      router.refresh()
+    })
+
+  return (
+    <section aria-labelledby="faceid-title" className="flex flex-col gap-3 rounded-lg border border-border p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <ScanFace className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
+          <div className="flex flex-col gap-0.5">
+            <h3 id="faceid-title" className="text-sm font-semibold">
+              Face ID check-in
+            </h3>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {devices.length
+                ? "On — every check-in and check-out needs your face or fingerprint, so nobody can clock in for you."
+                : "Optional. Add Face ID or fingerprint so only you can check in and out from your phone."}
+            </p>
+          </div>
+        </div>
+        {devices.length > 0 && <Badge>On</Badge>}
+      </div>
+
+      {devices.length > 0 && (
+        <ul className="flex flex-col divide-y divide-border text-sm">
+          {devices.map((d) => (
+            <li key={d.id} className="flex items-center justify-between gap-3 py-2">
+              <span className="flex flex-col">
+                <span className="font-medium">{d.label}</span>
+                <span className="text-xs text-muted-foreground">
+                  Added {new Date(d.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
+              </span>
+              <GhostButton type="button" onClick={() => remove(d.id)} disabled={pending} aria-label={`Remove ${d.label}`}>
+                <Trash2 className="h-4 w-4" />
+              </GhostButton>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <GhostButton type="button" onClick={enroll} disabled={pending} className="self-start">
+        {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanFace className="h-4 w-4" />}
+        {devices.length ? "Add another device" : "Set up Face ID"}
+      </GhostButton>
+      {msg && (
+        <p role="status" className={cn("text-xs", msg.ok ? "text-primary" : "text-destructive")}>
+          {msg.text}
+        </p>
+      )}
+    </section>
   )
 }
 

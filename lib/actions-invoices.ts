@@ -37,6 +37,9 @@ export type ConfirmSummary = {
     quantity: number
     created: boolean
     jobId: string | null
+    crmPartId: string | null
+    oemNumber: string | null
+    salePrice: number
   }[]
 }
 
@@ -426,6 +429,140 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
   return { ok: true, id: inv.id }
 }
 
+type QuoteRow = {
+  id?: string
+  kind: string
+  name: string | null
+  part_number: string | null
+  quantity: number
+  unit_price: number
+  labour_hours: number
+  labour_rate: number
+  discount: number
+}
+
+/**
+ * Put a purchased part straight onto the job card's quotation at its marked-up
+ * sale price. Creates the quotation when the job has none, never duplicates a
+ * part already on it (same part number, or same name when no number), and
+ * re-derives the quotation totals from all lines so the job card stays exact.
+ */
+async function addPartToJobQuotation(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  jobId: string,
+  part: { name: string; partNumber: string | null; quantity: number; unitPrice: number; detail: string },
+  defaultVat: number,
+): Promise<"added" | "updated"> {
+  const { data: existing } = await supabase
+    .from("quotations")
+    .select(
+      "id, vat_rate, vat_inclusive, quotation_items(id, kind, name, part_number, quantity, unit_price, labour_hours, labour_rate, discount, sort_order)",
+    )
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let quote = existing
+  if (!quote) {
+    const { data: created, error } = await supabase
+      .from("quotations")
+      .insert({ job_id: jobId, vat_rate: defaultVat, vat_inclusive: false, total: 0 })
+      .select("id, vat_rate, vat_inclusive")
+      .single()
+    if (error) throw new Error(`Could not create the job card quotation: ${error.message}`)
+    quote = { ...created, quotation_items: [] }
+  }
+
+  const vatRate = Number(quote.vat_rate ?? defaultVat)
+  const inclusive = Boolean(quote.vat_inclusive)
+  const items = ((quote.quotation_items as QuoteRow[] | null) ?? []).map((i) => ({ ...i }))
+  const lineMath = (i: QuoteRow) => {
+    const hours = Number(i.labour_hours) || 0
+    const rate = Number(i.labour_rate) || 0
+    const gross = i.kind === "labor" ? (hours > 0 ? hours * rate : rate) : (Number(i.quantity) || 0) * (Number(i.unit_price) || 0)
+    const discount = Number(i.discount) || 0
+    const base = Math.max(0, gross - discount)
+    const net = inclusive ? base / (1 + vatRate / 100) : base
+    const vat = inclusive ? base - net : (base * vatRate) / 100
+    return { gross, discount, net, vat, lineTotal: inclusive ? base : base + vat }
+  }
+
+  const pn = part.partNumber?.trim().toLowerCase() || ""
+  const nm = part.name.trim().toLowerCase()
+  const match = items.find(
+    (i) =>
+      i.kind === "part" &&
+      (pn ? (i.part_number ?? "").trim().toLowerCase() === pn : (i.name ?? "").trim().toLowerCase() === nm),
+  )
+
+  let outcome: "added" | "updated"
+  if (match?.id) {
+    match.unit_price = part.unitPrice
+    match.part_number = match.part_number || part.partNumber
+    const m = lineMath(match)
+    const { error } = await supabase
+      .from("quotation_items")
+      .update({ unit_price: part.unitPrice, part_number: match.part_number, vat: m.vat, line_total: m.lineTotal })
+      .eq("id", match.id)
+    if (error) throw new Error(`Could not update "${part.name}" on the job card: ${error.message}`)
+    outcome = "updated"
+  } else {
+    const row: QuoteRow = {
+      kind: "part",
+      name: part.name,
+      part_number: part.partNumber,
+      quantity: part.quantity,
+      unit_price: part.unitPrice,
+      labour_hours: 0,
+      labour_rate: 0,
+      discount: 0,
+    }
+    const m = lineMath(row)
+    const { error } = await supabase.from("quotation_items").insert({
+      quotation_id: quote.id,
+      ...row,
+      detail: part.detail,
+      description: part.name,
+      labor: 0,
+      vat: m.vat,
+      line_total: m.lineTotal,
+      recommendation: "required",
+      sort_order: items.length,
+    })
+    if (error) throw new Error(`Could not add "${part.name}" to the job card: ${error.message}`)
+    items.push(row)
+    outcome = "added"
+  }
+
+  const sums = items.reduce(
+    (s, i) => {
+      const m = lineMath(i)
+      const contrib = inclusive ? m.net : m.gross
+      if (i.kind === "labor") s.labor += contrib
+      else s.parts += contrib
+      s.discount += m.discount
+      s.vat += m.vat
+      return s
+    },
+    { parts: 0, labor: 0, discount: 0, vat: 0 },
+  )
+  const subtotal = inclusive ? sums.parts + sums.labor : sums.parts + sums.labor - sums.discount
+  const { error: totErr } = await supabase
+    .from("quotations")
+    .update({
+      parts_total: sums.parts,
+      labor_total: sums.labor,
+      discount_total: sums.discount,
+      subtotal,
+      vat_amount: sums.vat,
+      total: subtotal + sums.vat,
+    })
+    .eq("id", quote.id)
+  if (totErr) throw new Error(`Could not update the job card totals: ${totErr.message}`)
+  return outcome
+}
+
 function normalizeDate(v: string | null | undefined): string | null {
   if (!v) return null
   const d = new Date(v)
@@ -667,6 +804,7 @@ async function applyConfirm(
   if (itemsErr) throw new Error(itemsErr.message)
 
   const parts: ConfirmSummary["parts"] = []
+  const settings = await getSettings()
 
   const reference = invoice.invoice_number ? `Bill ${invoice.invoice_number}` : "Supplier invoice"
 
@@ -675,9 +813,20 @@ async function applyConfirm(
     const qty = n(it.quantity)
     if (qty <= 0) continue
     const cost = n(it.unit_cost)
-    const sale = n(it.suggested_sale_price)
+    // Sale price always carries the markup from Financial settings unless the
+    // reviewer set one explicitly on the line.
+    const sale =
+      n(it.suggested_sale_price) > 0
+        ? n(it.suggested_sale_price)
+        : suggestSalePrice(
+            cost,
+            settings.pricing_method,
+            n(it.markup_pct) > 0 ? n(it.markup_pct) : settings.default_markup_pct,
+          )
 
     let itemId = it.inventory_item_id as string | null
+    let crmPartId: string | null = null
+    let oemNumber = (it.oem_part_number as string | null)?.trim() || null
     const created = !itemId
     const jobId = (it.job_id as string | null) ?? null
 
@@ -708,9 +857,11 @@ async function applyConfirm(
       // overwrite an existing OEM number, and never touch the CRM Part ID.
       const { data: cur } = await supabase
         .from("inventory_items")
-        .select("quantity, oem_part_number, supplier_part_number")
+        .select("quantity, oem_part_number, supplier_part_number, crm_part_id")
         .eq("id", itemId)
         .single()
+      crmPartId = (cur?.crm_part_id as string | null) ?? null
+      oemNumber = (cur?.oem_part_number as string | null) || oemNumber
       const nextQty = (n(cur?.quantity) || 0) + qty
       const { error: updItemErr } = await supabase
         .from("inventory_items")
@@ -742,10 +893,16 @@ async function applyConfirm(
           quantity: qty,
           supplier_id: invoice.supplier_id,
         })
-        .select("id")
+        .select("id, crm_part_id, sku")
         .single()
       if (createErr) throw new Error(`Could not create part "${it.description}": ${createErr.message}`)
       itemId = newItem.id as string
+      crmPartId = (newItem.crm_part_id as string | null) ?? null
+      // No OEM / supplier number on the bill: the auto-generated CRM Part ID
+      // becomes the part number so every part is still searchable.
+      if (!newItem.sku && crmPartId) {
+        await supabase.from("inventory_items").update({ sku: crmPartId }).eq("id", itemId)
+      }
     }
 
     const { error: lineErr } = await supabase
@@ -793,9 +950,31 @@ async function applyConfirm(
         if (prErr) throw new Error(`Could not link "${it.description}" to the job card: ${prErr.message}`)
         await supabase.from("supplier_invoice_items").update({ parts_request_id: pr.id }).eq("id", it.id)
       }
+
+      await addPartToJobQuotation(
+        supabase,
+        jobId,
+        {
+          name: it.description || "Part",
+          partNumber: oemNumber ?? crmPartId,
+          quantity: qty,
+          unitPrice: sale,
+          detail: crmPartId && oemNumber ? `${crmPartId} · ${reference}` : reference,
+        },
+        n(settings.vat_rate, 5),
+      )
     }
 
-    parts.push({ inventoryItemId: itemId, name: it.description || "Part", quantity: qty, created, jobId })
+    parts.push({
+      inventoryItemId: itemId,
+      name: it.description || "Part",
+      quantity: qty,
+      created,
+      jobId,
+      crmPartId,
+      oemNumber,
+      salePrice: sale,
+    })
   }
 
   const { data: docNum } = await supabase.rpc("next_doc_number", { p_type: "sinv", p_prefix: "SINV" })

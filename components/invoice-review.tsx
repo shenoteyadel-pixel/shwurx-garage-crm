@@ -564,10 +564,15 @@ function ConfirmReceipt({ summary, jobs }: { summary: ConfirmSummary; jobs: JobO
                     <Badge className="border-border bg-muted/60 text-muted-foreground">
                       {p.created ? "new part" : "stock added"}
                     </Badge>
+                    {p.crmPartId ? <span className="font-mono text-xs text-primary">{p.crmPartId}</span> : null}
+                    {p.oemNumber ? (
+                      <span className="font-mono text-xs text-muted-foreground">OEM {p.oemNumber}</span>
+                    ) : null}
                     {p.jobId ? (
                       <Link href={`/jobs/${p.jobId}`} className="text-xs text-primary hover:underline">
-                        {"→ "}
+                        {"→ Job card "}
                         {jobLabel(p.jobId)}
+                        {` @ AED ${p.salePrice.toFixed(2)}`}
                       </Link>
                     ) : (
                       <span className="text-xs text-muted-foreground">{"→ General Stock"}</span>

@@ -6,6 +6,7 @@ import type { TrackInspection, TrackInspectionMarker } from "@/lib/tracking-data
 import { VehicleSchematic } from "@/components/inspection/vehicle-schematics"
 import type { MarkerView } from "@/lib/actions-inspections"
 import type { BodyType } from "@/lib/body-type"
+import { FuelGaugeDisplay } from "@/components/inspection/fuel-gauge"
 
 function damageHex(type: string): string {
   return DAMAGE_MAP[type as keyof typeof DAMAGE_MAP]?.hex ?? "#10b981"
@@ -88,17 +89,13 @@ export function TrackInspectionDiagram({
   return (
     <div className="space-y-4">
       {(inspection.odometer != null || inspection.fuelLevel) && (
-        <div className="flex flex-wrap gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-4 text-xs">
           {inspection.odometer != null && (
             <span className="rounded-md border border-border bg-background/60 px-2.5 py-1 text-muted-foreground">
               Odometer: <span className="font-medium text-foreground">{inspection.odometer.toLocaleString()} km</span>
             </span>
           )}
-          {inspection.fuelLevel && (
-            <span className="rounded-md border border-border bg-background/60 px-2.5 py-1 text-muted-foreground">
-              Fuel: <span className="font-medium text-foreground">{inspection.fuelLevel}</span>
-            </span>
-          )}
+          <FuelGaugeDisplay level={inspection.fuelLevel} />
         </div>
       )}
 

@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation"
 import { Loader2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui"
 import { Modal } from "@/components/modal"
-import { deleteDuplicateInvoice, deleteInvoiceDraft } from "@/lib/actions-invoices"
+import { deleteConfirmedInvoice, deleteDuplicateInvoice, deleteInvoiceDraft } from "@/lib/actions-invoices"
 
-type Kind = "draft" | "duplicate"
+type Kind = "draft" | "duplicate" | "confirmed"
 
 export function DeleteInvoiceButton({
   id,
@@ -28,7 +28,8 @@ export function DeleteInvoiceButton({
   const [error, setError] = useState<string | null>(null)
   const [paymentTotal, setPaymentTotal] = useState<number | null>(null)
 
-  const title = kind === "draft" ? "Delete draft invoice" : "Delete duplicate invoice"
+  const title =
+    kind === "draft" ? "Delete draft invoice" : kind === "confirmed" ? "Delete invoice" : "Delete duplicate invoice"
 
   function close() {
     if (pending) return
@@ -43,7 +44,9 @@ export function DeleteInvoiceButton({
       const res =
         kind === "draft"
           ? await deleteInvoiceDraft(id)
-          : await deleteDuplicateInvoice(id, { removePayments: paymentTotal !== null })
+          : kind === "confirmed"
+            ? await deleteConfirmedInvoice(id, { removePayments: paymentTotal !== null })
+            : await deleteDuplicateInvoice(id, { removePayments: paymentTotal !== null })
       if (!res.ok) {
         if ("paymentTotal" in res && typeof res.paymentTotal === "number") {
           setPaymentTotal(res.paymentTotal)
@@ -74,7 +77,7 @@ export function DeleteInvoiceButton({
         }
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />
-        {!compact && (kind === "draft" ? "Delete draft" : "Delete duplicate")}
+        {!compact && (kind === "draft" ? "Delete draft" : kind === "confirmed" ? "Delete invoice" : "Delete duplicate")}
       </Button>
 
       <Modal open={open} onClose={close} title={title}>
@@ -84,6 +87,18 @@ export function DeleteInvoiceButton({
               This permanently removes draft <span className="font-mono text-foreground">{label}</span> and its uploaded
               file. Nothing was posted to stock yet, so no other records change.
             </p>
+          ) : kind === "confirmed" ? (
+            <div className="flex flex-col gap-2 text-sm leading-relaxed text-muted-foreground">
+              <p>
+                This deletes confirmed invoice <span className="font-mono text-foreground">{label}</span> and undoes
+                what it posted:
+              </p>
+              <ul className="list-disc pl-5">
+                <li>The stock it added is taken back out of inventory.</li>
+                <li>Its parts and expenses are removed from the job cards and quotations.</li>
+                <li>It no longer counts in supplier balances or VAT.</li>
+              </ul>
+            </div>
           ) : (
             <div className="flex flex-col gap-2 text-sm leading-relaxed text-muted-foreground">
               <p>
@@ -129,7 +144,13 @@ export function DeleteInvoiceButton({
               className="h-11 gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {pending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-              {pending ? "Deleting…" : paymentTotal !== null ? "Delete copy and payment" : "Delete"}
+              {pending
+                ? "Deleting…"
+                : paymentTotal !== null
+                  ? kind === "confirmed"
+                    ? "Delete invoice and payments"
+                    : "Delete copy and payment"
+                  : "Delete"}
             </Button>
           </div>
         </div>

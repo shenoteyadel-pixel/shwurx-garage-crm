@@ -8,6 +8,7 @@ import { PurchasingTabs } from "@/components/purchasing-tabs"
 import { Card, Badge } from "@/components/ui"
 import { InvoiceUpload } from "@/components/invoice-upload"
 import { DeleteInvoiceButton } from "@/components/delete-invoice-button"
+import { NewBlankInvoiceButton } from "@/components/invoice-owner-actions"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { ScanLine } from "lucide-react"
 
@@ -83,6 +84,7 @@ export default async function InvoiceCapturePage() {
         )}
 
         <InvoiceUpload />
+        <NewBlankInvoiceButton />
 
         <Card className="overflow-hidden">
           <div className="border-b border-border px-4 py-3">
@@ -148,6 +150,8 @@ export default async function InvoiceCapturePage() {
                       <td className="px-4 py-2 text-right">
                         {r.status === "draft" ? (
                           <DeleteInvoiceButton id={r.id} label={r.invoice_number || "draft"} kind="draft" compact />
+                        ) : user.role === "owner" && (r.status === "confirmed" || r.status === "quoted") ? (
+                          <DeleteInvoiceButton id={r.id} label={r.doc_number || r.invoice_number || "invoice"} kind="confirmed" compact />
                         ) : duplicates.has(r.id) && canDeleteDuplicates ? (
                           <DeleteInvoiceButton id={r.id} label={r.doc_number || r.invoice_number || "invoice"} kind="duplicate" compact />
                         ) : null}

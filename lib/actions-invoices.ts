@@ -624,6 +624,122 @@ export async function addManualPurchasedPart(
   }
 }
 
+/**
+ * After an invoice is confirmed, move a line that went to General Stock onto a
+ * specific car. Does exactly what confirm would have done for a job line:
+ * tags the stock movement with the job, records the part on the job's parts
+ * list with its real cost, and posts it to the job card quotation at the
+ * marked-up sale price.
+ */
+export async function assignInvoiceLineToJob(itemId: string, jobId: string): Promise<InvoiceActionResult> {
+  try {
+    const { supabase, ctx } = await guard()
+    if (!ctx.permissions.has("purchase_orders.manage") && ctx.role !== "owner") {
+      throw new ForbiddenError("purchase_orders.manage")
+    }
+    if (!itemId || !jobId) return { ok: false, error: "Choose a job card." }
+
+    const { data: it, error: itErr } = await supabase
+      .from("supplier_invoice_items")
+      .select(
+        "id, invoice_id, description, quantity, unit_cost, suggested_sale_price, oem_part_number, inventory_item_id, match_status, job_id",
+      )
+      .eq("id", itemId)
+      .single()
+    if (itErr || !it) return { ok: false, error: "Invoice line not found." }
+    if (it.job_id) return { ok: false, error: "This part is already assigned to a car." }
+    if (it.match_status !== "matched" || !it.inventory_item_id) {
+      return { ok: false, error: "Only stocked parts can be moved to a car." }
+    }
+
+    const { data: invoice } = await supabase
+      .from("supplier_invoices")
+      .select("id, status, doc_number, invoice_number, supplier_id, supplier_name_raw")
+      .eq("id", it.invoice_id)
+      .single()
+    if (!invoice || invoice.status !== "confirmed") {
+      return { ok: false, error: "Only confirmed invoices can be reassigned." }
+    }
+
+    const { data: job } = await supabase.from("jobs").select("id").eq("id", jobId).maybeSingle()
+    if (!job) return { ok: false, error: "Job card not found." }
+
+    let supplierName = (invoice.supplier_name_raw as string | null) ?? ""
+    if (invoice.supplier_id) {
+      const { data: sup } = await supabase.from("suppliers").select("name").eq("id", invoice.supplier_id).maybeSingle()
+      supplierName = (sup?.name as string | null) || supplierName
+    }
+
+    const settings = await getSettings()
+    const qty = n(it.quantity, 1)
+    const cost = n(it.unit_cost)
+    const sale =
+      n(it.suggested_sale_price) > 0
+        ? n(it.suggested_sale_price)
+        : Math.round(suggestSalePrice(cost, settings.pricing_method, settings.default_markup_pct) * 100) / 100
+    const reference = `Supplier invoice ${invoice.invoice_number || invoice.doc_number || ""}`.trim()
+
+    const { data: inv } = await supabase
+      .from("inventory_items")
+      .select("crm_part_id, oem_part_number")
+      .eq("id", it.inventory_item_id)
+      .maybeSingle()
+    const crmPartId = (inv?.crm_part_id as string | null) ?? null
+    const oemNumber = (inv?.oem_part_number as string | null) || (it.oem_part_number as string | null) || null
+
+    const { data: pr, error: prErr } = await supabase
+      .from("parts_requests")
+      .insert({
+        job_id: jobId,
+        part_name: it.description || "Part",
+        quantity: qty,
+        status: "received",
+        supplier: supplierName || null,
+        cost,
+        notes: `${reference} · moved from General Stock`,
+        requested_by: ctx.userId,
+      })
+      .select("id")
+      .single()
+    if (prErr || !pr) throw new Error(`Could not add the part to the job: ${prErr?.message ?? "no row returned"}`)
+
+    const { error: lineErr } = await supabase
+      .from("supplier_invoice_items")
+      .update({ job_id: jobId, parts_request_id: pr.id, suggested_sale_price: sale })
+      .eq("id", itemId)
+    if (lineErr) throw new Error(lineErr.message)
+
+    const stockRef = invoice.invoice_number ? `Bill ${invoice.invoice_number}` : "Supplier invoice"
+    await supabase
+      .from("stock_movements")
+      .update({ job_id: jobId })
+      .eq("item_id", it.inventory_item_id)
+      .eq("kind", "in")
+      .eq("reference", stockRef)
+      .is("job_id", null)
+
+    await addPartToJobQuotation(
+      createServiceClient(),
+      jobId,
+      {
+        name: it.description || "Part",
+        partNumber: oemNumber ?? crmPartId,
+        quantity: qty,
+        unitPrice: sale,
+        detail: crmPartId && oemNumber ? `${crmPartId} · ${reference}` : reference,
+      },
+      n(settings.vat_rate, 5),
+    )
+
+    await logCurrent("supplier_invoice.line_assigned", "supplier_invoice", it.invoice_id as string, { itemId, jobId })
+    revalidatePath(`/purchasing/invoices/${it.invoice_id}`)
+    revalidatePath(`/jobs/${jobId}`)
+    return { ok: true }
+  } catch (e) {
+    return toActionError(e, "Could not move the part to the car.")
+  }
+}
+
 function normalizeDate(v: string | null | undefined): string | null {
   if (!v) return null
   const d = new Date(v)

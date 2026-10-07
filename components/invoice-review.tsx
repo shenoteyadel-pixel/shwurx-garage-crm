@@ -11,6 +11,7 @@ import {
   recordSupplierInvoicePayment,
   setSupplierInvoiceOnAccount,
   deleteInvoiceDraft,
+  assignInvoiceLineToJob,
   type DraftLine,
   type ConfirmSummary,
 } from "@/lib/actions-invoices"
@@ -81,7 +82,7 @@ export type InvoiceItemRow = {
   confidence: number | null
 }
 
-type Line = DraftLine & { key: string; confidence: number | null; suggested_job_label: string | null }
+type Line = DraftLine & { key: string; id?: string; confidence: number | null; suggested_job_label: string | null }
 
 export function InvoiceReview({
   invoice,
@@ -122,6 +123,7 @@ export function InvoiceReview({
       vat_rate: it.vat_rate,
       inventory_item_id: it.inventory_item_id,
       match_status: it.match_status,
+      id: it.id,
       job_id: it.job_id,
       parts_request_id: it.parts_request_id,
       suggested_job_label: it.suggested_job_label,
@@ -470,6 +472,7 @@ export function InvoiceReview({
                 key={l.key}
                 line={l}
                 readOnly={readOnly}
+                canReassign={invoice.status === "confirmed"}
                 inventory={inventory}
                 jobs={jobs}
                 onChange={(patch) => patchLine(l.key, patch)}
@@ -714,9 +717,54 @@ function DestinationMap({
   )
 }
 
+/** Confirmed invoice: move a General Stock part onto a specific car's job card. */
+function MoveToCar({ itemId, jobs }: { itemId: string; jobs: JobOpt[] }) {
+  const router = useRouter()
+  const [jobId, setJobId] = React.useState("")
+  const [pending, startTransition] = React.useTransition()
+  const [error, setError] = React.useState<string | null>(null)
+
+  function submit() {
+    if (!jobId) return
+    setError(null)
+    startTransition(async () => {
+      const res = await assignInvoiceLineToJob(itemId, jobId)
+      if (!res.ok) setError(res.error)
+      else router.refresh()
+    })
+  }
+
+  return (
+    <div className="flex flex-col gap-1 rounded-md border border-border bg-muted/30 p-2">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Move from stock to a car</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          aria-label="Job card to move this part to"
+          value={jobId}
+          onChange={(e) => setJobId(e.target.value)}
+          className="h-8 min-w-0 flex-1 text-xs"
+        >
+          <option value="">Choose job card…</option>
+          {jobs.map((j) => (
+            <option key={j.id} value={j.id}>
+              {j.label}
+            </option>
+          ))}
+        </Select>
+        <Button size="sm" className="h-8" disabled={!jobId || pending} onClick={submit}>
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          Move to car
+        </Button>
+      </div>
+      {error && <span className="text-xs text-red-400">{error}</span>}
+    </div>
+  )
+}
+
 function LineRow({
   line,
   readOnly,
+  canReassign,
   inventory,
   jobs,
   onChange,
@@ -724,6 +772,7 @@ function LineRow({
 }: {
   line: Line
   readOnly: boolean
+  canReassign: boolean
   inventory: InventoryOpt[]
   jobs: JobOpt[]
   onChange: (patch: Partial<Line>) => void
@@ -908,8 +957,9 @@ function LineRow({
       {line.match_status !== "ignore" && (
         <div className="mt-2 flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Related to</span>
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Car / job card for this part</span>
             <Select
+              aria-label="Car or job card for this part"
               value={line.job_id ?? "__stock"}
               disabled={readOnly}
               onChange={(e) => onChange({ job_id: e.target.value === "__stock" ? null : e.target.value })}
@@ -925,6 +975,9 @@ function LineRow({
               </optgroup>
             </Select>
           </div>
+          {canReassign && !line.job_id && line.match_status === "matched" && line.id && (
+            <MoveToCar itemId={line.id} jobs={jobs} />
+          )}
           {!readOnly && line.parts_request_id && line.job_id && (
             <span className="text-[10px] text-emerald-300">
               Suggested from an existing parts request{line.suggested_job_label ? ` · ${line.suggested_job_label}` : ""} — confirming updates the job card.

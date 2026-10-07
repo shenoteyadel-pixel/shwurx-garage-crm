@@ -595,6 +595,7 @@ export type SaveDraftPayload = {
   invoiceDate: string | null
   discountAmount: number
   notes: string | null
+  docType?: "invoice" | "quote"
   lines: DraftLine[]
 }
 
@@ -637,6 +638,7 @@ async function applyDraft(
       invoice_date: payload.invoiceDate || null,
       discount_amount: discount,
       notes: payload.notes,
+      ...(payload.docType ? { doc_type: payload.docType === "quote" ? "quote" : "invoice" } : {}),
       subtotal,
       vat_amount: vat,
       total,
@@ -713,11 +715,14 @@ async function applyConfirm(
 ): Promise<ConfirmSummary> {
   const { data: invoice, error: invErr } = await supabase
     .from("supplier_invoices")
-    .select("id, status, supplier_id, supplier_name_raw, invoice_number, total, ocr_raw")
+    .select("id, status, doc_type, supplier_id, supplier_name_raw, invoice_number, total, ocr_raw")
     .eq("id", id)
     .single()
   if (invErr) throw new Error(invErr.message)
   if (invoice.status !== "draft") throw new Error("Only draft invoices can be confirmed")
+  // A supplier QUOTE only prices the parts for the customer quotation: no stock,
+  // no payables, no VAT. The final supplier invoice is uploaded later.
+  const isQuote = invoice.doc_type === "quote"
 
   // Final guard: the number may have been typed/edited during review, so
   // re-check against invoices already posted to stock and the supplier ledger.
@@ -806,10 +811,81 @@ async function applyConfirm(
   const parts: ConfirmSummary["parts"] = []
   const settings = await getSettings()
 
-  const reference = invoice.invoice_number ? `Bill ${invoice.invoice_number}` : "Supplier invoice"
+  const reference = isQuote
+    ? invoice.invoice_number
+      ? `Quote ${invoice.invoice_number}`
+      : "Supplier quote"
+    : invoice.invoice_number
+      ? `Bill ${invoice.invoice_number}`
+      : "Supplier invoice"
 
   for (const it of items ?? []) {
     if (it.match_status === "ignore") continue
+    if (isQuote) {
+      if (it.match_status === "expense") continue
+      const qQty = n(it.quantity)
+      if (qQty <= 0) continue
+      const qCost = n(it.unit_cost)
+      const qSale =
+        n(it.suggested_sale_price) > 0
+          ? n(it.suggested_sale_price)
+          : suggestSalePrice(
+              qCost,
+              settings.pricing_method,
+              n(it.markup_pct) > 0 ? n(it.markup_pct) : settings.default_markup_pct,
+            )
+      const qJob = (it.job_id as string | null) ?? null
+      const qOem = (it.oem_part_number as string | null)?.trim() || null
+      if (qJob) {
+        // Mark the part as ordered on the job so the final invoice later
+        // closes the same request instead of creating a second one.
+        if (it.parts_request_id) {
+          await supabase
+            .from("parts_requests")
+            .update({ status: "ordered", cost: qCost, supplier: supplierName || null, updated_at: new Date().toISOString() })
+            .eq("id", it.parts_request_id)
+        } else {
+          const { data: pr, error: prErr } = await supabase
+            .from("parts_requests")
+            .insert({
+              job_id: qJob,
+              part_name: it.description || "Part",
+              quantity: qQty,
+              status: "ordered",
+              supplier: supplierName || null,
+              cost: qCost,
+              notes: reference,
+            })
+            .select("id")
+            .single()
+          if (prErr) throw new Error(`Could not link "${it.description}" to the job card: ${prErr.message}`)
+          await supabase.from("supplier_invoice_items").update({ parts_request_id: pr.id }).eq("id", it.id)
+        }
+        await addPartToJobQuotation(
+          createServiceClient(),
+          qJob,
+          {
+            name: it.description || "Part",
+            partNumber: qOem ?? (it.supplier_part_number as string | null) ?? null,
+            quantity: qQty,
+            unitPrice: qSale,
+            detail: reference,
+          },
+          n(settings.vat_rate, 5),
+        )
+      }
+      parts.push({
+        inventoryItemId: (it.inventory_item_id as string | null) ?? "",
+        name: it.description || "Part",
+        quantity: qQty,
+        created: false,
+        jobId: qJob,
+        crmPartId: null,
+        oemNumber: qOem,
+        salePrice: qSale,
+      })
+      continue
+    }
     const qty = n(it.quantity)
     if (qty <= 0) continue
     const cost = n(it.unit_cost)
@@ -934,7 +1010,27 @@ async function applyConfirm(
           .eq("id", it.parts_request_id)
         if (prErr) throw new Error(prErr.message)
       } else {
-        const { data: pr, error: prErr } = await supabase
+        // The part may already be on the job as "ordered" from an earlier
+        // supplier quote: close that request rather than adding a duplicate.
+        const { data: openReq } = await supabase
+          .from("parts_requests")
+          .select("id")
+          .eq("job_id", jobId)
+          .ilike("part_name", (it.description || "Part").trim())
+          .neq("status", "received")
+          .is("deleted_at", null)
+          .limit(1)
+          .maybeSingle()
+        if (openReq?.id) {
+          await supabase
+            .from("parts_requests")
+            .update({ status: "received", cost, supplier: supplierName || null, updated_at: new Date().toISOString() })
+            .eq("id", openReq.id)
+          await supabase.from("supplier_invoice_items").update({ parts_request_id: openReq.id }).eq("id", it.id)
+        }
+        const { data: pr, error: prErr } = openReq?.id
+          ? { data: null, error: null }
+          : await supabase
           .from("parts_requests")
           .insert({
             job_id: jobId,
@@ -947,7 +1043,7 @@ async function applyConfirm(
           })
           .select("id")
           .single()
-        if (prErr) throw new Error(`Could not link "${it.description}" to the job card: ${prErr.message}`)
+        if (prErr || !pr) throw new Error(`Could not link "${it.description}" to the job card: ${prErr?.message ?? "no row returned"}`)
         await supabase.from("supplier_invoice_items").update({ parts_request_id: pr.id }).eq("id", it.id)
       }
 
@@ -981,14 +1077,18 @@ async function applyConfirm(
     })
   }
 
-  const { data: docNum } = await supabase.rpc("next_doc_number", { p_type: "sinv", p_prefix: "SINV" })
+  const { data: docNum } = isQuote
+    ? await supabase.rpc("next_doc_number", { p_type: "squote", p_prefix: "SQ" })
+    : await supabase.rpc("next_doc_number", { p_type: "sinv", p_prefix: "SINV" })
 
+  // Quotes get their own "quoted" status so every finance, VAT and payables
+  // query (all filtered on status = 'confirmed') ignores them automatically.
   const { error: updErr } = await supabase
     .from("supplier_invoices")
     .update({
-      status: "confirmed",
-      doc_number: docNum || `SINV-${Date.now()}`,
-      payment_status: "unpaid",
+      status: isQuote ? "quoted" : "confirmed",
+      doc_number: docNum || `${isQuote ? "SQ" : "SINV"}-${Date.now()}`,
+      ...(isQuote ? {} : { payment_status: "unpaid" }),
       amount_paid: 0,
       confirmed_by: userId,
       confirmed_at: new Date().toISOString(),

@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/utils"
 import { DAMAGE_MAP } from "@/lib/inspection-config"
 import { VehicleSchematic, INSPECTION_VIEWS } from "@/components/inspection/vehicle-schematics"
 import type { MarkerView } from "@/lib/actions-inspections"
+import { FuelGaugeDisplay } from "@/components/inspection/fuel-gauge"
 
 export default async function InspectionReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -79,6 +80,7 @@ export default async function InspectionReportPage({ params }: { params: Promise
               {inspection.fuel_level ? ` · Fuel ${inspection.fuel_level}` : ""}
             </div>
             {job.vin && <div className="font-mono text-xs text-neutral-500">VIN {job.vin}</div>}
+            <FuelGaugeDisplay level={inspection.fuel_level} className="mt-2" />
           </div>
         </div>
 

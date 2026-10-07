@@ -4,7 +4,8 @@ import * as React from "react"
 import { Card, Button, Field, Input, Select, Textarea } from "@/components/ui"
 import { PhotoUploader } from "@/components/photo-uploader"
 import { InspectionStage } from "@/components/inspection/inspection-stage"
-import { DAMAGE_TYPES, DAMAGE_MAP, SEVERITIES, FUEL_LEVELS } from "@/lib/inspection-config"
+import { DAMAGE_TYPES, DAMAGE_MAP, SEVERITIES } from "@/lib/inspection-config"
+import { FuelGaugeInput } from "@/components/inspection/fuel-gauge"
 import {
   addInspectionMarker,
   updateInspectionMarker,
@@ -214,32 +215,30 @@ export function InspectionPanel({
         {tab === "Inspection Map" && (
           <>
             {/* Vehicle meta row */}
-            <form action={saveInspectionDetails} className="mb-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+            <form action={saveInspectionDetails} className="mb-4 grid gap-3 sm:grid-cols-2">
               <input type="hidden" name="job_id" value={jobId} />
-              <Field label="Odometer (km)">
-                <Input
-                  name="odometer"
-                  type="number"
-                  defaultValue={inspection.odometer ?? ""}
-                  placeholder="e.g. 82000"
-                  disabled={completed}
-                />
-              </Field>
-              <Field label="Fuel level">
-                <Select name="fuel_level" defaultValue={inspection.fuel_level ?? ""} disabled={completed}>
-                  <option value="">—</option>
-                  {FUEL_LEVELS.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <div className="flex items-end">
-                <Button type="submit" variant="outline" size="sm" disabled={completed} className="w-full">
+              <div className="flex flex-col gap-3">
+                <Field label="Odometer (km)">
+                  <Input
+                    name="odometer"
+                    type="number"
+                    defaultValue={inspection.odometer ?? ""}
+                    placeholder="e.g. 82000"
+                    disabled={completed}
+                  />
+                </Field>
+                <Button type="submit" variant="outline" size="sm" disabled={completed} className="w-full sm:mt-auto">
                   Save
                 </Button>
               </div>
+              <Field label="Fuel level">
+                <FuelGaugeInput
+                  key={inspection.fuel_level ?? ""}
+                  name="fuel_level"
+                  defaultValue={inspection.fuel_level}
+                  disabled={completed}
+                />
+              </Field>
             </form>
 
             {/* Body-type override: the diagram is auto-detected from the make &

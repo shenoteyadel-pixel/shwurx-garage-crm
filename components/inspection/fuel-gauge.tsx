@@ -36,7 +36,6 @@ function GaugeDial({ level, onSelect, className }: GaugeDialProps) {
   return (
     <svg viewBox="0 0 120 74" className={cn("w-full", className)} aria-hidden={onSelect ? undefined : true}>
       <path d={arc(0, 1)} fill="none" strokeWidth={9} strokeLinecap="round" className="stroke-muted" />
-      <path d={arc(0, 0.25)} fill="none" strokeWidth={9} strokeLinecap="round" className="stroke-destructive/30" />
       {fraction !== null && fraction > 0 && (
         <path
           d={arc(0, fraction)}

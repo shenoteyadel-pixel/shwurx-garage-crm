@@ -50,6 +50,7 @@ export async function saveSettings(formData: FormData) {
     default_markup_pct: Math.max(0, num(formData.get("default_markup_pct"), 35)),
     pricing_method: String(formData.get("pricing_method") || "markup") === "margin" ? "margin" : "markup",
     vat_rate: Math.max(0, num(formData.get("vat_rate"), 5)),
+    parts_release_mode: String(formData.get("parts_release_mode") || "auto") === "advisor" ? "advisor" : "auto",
     updated_at: new Date().toISOString(),
   }
   const { error } = await supabase.from("settings").update(patch).eq("id", 1)

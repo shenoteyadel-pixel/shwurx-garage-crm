@@ -22,6 +22,8 @@ export type Settings = {
   pricing_method: "markup" | "margin"
   /** Standard VAT rate percentage (UAE = 5). */
   vat_rate: number
+  /** After customer approval: "auto" sends parts to purchasing at once, "advisor" waits for the advisor. */
+  parts_release_mode: "auto" | "advisor"
   /** Master switch for website tracking / marketing integrations. */
   tracking_enabled: boolean
   /** Google Search Console site-verification token (the content value, not the full tag). */
@@ -52,6 +54,7 @@ const DEFAULTS: Settings = {
   default_markup_pct: 35,
   pricing_method: "markup",
   vat_rate: 5,
+  parts_release_mode: "auto",
   tracking_enabled: true,
   google_site_verification: null,
   ga4_measurement_id: null,

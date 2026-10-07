@@ -6,6 +6,8 @@ import { Badge, Card, UAEPlate } from "@/components/ui"
 import { StageStepper } from "@/components/stage-stepper"
 import { QuotationBuilder, type CatalogPart } from "@/components/quotation-builder"
 import { PartsManager } from "@/components/parts-manager"
+import { ManualPurchasePart } from "@/components/manual-purchase-part"
+import { getSettings } from "@/lib/settings"
 import { AddonServices } from "@/components/addon-services"
 import { getJobAddons } from "@/lib/actions-addons"
 import { ApprovalsPanel } from "@/components/approvals-panel"
@@ -176,6 +178,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const canManageExpenses = sessionCtx?.permissions.has("purchase_orders.manage") ?? false
   const canEditVehicle = sessionCtx?.permissions.has("jobs.update_status") ?? false
   const isOwner = sessionCtx?.role === "owner"
+  const financialSettings = await getSettings()
 
   // AI Diagnostic Assistant: session + technician-verified test workflow.
   const { data: diagnosticSession } = await supabase
@@ -435,6 +438,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 hasQuotation={!!quotation}
               printHref={`/jobs/${job.id}/quotation/print`}
               locked={locked}
+              canEditLocked={isOwner}
               partCatalog={partCatalog}
             />
               <AddonServices jobId={job.id} addons={addons} locked={locked} />
@@ -575,6 +579,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             canAssign={canAssign}
             canChangeAdvisor={isOwner}
           />
+
+          {(canManageExpenses || isOwner) && (
+            <ManualPurchasePart jobId={job.id} defaultMarkup={Number(financialSettings.default_markup_pct ?? 0)} />
+          )}
 
           {showPrices && (
             <CarExpensesManager

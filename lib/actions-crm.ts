@@ -397,25 +397,29 @@ export async function createInvoice(payload: {
   vatRate: number
   notes: string
   items: InvLine[]
-}) {
+}): Promise<{ error: string; existingInvoiceId?: string; existingInvoiceNumber?: string } | void> {
   const { supabase, user, ctx } = await guard("invoices.create")
 
   // Prevent duplicate invoices for the same job. A job should have at most one
   // live invoice; billing it twice (e.g. a double-click or reopening "New
   // Invoice" from the job) creates a phantom outstanding balance. Cancelled
   // invoices are ignored so a job can be re-invoiced after voiding one.
+  // Returned (not thrown) because production masks thrown server-action
+  // messages and the page would crash instead of explaining the problem.
   if (payload.jobId) {
     const { data: existing } = await supabase
       .from("invoices")
-      .select("invoice_number")
+      .select("id, invoice_number")
       .eq("job_id", payload.jobId)
       .neq("status", "cancelled")
       .limit(1)
       .maybeSingle()
     if (existing) {
-      throw new Error(
-        `This job already has invoice ${existing.invoice_number}. Open that invoice instead of creating a new one. If you need to re-bill, cancel the existing invoice first.`,
-      )
+      return {
+        error: `This job already has invoice ${existing.invoice_number}. Open that invoice instead, or cancel it first if you need to re-bill.`,
+        existingInvoiceId: existing.id,
+        existingInvoiceNumber: existing.invoice_number,
+      }
     }
   }
 
@@ -449,7 +453,7 @@ export async function createInvoice(payload: {
     })
     .select("id")
     .single()
-  if (error) throw new Error(error.message)
+  if (error || !inv) return { error: error?.message ?? "Could not create the invoice. Please try again." }
 
   if (lines.length) {
     await supabase.from("invoice_items").insert(

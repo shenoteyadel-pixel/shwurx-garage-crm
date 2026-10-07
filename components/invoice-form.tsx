@@ -54,6 +54,11 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
   const [discount, setDiscount] = useState(prefill?.discount ?? 0)
   const [vatRate, setVatRate] = useState(prefill?.vatRate ?? defaultVat)
   const [notes, setNotes] = useState("")
+  const [formError, setFormError] = useState<{
+    error: string
+    existingInvoiceId?: string
+    existingInvoiceNumber?: string
+  } | null>(null)
   const [lines, setLines] = useState<Line[]>(
     prefill?.items?.length ? prefill.items.map((i) => line(i)) : [line()],
   )
@@ -78,8 +83,9 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
   }
 
   function submit() {
+    setFormError(null)
     start(async () => {
-      await createInvoice({
+      const res = await createInvoice({
         jobId: jobId || null,
         customerName,
         customerMobile,
@@ -97,6 +103,7 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
           unit_price: Number(l.unit_price) || 0,
         })),
       })
+      if (res?.error) setFormError(res)
     })
   }
 
@@ -208,6 +215,19 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
         <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} className="min-h-16" />
       </Card>
 
+      {formError && (
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-foreground sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p className="text-pretty leading-relaxed">{formError.error}</p>
+          {formError.existingInvoiceId && (
+            <Button onClick={() => router.push(`/invoices/${formError.existingInvoiceId}`)}>
+              Open {formError.existingInvoiceNumber}
+            </Button>
+          )}
+        </div>
+      )}
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={() => router.back()}>
           Cancel

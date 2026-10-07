@@ -11,6 +11,7 @@ import { findDuplicateGroups, loadProfileNames, type DuplicateMatch } from "@/li
 import { InvoicePeoplePanel } from "@/components/invoice-people-panel"
 import { ArrowLeft } from "lucide-react"
 import { DeleteInvoiceButton } from "@/components/delete-invoice-button"
+import { ReopenInvoiceButton } from "@/components/invoice-owner-actions"
 
 export const metadata = { title: "Review Invoice · SHWURX Auto Service Center" }
 
@@ -142,7 +143,21 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
           >
             <ArrowLeft className="h-4 w-4" /> Invoice Capture
           </Link>
-          {invoice.status === "confirmed" &&
+          {user.role === "owner" &&
+            !invoice.deleted_at &&
+            (invoice.status === "confirmed" || invoice.status === "quoted") && (
+              <div className="flex flex-wrap items-start gap-2">
+                <ReopenInvoiceButton id={invoice.id} />
+                <DeleteInvoiceButton
+                  id={invoice.id}
+                  label={invoice.doc_number || invoice.invoice_number || "invoice"}
+                  kind="confirmed"
+                  redirectTo="/purchasing/invoices"
+                />
+              </div>
+            )}
+          {user.role !== "owner" &&
+            invoice.status === "confirmed" &&
             !invoice.deleted_at &&
             duplicateOf.length > 0 &&
             user.permissions.includes("purchase_orders.manage") && (

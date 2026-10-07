@@ -892,7 +892,7 @@ async function applyConfirm(
 ): Promise<ConfirmSummary> {
   const { data: invoice, error: invErr } = await supabase
     .from("supplier_invoices")
-    .select("id, status, doc_type, supplier_id, supplier_name_raw, invoice_number, total, ocr_raw")
+    .select("id, status, doc_type, doc_number, supplier_id, supplier_name_raw, invoice_number, total, ocr_raw")
     .eq("id", id)
     .single()
   if (invErr) throw new Error(invErr.message)
@@ -1254,9 +1254,25 @@ async function applyConfirm(
     })
   }
 
-  const { data: docNum } = isQuote
-    ? await supabase.rpc("next_doc_number", { p_type: "squote", p_prefix: "SQ" })
-    : await supabase.rpc("next_doc_number", { p_type: "sinv", p_prefix: "SINV" })
+  // An invoice the owner reopened for editing keeps its original number.
+  const existingNumber = (invoice.doc_number as string | null) || null
+  const { data: docNum } = existingNumber
+    ? { data: existingNumber }
+    : isQuote
+      ? await supabase.rpc("next_doc_number", { p_type: "squote", p_prefix: "SQ" })
+      : await supabase.rpc("next_doc_number", { p_type: "sinv", p_prefix: "SINV" })
+
+  // Payments recorded before the owner reopened the invoice stay on it.
+  let paidSoFar = 0
+  if (!isQuote) {
+    const { data: paidRows } = await createServiceClient()
+      .from("payments")
+      .select("amount")
+      .eq("supplier_invoice_id", id)
+    paidSoFar = (paidRows ?? []).reduce((t, p) => t + n(p.amount), 0)
+  }
+  const invTotal = n(invoice.total)
+  const payStatus = paidSoFar <= 0 ? "unpaid" : paidSoFar + 0.01 >= invTotal ? "paid" : "partial"
 
   // Quotes get their own "quoted" status so every finance, VAT and payables
   // query (all filtered on status = 'confirmed') ignores them automatically.
@@ -1265,8 +1281,8 @@ async function applyConfirm(
     .update({
       status: isQuote ? "quoted" : "confirmed",
       doc_number: docNum || `${isQuote ? "SQ" : "SINV"}-${Date.now()}`,
-      ...(isQuote ? {} : { payment_status: "unpaid" }),
-      amount_paid: 0,
+      ...(isQuote ? {} : { payment_status: payStatus }),
+      amount_paid: paidSoFar,
       confirmed_by: userId,
       confirmed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -1578,5 +1594,256 @@ export async function deleteDuplicateInvoice(
     return { ok: true }
   } catch (e) {
     return toActionError(e, "Could not delete the duplicate invoice.")
+  }
+}
+
+/* ============================================================
+   8. Owner: reopen / delete a confirmed invoice, create blank
+   ============================================================ */
+type ServiceDb = ReturnType<typeof createServiceClient>
+
+async function recomputeQuotationTotals(db: ServiceDb, quotationId: string) {
+  const { data: q } = await db
+    .from("quotations")
+    .select("vat_rate, vat_inclusive, quotation_items(kind, quantity, unit_price, labour_hours, labour_rate, discount)")
+    .eq("id", quotationId)
+    .single()
+  if (!q) return
+  const vatRate = n(q.vat_rate)
+  const inclusive = Boolean(q.vat_inclusive)
+  type Sums = { parts: number; labor: number; discount: number; vat: number }
+  const sums = ((q.quotation_items as Partial<QuoteRow>[] | null) ?? []).reduce<Sums>(
+    (acc, i) => {
+      const hours = n(i.labour_hours)
+      const rate = n(i.labour_rate)
+      const gross = i.kind === "labor" ? (hours > 0 ? hours * rate : rate) : n(i.quantity) * n(i.unit_price)
+      const discount = n(i.discount)
+      const base = Math.max(0, gross - discount)
+      const net = inclusive ? base / (1 + vatRate / 100) : base
+      const vat = inclusive ? base - net : (base * vatRate) / 100
+      const contrib = inclusive ? net : gross
+      if (i.kind === "labor") acc.labor += contrib
+      else acc.parts += contrib
+      acc.discount += discount
+      acc.vat += vat
+      return acc
+    },
+    { parts: 0, labor: 0, discount: 0, vat: 0 },
+  )
+  const subtotal = inclusive ? sums.parts + sums.labor : sums.parts + sums.labor - sums.discount
+  await db
+    .from("quotations")
+    .update({
+      parts_total: sums.parts,
+      labor_total: sums.labor,
+      discount_total: sums.discount,
+      subtotal,
+      vat_amount: sums.vat,
+      total: subtotal + sums.vat,
+    })
+    .eq("id", quotationId)
+}
+
+/**
+ * Undo everything a confirmed invoice posted: stock it added, part lines and
+ * car expenses it put on job cards, and the priced lines it added to the job
+ * quotations. Parts requests that existed before the invoice go back to
+ * "ordered" instead of being deleted.
+ */
+async function reverseInvoicePostings(db: ServiceDb, ctx: SessionContext, invoiceId: string, reason: string) {
+  const { data: inv, error: invErr } = await db
+    .from("supplier_invoices")
+    .select("id, doc_number, invoice_number, supplier_id")
+    .eq("id", invoiceId)
+    .single()
+  if (invErr || !inv) throw new Error(invErr?.message ?? "Invoice not found")
+
+  const { data: items, error: itemsErr } = await db
+    .from("supplier_invoice_items")
+    .select("id, description, quantity, unit_cost, inventory_item_id, match_status, parts_request_id, job_id")
+    .eq("invoice_id", invoiceId)
+  if (itemsErr) throw new Error(itemsErr.message)
+
+  const refs = [
+    inv.invoice_number ? `Bill ${inv.invoice_number}` : "Supplier invoice",
+    `Supplier invoice ${inv.invoice_number || inv.doc_number || ""}`.trim(),
+  ]
+  const reference = `${reason} ${inv.doc_number ?? `bill ${inv.invoice_number ?? ""}`}`.trim()
+  const jobIds = new Set<string>()
+
+  for (const it of items ?? []) {
+    if (it.job_id) jobIds.add(it.job_id as string)
+    if (it.match_status === "ignore" || it.match_status === "expense") continue
+    const qty = n(it.quantity)
+    if (it.inventory_item_id && qty > 0) {
+      const { data: cur } = await db.from("inventory_items").select("quantity").eq("id", it.inventory_item_id).single()
+      const onHand = Math.max(0, n(cur?.quantity))
+      const removed = Math.min(qty, onHand)
+      if (removed > 0) {
+        const { error: qErr } = await db
+          .from("inventory_items")
+          .update({ quantity: onHand - removed, updated_at: new Date().toISOString() })
+          .eq("id", it.inventory_item_id)
+        if (qErr) throw new Error(`Could not reverse stock for "${it.description}": ${qErr.message}`)
+        await db.from("stock_movements").insert({
+          item_id: it.inventory_item_id,
+          kind: "out",
+          quantity: removed,
+          unit_cost: n(it.unit_cost),
+          reference,
+          supplier_id: inv.supplier_id,
+          created_by: ctx.userId,
+        })
+      }
+    }
+
+    if (it.parts_request_id) {
+      const { data: pr } = await db
+        .from("parts_requests")
+        .select("id, job_id, notes")
+        .eq("id", it.parts_request_id)
+        .maybeSingle()
+      if (pr) {
+        if (pr.job_id) jobIds.add(pr.job_id as string)
+        if (refs.includes((pr.notes as string | null) ?? "")) {
+          await db.from("parts_requests").delete().eq("id", pr.id)
+        } else {
+          await db
+            .from("parts_requests")
+            .update({ status: "ordered", updated_at: new Date().toISOString() })
+            .eq("id", pr.id)
+        }
+      }
+      await db.from("supplier_invoice_items").update({ parts_request_id: null }).eq("id", it.id)
+    }
+  }
+
+  // Car expenses posted from non-part lines.
+  if (jobIds.size) {
+    await db.from("car_expenses").delete().in("job_id", [...jobIds]).in("reference", refs)
+  }
+
+  // Priced part lines this invoice added to the job card quotations.
+  for (const jobId of jobIds) {
+    const { data: quotes } = await db.from("quotations").select("id").eq("job_id", jobId)
+    for (const q of quotes ?? []) {
+      let removed = false
+      for (const r of refs) {
+        const { data: gone } = await db
+          .from("quotation_items")
+          .delete()
+          .eq("quotation_id", q.id)
+          .eq("kind", "part")
+          .ilike("detail", `%${r}`)
+          .select("id")
+        if (gone?.length) removed = true
+      }
+      if (removed) await recomputeQuotationTotals(db, q.id as string)
+    }
+  }
+}
+
+function requireOwner(ctx: SessionContext) {
+  if (ctx.role !== "owner") throw new Error("Only the owner can edit or delete a confirmed invoice.")
+}
+
+/** Owner: put a confirmed invoice back to draft so every field can be edited. */
+export async function reopenInvoiceForEdit(id: string): Promise<InvoiceActionResult> {
+  try {
+    const { ctx } = await guard()
+    requireOwner(ctx)
+    const db = createServiceClient()
+    const { data: inv } = await db.from("supplier_invoices").select("status, deleted_at").eq("id", id).maybeSingle()
+    if (!inv || inv.deleted_at) throw new Error("Invoice not found")
+    if (inv.status === "draft") return { ok: true }
+    if (inv.status !== "confirmed" && inv.status !== "quoted") throw new Error("This invoice cannot be edited.")
+
+    await reverseInvoicePostings(db, ctx, id, "Reopened for edit")
+    const { error } = await db
+      .from("supplier_invoices")
+      .update({ status: "draft", confirmed_by: null, confirmed_at: null, updated_at: new Date().toISOString() })
+      .eq("id", id)
+    if (error) throw new Error(error.message)
+
+    await logAction(ctx, "supplier_invoice_reopened", "supplier_invoice", id)
+    revalidatePath("/purchasing/invoices")
+    revalidatePath("/inventory")
+    return { ok: true }
+  } catch (e) {
+    return toActionError(e, "Could not reopen the invoice.")
+  }
+}
+
+/** Owner: delete a confirmed invoice and undo its stock, job and payment records. */
+export async function deleteConfirmedInvoice(
+  id: string,
+  opts: { removePayments?: boolean } = {},
+): Promise<DeleteDuplicateResult> {
+  try {
+    const { ctx } = await guard()
+    requireOwner(ctx)
+    const db = createServiceClient()
+    const { data: inv } = await db
+      .from("supplier_invoices")
+      .select("status, amount_paid, deleted_at")
+      .eq("id", id)
+      .maybeSingle()
+    if (!inv || inv.deleted_at) return { ok: true }
+
+    const { data: pays } = await db.from("payments").select("amount").eq("supplier_invoice_id", id)
+    const paymentCount = pays?.length ?? 0
+    const paymentTotal = (pays ?? []).reduce((t, p) => t + n(p.amount), 0)
+    if (paymentCount > 0 && !opts.removePayments) {
+      return { ok: false, error: "This invoice has payments recorded.", paymentCount, paymentTotal }
+    }
+
+    if (inv.status === "confirmed" || inv.status === "quoted") {
+      await reverseInvoicePostings(db, ctx, id, "Deleted invoice")
+    }
+    const { error: delErr } = await db
+      .from("supplier_invoices")
+      .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+      .eq("id", id)
+    if (delErr) throw new Error(delErr.message)
+    if (paymentCount > 0) {
+      const { error: pdErr } = await db.from("payments").delete().eq("supplier_invoice_id", id)
+      if (pdErr) throw new Error(`Invoice removed, but its payments could not be deleted: ${pdErr.message}`)
+    }
+
+    await logAction(ctx, "supplier_invoice_deleted_by_owner", "supplier_invoice", id, {
+      payments_removed: paymentCount,
+      payment_total: paymentTotal,
+    })
+    revalidatePath("/purchasing/payments")
+    revalidatePath("/purchasing/invoices")
+    revalidatePath("/inventory")
+    return { ok: true }
+  } catch (e) {
+    return toActionError(e, "Could not delete the invoice.")
+  }
+}
+
+/** Start a blank invoice to type in manually (no scan). */
+export async function createBlankInvoice(): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    const { supabase, userId } = await guard()
+    const { data, error } = await supabase
+      .from("supplier_invoices")
+      .insert({
+        currency: "AED",
+        subtotal: 0,
+        discount_amount: 0,
+        vat_amount: 0,
+        total: 0,
+        status: "draft",
+        created_by: userId,
+      })
+      .select("id")
+      .single()
+    if (error) throw new Error(error.message)
+    revalidatePath("/purchasing/invoices")
+    return { ok: true, id: data.id as string }
+  } catch (e) {
+    return toActionError(e, "Could not create the invoice.")
   }
 }

@@ -42,7 +42,7 @@ export type SupplierContact = {
 export type InvoiceHeader = {
   id: string
   doc_number: string | null
-  status: "draft" | "confirmed" | "void"
+  status: "draft" | "confirmed" | "void" | "quoted"
   payment_status: "unpaid" | "partial" | "paid" | "credit"
   supplier_id: string | null
   supplier_name_raw: string | null
@@ -59,6 +59,7 @@ export type InvoiceHeader = {
   notes: string | null
   blob_pathname: string | null
   file_type: string | null
+  doc_type?: "invoice" | "quote" | null
 }
 
 export type InvoiceItemRow = {
@@ -107,6 +108,8 @@ export function InvoiceReview({
   const [invoiceDate, setInvoiceDate] = React.useState(invoice.invoice_date ?? "")
   const [discountAmount, setDiscountAmount] = React.useState(invoice.discount_amount ?? 0)
   const [notes, setNotes] = React.useState(invoice.notes ?? "")
+  const [docType, setDocType] = React.useState<"invoice" | "quote">(invoice.doc_type === "quote" ? "quote" : "invoice")
+  const isQuote = docType === "quote"
   const [lines, setLines] = React.useState<Line[]>(
     items.map((it) => ({
       key: it.id,
@@ -222,6 +225,7 @@ export function InvoiceReview({
           invoiceDate: invoiceDate || null,
           discountAmount: Number(discountAmount || 0),
           notes: notes || null,
+          docType,
           lines: toDraftLines(),
         })
         if (!res.ok) {
@@ -260,6 +264,7 @@ export function InvoiceReview({
           invoiceDate: invoiceDate || null,
           discountAmount: Number(discountAmount || 0),
           notes: notes || null,
+          docType,
           lines: toDraftLines(),
         })
         if (!confirmed.ok) {
@@ -307,7 +312,7 @@ export function InvoiceReview({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold tracking-tight">
-                {invoice.doc_number || "Supplier Invoice"}
+                {invoice.doc_number || (isQuote ? "Supplier Quote" : "Supplier Invoice")}
               </h1>
               <StatusBadge status={invoice.status} />
               {readOnly && <PayBadge status={invoice.payment_status} />}
@@ -339,6 +344,34 @@ export function InvoiceReview({
 
         {/* Invoice details */}
         <Card className="p-5">
+          <fieldset className="mb-4">
+            <legend className="mb-2 text-sm font-medium">What did the supplier send?</legend>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup">
+              {(
+                [
+                  { value: "quote", title: "Supplier quote", hint: "Prices only, goes to the customer quotation" },
+                  { value: "invoice", title: "Final invoice", hint: "Parts bought, stock and payables updated" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={docType === opt.value}
+                  disabled={readOnly}
+                  onClick={() => setDocType(opt.value)}
+                  className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-default ${
+                    docType === opt.value
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border text-muted-foreground hover:border-primary/50"
+                  }`}
+                >
+                  <span className="block text-sm font-semibold">{opt.title}</span>
+                  <span className="block text-xs leading-relaxed">{opt.hint}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="supplier">Supplier</Label>
@@ -481,16 +514,22 @@ export function InvoiceReview({
             <div className="mt-4 space-y-2">
               <Button className="w-full" onClick={confirm} disabled={pending}>
                 {action === "confirm" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Confirm &amp; add to stock
+                {isQuote ? "Send prices to job quotation" : "Confirm & add to stock"}
               </Button>
               <Button variant="outline" className="w-full" onClick={() => save()} disabled={pending}>
                 {action === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save draft
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Confirming updates inventory quantities, cost &amp; sale prices, and the supplier ledger.
+                {isQuote
+                  ? "Parts are added to the job card quotation with your markup and marked as ordered. No stock or payables until you upload the final invoice."
+                  : "Confirming updates inventory quantities, cost & sale prices, and the supplier ledger."}
               </p>
             </div>
+          ) : invoice.status === "quoted" ? (
+            <p className="mt-4 rounded-lg bg-muted/50 px-3 py-2 text-center text-xs text-muted-foreground">
+              Quote {invoice.doc_number ? `${invoice.doc_number} ` : ""}sent to the job quotation. Upload the final supplier invoice when the parts arrive.
+            </p>
           ) : (
             <p className="mt-4 rounded-lg bg-muted/50 px-3 py-2 text-center text-xs text-muted-foreground">
               Confirmed {invoice.doc_number ? `as ${invoice.doc_number}` : ""} — stock and ledger updated.
@@ -1064,6 +1103,7 @@ function StatusBadge({ status }: { status: string }) {
     draft: "border-amber-500/30 bg-amber-500/15 text-amber-300",
     confirmed: "border-emerald-500/30 bg-emerald-500/15 text-emerald-300",
     void: "border-red-500/30 bg-red-500/15 text-red-300",
+    quoted: "border-sky-500/30 bg-sky-500/15 text-sky-300",
   }
   return <Badge className={map[status] ?? map.draft}>{status}</Badge>
 }

@@ -65,7 +65,9 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
     return typeof v === "string" && v.trim() ? v.trim() : null
   }
 
-  const { data: payments } = await supabase
+  // Service client: invoice viewers (parts role) record payments but lack
+  // payments.view, so the user client would hide this invoice's own history.
+  const { data: payments } = await serviceDb
     .from("payments")
     .select("id, amount, method, reference, paid_at, receipt_path")
     .eq("supplier_invoice_id", id)

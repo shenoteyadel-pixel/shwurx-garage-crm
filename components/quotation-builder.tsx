@@ -131,6 +131,7 @@ export function QuotationBuilder({
   hasQuotation,
   printHref,
   locked,
+  canEditLocked = false,
   partCatalog = [],
 }: {
   jobId: string
@@ -142,6 +143,7 @@ export function QuotationBuilder({
   hasQuotation: boolean
   printHref: string
   locked: boolean
+  canEditLocked?: boolean
   partCatalog?: CatalogPart[]
 }) {
   const [open, setOpen] = React.useState(false)
@@ -172,6 +174,11 @@ export function QuotationBuilder({
           {!locked && (
             <Button type="button" size="sm" onClick={() => setOpen(true)}>
               <Pencil className="h-3.5 w-3.5" /> {hasQuotation ? "Edit quotation" : "Create quotation"}
+            </Button>
+          )}
+          {locked && canEditLocked && hasQuotation && (
+            <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+              <Pencil className="h-3.5 w-3.5" /> Owner edit
             </Button>
           )}
         </div>

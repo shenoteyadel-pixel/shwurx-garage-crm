@@ -563,6 +563,67 @@ async function addPartToJobQuotation(
   return outcome
 }
 
+/** Auto part number for a manually purchased part without an OEM number. */
+function genManualPartNumber(): string {
+  const d = new Date()
+  const ymd = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`
+  return `SHW-M-${ymd}-${Math.floor(1000 + Math.random() * 9000)}`
+}
+
+/**
+ * Purchaser records a part bought without a supplier invoice (cash / no bill).
+ * Logs the cost on the job's parts list and posts it to the job card
+ * quotation at the marked-up sale price from Financial settings.
+ */
+export async function addManualPurchasedPart(
+  jobId: string,
+  formData: FormData,
+): Promise<InvoiceActionResult & { partNumber?: string; salePrice?: number }> {
+  try {
+    const { supabase, ctx } = await guard()
+    if (!ctx.permissions.has("purchase_orders.manage") && ctx.role !== "owner") {
+      throw new ForbiddenError("purchase_orders.manage")
+    }
+    const name = String(formData.get("name") || "").trim().slice(0, 200)
+    if (!name) return { ok: false, error: "Part name is required." }
+    const quantity = Math.max(1, Math.min(999, Math.round(n(formData.get("quantity"), 1))))
+    const unitCost = n(formData.get("unit_cost"))
+    if (unitCost < 0) return { ok: false, error: "Cost cannot be negative." }
+    const supplier = String(formData.get("supplier") || "").trim().slice(0, 200) || null
+    const oem = String(formData.get("oem") || "").trim().slice(0, 100) || null
+    const markupRaw = String(formData.get("markup_pct") || "").trim()
+
+    const settings = await getSettings()
+    const markup = markupRaw !== "" && n(markupRaw, -1) >= 0 ? n(markupRaw) : settings.default_markup_pct
+    const salePrice = Math.round(suggestSalePrice(unitCost, settings.pricing_method, markup) * 100) / 100
+    const partNumber = oem ?? genManualPartNumber()
+
+    const { error: prErr } = await supabase.from("parts_requests").insert({
+      job_id: jobId,
+      part_name: name,
+      quantity,
+      status: "received",
+      supplier,
+      cost: unitCost,
+      notes: `Manual purchase (no invoice) · ${partNumber}`,
+      requested_by: ctx.userId,
+    })
+    if (prErr) throw new Error(`Could not add the part to the job: ${prErr.message}`)
+
+    await addPartToJobQuotation(
+      createServiceClient(),
+      jobId,
+      { name, partNumber, quantity, unitPrice: salePrice, detail: "Manual purchase (no invoice)" },
+      n(settings.vat_rate, 5),
+    )
+    await logCurrent("parts.manual_purchase", "job", jobId, { name, partNumber, unitCost, salePrice, quantity })
+    revalidatePath(`/jobs/${jobId}`)
+    return { ok: true, partNumber, salePrice }
+  } catch (e) {
+    return toActionError(e, "Could not add the part.")
+  }
+}
+
 function normalizeDate(v: string | null | undefined): string | null {
   if (!v) return null
   const d = new Date(v)

@@ -643,7 +643,7 @@ export async function saveQuotation(
     items: QuoteItemInput[]
   },
 ) {
-  const { supabase } = await guard("quotations.create")
+  const { supabase, ctx } = await guard("quotations.create")
 
   const vatRate = Number.isFinite(payload.vatRate) ? payload.vatRate : VAT_RATE
   const vatInclusive = Boolean(payload.vatInclusive)
@@ -697,27 +697,52 @@ export async function saveQuotation(
   const subtotal = vatInclusive ? partsTotal + laborTotal : partsTotal + laborTotal - discountTotal
   const total = subtotal + vatAmount
 
-  // remove previous quotations for this job (single active quotation)
-  await supabase.from("quotations").delete().eq("job_id", jobId)
+  // An approved quotation is locked; only the owner may correct it (e.g. to
+  // remove a part that was posted twice).
+  const { data: jobRow } = await supabase.from("jobs").select("approval_status").eq("id", jobId).maybeSingle()
+  if (jobRow?.approval_status === "approved" && ctx.role !== "owner") {
+    throw new Error("This quotation is approved and locked. Only the owner can edit it.")
+  }
 
-  const { data: quote, error } = await supabase
+  const header = {
+    description: payload.description || null,
+    internal_notes: payload.internalNotes || null,
+    vat_rate: vatRate,
+    vat_inclusive: vatInclusive,
+    parts_total: partsTotal,
+    labor_total: laborTotal,
+    discount_total: discountTotal,
+    subtotal,
+    vat_amount: vatAmount,
+    total,
+  }
+
+  // Single active quotation per job. Update it in place (keeping its id, so
+  // customer approval records stay linked) and rebuild its lines.
+  const { data: existingQuotes } = await supabase
     .from("quotations")
-    .insert({
-      job_id: jobId,
-      description: payload.description || null,
-      internal_notes: payload.internalNotes || null,
-      vat_rate: vatRate,
-      vat_inclusive: vatInclusive,
-      parts_total: partsTotal,
-      labor_total: laborTotal,
-      discount_total: discountTotal,
-      subtotal,
-      vat_amount: vatAmount,
-      total,
-    })
     .select("id")
-    .single()
-  if (error) throw new Error(error.message)
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false })
+  const keep = existingQuotes?.[0]?.id as string | undefined
+  let quote: { id: string }
+  if (keep) {
+    const extra = (existingQuotes ?? []).slice(1).map((q) => q.id as string)
+    if (extra.length) await supabase.from("quotations").delete().in("id", extra)
+    const { error: updErr } = await supabase.from("quotations").update(header).eq("id", keep)
+    if (updErr) throw new Error(updErr.message)
+    const { error: delErr } = await supabase.from("quotation_items").delete().eq("quotation_id", keep)
+    if (delErr) throw new Error(delErr.message)
+    quote = { id: keep }
+  } else {
+    const { data: created, error } = await supabase
+      .from("quotations")
+      .insert({ job_id: jobId, ...header })
+      .select("id")
+      .single()
+    if (error) throw new Error(error.message)
+    quote = created
+  }
 
   if (computed.length) {
     const { error: itemErr } = await supabase.from("quotation_items").insert(

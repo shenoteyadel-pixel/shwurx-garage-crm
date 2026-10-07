@@ -30,7 +30,7 @@ export default async function PartsPage({
 
   let query = supabase
     .from("parts_requests")
-    .select("id, part_name, quantity, status, supplier, cost, created_at, jobs!inner(id, job_number, customer_name, vehicle_make, vehicle_model, stage, approval_status)")
+    .select("id, part_name, quantity, status, supplier, cost, created_at, released_at, jobs!inner(id, job_number, customer_name, vehicle_make, vehicle_model, stage, approval_status)")
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
   if (status) query = query.eq("status", status)
@@ -113,16 +113,23 @@ export default async function PartsPage({
             {rows.map((r) => {
               const st = PART_STATUSES.find((s) => s.value === r.status) ?? PART_STATUSES[0]
               const veh = [r.jobs?.vehicle_make, r.jobs?.vehicle_model].filter(Boolean).join(" ")
-              const needsOrder = r.status === "required" && r.jobs?.approval_status === "approved"
+              const approvedRequired = r.status === "required" && r.jobs?.approval_status === "approved"
+              const needsOrder = approvedRequired && r.released_at
+              const awaitingAdvisor = approvedRequired && !r.released_at
               return (
                 <div key={r.id} className="flex flex-wrap items-center gap-4 p-4">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{r.part_name}</span>
                       <span className="text-xs text-muted-foreground">× {r.quantity}</span>
                       {needsOrder && (
                         <span className="rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-300">
                           Approved — order now
+                        </span>
+                      )}
+                      {awaitingAdvisor && (
+                        <span className="rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 py-0.5 text-[10px] font-medium text-yellow-300">
+                          Approved — waiting for advisor
                         </span>
                       )}
                       {r.jobs?.stage === "delivered" && (

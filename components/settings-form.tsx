@@ -160,6 +160,18 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           </div>
           <Field label="Default markup / margin %" name="default_markup_pct" type="number" defaultValue={settings.default_markup_pct} />
           <Field label="VAT rate %" name="vat_rate" type="number" defaultValue={settings.vat_rate} />
+          <div className="sm:col-span-2">
+            <Label htmlFor="parts_release_mode">After the customer approves parts</Label>
+            <select
+              id="parts_release_mode"
+              name="parts_release_mode"
+              defaultValue={settings.parts_release_mode}
+              className="h-10 w-full rounded-lg border border-input bg-background/60 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="auto">Send to purchaser automatically</option>
+              <option value="advisor">Service advisor sends to purchaser</option>
+            </select>
+          </div>
         </div>
 
         <h2 className="mb-2 mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">

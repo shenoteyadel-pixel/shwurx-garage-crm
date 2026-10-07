@@ -7,6 +7,7 @@ import { StageStepper } from "@/components/stage-stepper"
 import { QuotationBuilder, type CatalogPart } from "@/components/quotation-builder"
 import { PartsManager } from "@/components/parts-manager"
 import { ManualPurchasePart } from "@/components/manual-purchase-part"
+import { SendPartsToPurchaser } from "@/components/send-parts-to-purchaser"
 import { getSettings } from "@/lib/settings"
 import { AddonServices } from "@/components/addon-services"
 import { getJobAddons } from "@/lib/actions-addons"
@@ -161,7 +162,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const { data: parts } = await supabase
     .from("parts_requests")
-    .select("id, part_name, quantity, status, supplier, cost, notes")
+    .select("id, part_name, quantity, status, supplier, cost, notes, released_at")
     .eq("job_id", id)
     .is("deleted_at", null)
     .order("created_at")
@@ -442,6 +443,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               partCatalog={partCatalog}
             />
               <AddonServices jobId={job.id} addons={addons} locked={locked} />
+              {locked && (
+                <SendPartsToPurchaser
+                  jobId={job.id}
+                  pendingCount={(parts ?? []).filter((p: any) => !p.released_at && p.status === "required").length}
+                  releasedCount={(parts ?? []).filter((p: any) => p.released_at).length}
+                  canSend={sessionCtx?.permissions.has("quotations.edit") ?? false}
+                />
+              )}
               <PartsManager
                 jobId={job.id}
                 parts={

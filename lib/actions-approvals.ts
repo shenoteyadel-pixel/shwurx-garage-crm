@@ -662,5 +662,58 @@ export async function notifyApprovalDecision(jobId: string, status: string) {
     type: "approval",
     link: `/jobs/${jobId}`,
   })
+
+  if (approvalStatus === "approved") {
+    const { data: settings } = await svc.from("settings").select("parts_release_mode").eq("id", 1).maybeSingle()
+    const mode = settings?.parts_release_mode === "advisor" ? "advisor" : "auto"
+    if (mode === "auto") {
+      await releaseJobParts(jobId, jobNo, null)
+    } else {
+      await notifyByPermission("quotations.edit", {
+        title: "Parts ready to send to purchaser",
+        body: `Job ${jobNo}: the customer approved. Review the parts and send them to purchasing.`,
+        type: "approval",
+        link: `/jobs/${jobId}`,
+      })
+    }
+  }
   revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/parts")
+}
+
+/** Marks every not-yet-released part on the job as released and alerts purchasing. */
+async function releaseJobParts(jobId: string, jobNo: string, userId: string | null): Promise<number> {
+  const svc = createServiceClient()
+  const { data } = await svc
+    .from("parts_requests")
+    .update({ released_at: new Date().toISOString(), released_by: userId })
+    .eq("job_id", jobId)
+    .is("released_at", null)
+    .is("deleted_at", null)
+    .eq("status", "required")
+    .select("id")
+  const count = data?.length ?? 0
+  if (count > 0) {
+    await notifyByPermission("purchase_orders.manage", {
+      title: "Approved parts to order",
+      body: `Job ${jobNo}: ${count} approved part${count === 1 ? "" : "s"} ready to purchase.`,
+      type: "parts",
+      link: `/jobs/${jobId}`,
+    })
+  }
+  return count
+}
+
+/** Service advisor manually sends the approved parts list to the purchaser. */
+export async function releasePartsToPurchaser(jobId: string): Promise<{ ok: boolean; count?: number; error?: string }> {
+  const ctx = await requirePermission("quotations.edit")
+  const svc = createServiceClient()
+  const { data: job } = await svc.from("jobs").select("job_number, approval_status").eq("id", jobId).maybeSingle()
+  if (!job) return { ok: false, error: "Job not found." }
+  if (job.approval_status !== "approved") return { ok: false, error: "The customer has not approved this job yet." }
+  const count = await releaseJobParts(jobId, job.job_number ?? "a job", ctx.userId)
+  if (count === 0) return { ok: false, error: "All parts have already been sent to the purchaser." }
+  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/parts")
+  return { ok: true, count }
 }

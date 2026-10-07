@@ -951,8 +951,12 @@ async function applyConfirm(
         await supabase.from("supplier_invoice_items").update({ parts_request_id: pr.id }).eq("id", it.id)
       }
 
+      // Purchasers (parts role) confirm invoices but don't hold quotation
+      // permissions, so RLS would block the automatic job-card posting. The
+      // caller already passed guard(); post the priced part with the service
+      // client so the job card is updated regardless of the purchaser's role.
       await addPartToJobQuotation(
-        supabase,
+        createServiceClient(),
         jobId,
         {
           name: it.description || "Part",
@@ -1063,7 +1067,11 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
   const { data: invoice } = await supabase.from("supplier_invoices").select("total, status").eq("id", id).single()
   if (!invoice || invoice.status !== "confirmed") throw new Error("Invoice is not confirmed")
 
-  const { data: existingPayments } = await supabase.from("payments").select("amount").eq("supplier_invoice_id", id)
+  // Payment rows are read with the service client: the parts role can record
+  // payments but has no payments.view, so a user-client read returns nothing,
+  // making every invoice recompute as "unpaid" after a payment.
+  const db = createServiceClient()
+  const { data: existingPayments } = await db.from("payments").select("amount").eq("supplier_invoice_id", id)
   const alreadyPaid = (existingPayments ?? []).reduce((t, p) => t + n(p.amount), 0)
   const remaining = Math.max(0, n(invoice.total) - alreadyPaid)
   if (remaining <= 0.01) throw new Error("This invoice is already fully paid.")
@@ -1084,15 +1092,16 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
   })
   if (insertError) throw new Error(insertError.message)
 
-  const { data: paidRows } = await supabase.from("payments").select("amount").eq("supplier_invoice_id", id)
+  const { data: paidRows } = await db.from("payments").select("amount").eq("supplier_invoice_id", id)
   const paid = (paidRows ?? []).reduce((t, p) => t + n(p.amount), 0)
   const total = n(invoice.total)
   const status = paid <= 0 ? "unpaid" : paid + 0.01 >= total ? "paid" : "partial"
 
-  await supabase
+  const { error: statusErr } = await db
     .from("supplier_invoices")
     .update({ amount_paid: paid, payment_status: status, updated_at: new Date().toISOString() })
     .eq("id", id)
+  if (statusErr) throw new Error(`Payment saved but the invoice status could not be updated: ${statusErr.message}`)
   await notifyActivity({
     title: "Supplier invoice payment",
     body: `AED ${amount} (${status})`,
@@ -1119,10 +1128,13 @@ export async function setSupplierInvoiceOnAccount(id: string, onAccount: boolean
   const paid = n(invoice.amount_paid)
   const total = n(invoice.total)
   const status = onAccount ? "credit" : paid <= 0 ? "unpaid" : paid + 0.01 >= total ? "paid" : "partial"
-  await supabase
+  const { data: updated, error: updErr } = await supabase
     .from("supplier_invoices")
     .update({ payment_status: status, updated_at: new Date().toISOString() })
     .eq("id", id)
+    .select("id")
+  if (updErr) throw new Error(updErr.message)
+  if (!updated?.length) throw new Error("You don't have permission to change this invoice's payment status.")
   await logCurrent("supplier_invoice.on_account", "supplier_invoice", id, { on_account: onAccount })
   revalidatePath(`/purchasing/invoices/${id}`)
   revalidatePath("/suppliers")

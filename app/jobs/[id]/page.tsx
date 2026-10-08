@@ -30,6 +30,8 @@ import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { RefreshVehicleImageButton } from "@/components/refresh-vehicle-image"
 import { STAGE_MAP, QC_STATUSES, canViewPrices, type Stage } from "@/lib/constants"
 import { formatDate } from "@/lib/utils"
+import { findDuplicateParts } from "@/lib/quote-duplicates"
+import { DuplicatePartsDialog } from "@/components/duplicate-parts-dialog"
 import {
   ArrowLeft,
   Phone,
@@ -70,7 +72,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const { data: quotation } = await supabase
     .from("quotations")
     .select(
-      "id, vat_rate, vat_inclusive, description, internal_notes, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, category, recommendation, sort_order, addon_type)",
+      "id, vat_rate, vat_inclusive, description, internal_notes, quotation_items(id, kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, category, recommendation, sort_order, addon_type)",
     )
     .eq("job_id", id)
     .order("created_at", { ascending: false })
@@ -442,6 +444,17 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               canEditLocked={isOwner}
               partCatalog={partCatalog}
             />
+              {sessionCtx?.permissions.has("quotations.edit") &&
+                (() => {
+                  const groups = findDuplicateParts(quotation?.quotation_items as any[])
+                  return groups.length > 0 ? (
+                    <DuplicatePartsDialog
+                      key={groups.map((g) => g.key).join(",")}
+                      jobId={job.id}
+                      groups={groups}
+                    />
+                  ) : null
+                })()}
               <AddonServices jobId={job.id} addons={addons} locked={locked} />
               {locked && (
                 <SendPartsToPurchaser

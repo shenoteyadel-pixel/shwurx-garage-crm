@@ -48,9 +48,9 @@ export function SiteHeader({
         <Link href={homeHref} className="shrink-0" aria-label="SHWURX Auto Service Center">
           {logo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logo.url} alt={logo.alt} className="h-11 w-auto max-w-44 object-contain" />
+            <img src={logo.url} alt={logo.alt} className="h-14 w-auto max-w-52 object-contain" />
           ) : (
-            <BrandLogo className="h-11 max-w-44" />
+            <BrandLogo className="h-14 max-w-52" />
           )}
         </Link>
 

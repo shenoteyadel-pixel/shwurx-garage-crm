@@ -1,8 +1,8 @@
 import type { Settings } from "@/lib/settings"
 
-// WURX logo recoloured for white paper (dark letters, green engine mark);
+// SHWURX logo recoloured for white paper (dark letters, green engine mark);
 // overridden by a configured logo_url.
-const DEFAULT_LOGO = "/brand/wurx-logo-ink.png"
+const DEFAULT_LOGO = "/brand/shwurx-logo-ink.png"
 
 function logoSrc(settings: Settings) {
   return settings.logo_url || DEFAULT_LOGO
@@ -40,44 +40,41 @@ export function DocHeader({
   date?: string | null
 }) {
   return (
-    <div className="flex items-start justify-between border-b-2 border-[#3f8f12] pb-5">
-      <div className="flex items-start gap-4">
+    <div className="border-b-2 border-[#3f8f12] pb-4 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+      <div className="flex items-center justify-between gap-6">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={logoSrc(settings) || "/placeholder.svg"}
           alt={`${settings.company_name || settings.legal_name || "Company"} logo`}
-          className="h-16 w-auto max-w-[180px] shrink-0 object-contain"
+          className="h-24 w-auto max-w-[280px] shrink-0 object-contain object-left"
         />
-        <div>
-          <div className="text-xl font-extrabold uppercase leading-tight tracking-tight text-neutral-900">
-            {settings.legal_name || settings.company_name}
+        <div className="text-right">
+          <div className="inline-block rounded-md bg-neutral-900 px-4 py-1.5 text-base font-bold uppercase tracking-[0.15em] text-white">
+            {title}
           </div>
-          {settings.company_name && settings.company_name !== settings.legal_name && (
-            <p className="mt-0.5 text-xs font-medium text-[#3f8f12]">
-              {settings.company_name?.toUpperCase().includes("SHWURX")
-                ? "SHWURX Auto Service Center"
-                : settings.company_name}
-            </p>
-          )}
-          <div className="mt-1.5 space-y-0.5 text-[11px] text-neutral-500">
-            {settings.address && <div>{settings.address}</div>}
-            <div className="flex flex-wrap gap-x-3">
-              {settings.phone && <span>Tel {settings.phone}</span>}
-              {settings.email && <span>{settings.email}</span>}
-            </div>
-            {(settings.trade_license || settings.trn) && (
-              <div className="flex flex-wrap gap-x-3 pt-0.5 font-medium text-neutral-700">
-                {settings.trade_license && <span>Trade License: {settings.trade_license}</span>}
-                {settings.trn && <span>TRN: {settings.trn}</span>}
-              </div>
-            )}
-          </div>
+          {number && <p className="mt-2 font-mono text-sm font-semibold text-neutral-800">{number}</p>}
+          {date && <p className="text-xs text-neutral-500">{date}</p>}
         </div>
       </div>
-      <div className="text-right">
-        <div className="text-lg font-bold uppercase tracking-wide">{title}</div>
-        {number && <p className="mt-1 font-mono text-sm text-neutral-600">{number}</p>}
-        {date && <p className="text-xs text-neutral-500">{date}</p>}
+      <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 text-[11px] leading-relaxed text-neutral-600">
+        <div className="flex flex-col">
+          <span className="text-xs font-bold uppercase tracking-wide text-neutral-900">
+            {settings.legal_name || settings.company_name}
+          </span>
+          {settings.address && <span>{settings.address}</span>}
+        </div>
+        <div className="flex flex-col text-right">
+          <span className="flex flex-wrap justify-end gap-x-3">
+            {settings.phone && <span>Tel {settings.phone}</span>}
+            {settings.email && <span>{settings.email}</span>}
+          </span>
+          {(settings.trade_license || settings.trn) && (
+            <span className="flex flex-wrap justify-end gap-x-3 font-semibold text-neutral-800">
+              {settings.trade_license && <span>Trade License: {settings.trade_license}</span>}
+              {settings.trn && <span>TRN: {settings.trn}</span>}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )

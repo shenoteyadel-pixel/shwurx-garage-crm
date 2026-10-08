@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { MapPin, Phone, Mail } from "lucide-react"
+import { BrandLogo } from "@/components/brand-logo"
 import { localePath, pick, publicMedia, visibleNav } from "@/lib/website/render"
 import type { Lang, WebsiteDocument } from "@/lib/website/types"
 
@@ -30,14 +31,7 @@ export function SiteFooter({ doc, lang }: { doc: WebsiteDocument; lang: Lang }) 
               // eslint-disable-next-line @next/next/no-img-element
               <img src={logo.url} alt={pick(logo.alt, lang) || pick(b.name, lang)} className="h-12 w-auto max-w-48 object-contain" />
             ) : (
-              <>
-                <span className="text-2xl font-black tracking-tight">
-                  SHWUR<span className="text-primary">X</span>
-                </span>
-                <span className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  ONE GARAGE. <span className="text-primary">LIMITLESS SOLUTIONS.</span>
-                </span>
-              </>
+              <BrandLogo className="h-16 max-w-60" />
             )}
           </Link>
           <p className="mt-4 max-w-xs text-pretty text-sm leading-relaxed text-muted-foreground">

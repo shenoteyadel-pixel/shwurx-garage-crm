@@ -265,9 +265,9 @@ export function AppShell({
             className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center overflow-hidden lg:start-64"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/wurx-logo.png" alt="" className="hidden w-3/5 max-w-2xl -rotate-12 opacity-[0.03] dark:block" />
+            <img src="/brand/shwurx-logo.png" alt="" className="hidden w-3/5 max-w-2xl -rotate-12 opacity-[0.03] dark:block" />
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/wurx-logo-ink.png" alt="" className="block w-3/5 max-w-2xl -rotate-12 opacity-[0.04] dark:hidden" />
+            <img src="/brand/shwurx-logo-ink.png" alt="" className="block w-3/5 max-w-2xl -rotate-12 opacity-[0.04] dark:hidden" />
           </div>
           {children}
           <UnsavedChangesGuard />
@@ -280,18 +280,18 @@ export function AppShell({
 function Brand({ compact }: { compact?: boolean }) {
   const { lang } = useI18n()
   return (
-    <Link href="/crm" className="flex flex-col items-start gap-1" aria-label="WURX Auto Service Center — CRM home">
+    <Link href="/crm" className="flex flex-col items-start gap-1" aria-label="SHWURX Auto Service Center — CRM home">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/brand/wurx-logo.png"
-        alt="WURX Auto Service Center"
-        className={cn("hidden w-auto object-contain dark:block", compact ? "h-8" : "h-12")}
+        src="/brand/shwurx-logo.png"
+        alt="SHWURX Auto Service Center"
+        className={cn("hidden w-auto max-w-full object-contain dark:block", compact ? "h-9" : "h-16")}
       />
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/brand/wurx-logo-ink.png"
-        alt="WURX Auto Service Center"
-        className={cn("block w-auto object-contain dark:hidden", compact ? "h-8" : "h-12")}
+        src="/brand/shwurx-logo-ink.png"
+        alt="SHWURX Auto Service Center"
+        className={cn("block w-auto max-w-full object-contain dark:hidden", compact ? "h-9" : "h-16")}
       />
       {!compact && (
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{getCrmDict(lang).header.workshopCrm}</div>

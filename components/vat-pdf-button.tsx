@@ -38,7 +38,7 @@ export async function buildVatPdf(report: VatReport, company: Company) {
   const W = doc.internal.pageSize.getWidth()
   const H = doc.internal.pageSize.getHeight()
   const M = 14
-  const logo = await loadImage("/brand/wurx-logo.png")
+  const logo = await loadImage("/brand/shwurx-logo-ink.png")
 
   const watermark = () => {
     if (!logo) return

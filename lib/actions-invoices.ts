@@ -12,6 +12,7 @@ import { getSettings } from "@/lib/settings"
 import { notifyActivity } from "@/lib/activity"
 import { extractInvoice } from "@/lib/invoice-ocr"
 import { suggestSalePrice } from "@/lib/pricing"
+import { isInvoiceLinked } from "@/lib/quote-duplicates"
 
 // Both purchasing managers and parts staff capture and receive supplier
 // invoices, matching the nav, layout and dashboard buttons.
@@ -434,6 +435,7 @@ type QuoteRow = {
   kind: string
   name: string | null
   part_number: string | null
+  detail?: string | null
   quantity: number
   unit_price: number
   labour_hours: number
@@ -456,7 +458,7 @@ async function addPartToJobQuotation(
   const { data: existing } = await supabase
     .from("quotations")
     .select(
-      "id, vat_rate, vat_inclusive, quotation_items(id, kind, name, part_number, quantity, unit_price, labour_hours, labour_rate, discount, sort_order)",
+      "id, vat_rate, vat_inclusive, quotation_items(id, kind, name, part_number, detail, quantity, unit_price, labour_hours, labour_rate, discount, sort_order)",
     )
     .eq("job_id", jobId)
     .order("created_at", { ascending: false })
@@ -490,20 +492,38 @@ async function addPartToJobQuotation(
 
   const pn = part.partNumber?.trim().toLowerCase() || ""
   const nm = part.name.trim().toLowerCase()
-  const match = items.find(
-    (i) =>
-      i.kind === "part" &&
-      (pn ? (i.part_number ?? "").trim().toLowerCase() === pn : (i.name ?? "").trim().toLowerCase() === nm),
-  )
+  // Same part number wins; otherwise the same name, as long as the two lines
+  // don't carry different part numbers. This lets an invoice line replace a
+  // manually added / requested line instead of duplicating it.
+  const isPart = (i: QuoteRow) => i.kind === "part"
+  const linePn = (i: QuoteRow) => (i.part_number ?? "").trim().toLowerCase()
+  const match =
+    (pn ? items.find((i) => isPart(i) && linePn(i) === pn) : undefined) ??
+    items.find(
+      (i) => isPart(i) && (i.name ?? "").trim().toLowerCase() === nm && (!pn || !linePn(i) || linePn(i) === pn),
+    )
 
   let outcome: "added" | "updated"
   if (match?.id) {
+    const incomingFromInvoice = isInvoiceLinked(part.detail)
+    const takeInvoice = incomingFromInvoice && !isInvoiceLinked(match.detail)
     match.unit_price = part.unitPrice
-    match.part_number = match.part_number || part.partNumber
+    match.part_number = takeInvoice ? part.partNumber || match.part_number : match.part_number || part.partNumber
+    if (takeInvoice) {
+      match.quantity = part.quantity
+      match.detail = part.detail
+    }
     const m = lineMath(match)
     const { error } = await supabase
       .from("quotation_items")
-      .update({ unit_price: part.unitPrice, part_number: match.part_number, vat: m.vat, line_total: m.lineTotal })
+      .update({
+        unit_price: part.unitPrice,
+        part_number: match.part_number,
+        quantity: match.quantity,
+        ...(takeInvoice ? { detail: part.detail } : {}),
+        vat: m.vat,
+        line_total: m.lineTotal,
+      })
       .eq("id", match.id)
     if (error) throw new Error(`Could not update "${part.name}" on the job card: ${error.message}`)
     outcome = "updated"

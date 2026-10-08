@@ -44,7 +44,7 @@ export async function buildFinanceAuditPdf(report: FinanceReport, company: Compa
   const H = doc.internal.pageSize.getHeight()
   const M = 12
   const CW = W - M * 2
-  const logo = await loadImage("/brand/wurx-logo.png")
+  const logo = await loadImage("/brand/shwurx-logo-ink.png")
 
   const header = () => {
     if (logo) {

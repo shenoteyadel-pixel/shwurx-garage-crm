@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell"
 import { Card, Badge } from "@/components/ui"
 import { VehicleVisual, BrandLogo } from "@/components/vehicle-visual"
 import { VehicleActions } from "@/components/vehicle-actions"
+import { RemoveVehicleButton } from "@/components/remove-vehicle-button"
 import { ReferencePhotoPanel } from "@/components/reference-photo-panel"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { STAGES } from "@/lib/constants"
@@ -87,6 +88,17 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
               canManage={user.permissions.includes("vehicles.edit")}
             />
             <VehicleActions vehicle={vehicle} customers={customers ?? []} currentOwnerId={vehicle.customer_id} />
+            {user.role === "owner" && vehicle.customer_id ? (
+              <Card className="flex flex-col p-4">
+                <RemoveVehicleButton
+                  variant="full"
+                  vehicleId={vehicle.id}
+                  customerId={vehicle.customer_id}
+                  label={[vehicle.year, vehicle.make, vehicle.model, vehicle.plate_number].filter(Boolean).join(" ")}
+                  redirectTo={`/customers/${vehicle.customer_id}`}
+                />
+              </Card>
+            ) : null}
           </div>
 
           <div className="space-y-6">

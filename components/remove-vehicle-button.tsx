@@ -11,10 +11,14 @@ export function RemoveVehicleButton({
   vehicleId,
   customerId,
   label,
+  variant = "icon",
+  redirectTo,
 }: {
   vehicleId: string
   customerId: string
   label: string
+  variant?: "icon" | "full"
+  redirectTo?: string
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -30,11 +34,22 @@ export function RemoveVehicleButton({
         return
       }
       setOpen(false)
-      router.refresh()
+      if (redirectTo) router.push(redirectTo)
+      else router.refresh()
     })
 
   return (
     <>
+      {variant === "full" ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setOpen(true)}
+          className="justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4" /> Remove vehicle (sold)
+        </Button>
+      ) : (
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -44,6 +59,7 @@ export function RemoveVehicleButton({
       >
         <Trash2 className="h-4 w-4" />
       </button>
+      )}
       <CrmModal open={open} onClose={() => !pending && setOpen(false)} title="Remove vehicle from customer?" closeLabel="Close">
         <div className="flex flex-col gap-4">
           <p className="text-sm leading-relaxed text-foreground">

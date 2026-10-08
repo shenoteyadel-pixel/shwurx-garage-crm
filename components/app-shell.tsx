@@ -10,6 +10,7 @@ import { NotificationBell } from "@/components/notification-bell"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { LanguageToggle } from "@/components/site/site-controls"
 import { CrmAssist } from "@/components/crm/crm-assist"
+import { CrmSearch } from "@/components/crm/crm-search"
 import { useI18n } from "@/lib/i18n/provider"
 import { getCrmDict, roleLabel } from "@/lib/i18n/crm"
 import {
@@ -222,6 +223,17 @@ export function AppShell({
             <Brand compact />
           </div>
           <div className="ms-auto flex items-center gap-2 sm:gap-3">
+            <CrmSearch
+              pages={visibleGroups.flatMap((g) =>
+                g.items.map((i) => ({
+                  href: i.href,
+                  label: t.nav[i.href] ?? i.label,
+                  group: g.label ? (t.groups[g.label] ?? g.label) : undefined,
+                })),
+              )}
+              permissions={user.permissions ?? []}
+              isOwner={isOwner}
+            />
             {isOwner && (
               <Link
                 href="/control-center"

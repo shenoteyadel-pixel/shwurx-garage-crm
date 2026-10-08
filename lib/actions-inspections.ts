@@ -185,6 +185,20 @@ export async function clearInspectionMarkers(jobId: string) {
   revalidatePath(`/jobs/${jobId}`)
 }
 
+/** Save just the fuel level (tap-to-save from the gauge). */
+export async function setInspectionFuelLevel(jobId: string, level: string) {
+  const { supabase, ctx } = await guard(jobId)
+  if (!jobId) return
+  const inspection = await getOrCreateInspection(supabase, jobId, ctx.userId)
+  const { error } = await supabase
+    .from("vehicle_inspections")
+    .update({ fuel_level: level || null, updated_at: new Date().toISOString() })
+    .eq("id", inspection.id)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "inspection_fuel_level_set", "job", jobId, { level })
+  revalidatePath(`/jobs/${jobId}`)
+}
+
 /** Set the vehicle body type used to draw the brand-neutral inspection diagram. */
 export async function setJobBodyType(jobId: string, bodyType: string) {
   const { supabase, ctx } = await guard(jobId)

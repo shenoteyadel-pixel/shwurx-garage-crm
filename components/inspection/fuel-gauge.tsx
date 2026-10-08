@@ -34,7 +34,7 @@ function GaugeDial({ level, onSelect, className }: GaugeDialProps) {
   const low = fraction !== null && fraction <= 0.25
 
   return (
-    <svg viewBox="0 0 120 74" className={cn("w-full", className)} aria-hidden={onSelect ? undefined : true}>
+    <svg viewBox="-8 -8 136 80" className={cn("w-full", className)} aria-hidden={onSelect ? undefined : true}>
       <path d={arc(0, 1)} fill="none" strokeWidth={9} strokeLinecap="round" className="stroke-muted" />
       {fraction !== null && fraction > 0 && (
         <path
@@ -105,18 +105,40 @@ export function FuelGaugeInput({
   name,
   defaultValue,
   disabled,
+  onChange,
 }: {
   name: string
   defaultValue: string | null
   disabled?: boolean
+  onChange?: (level: string) => Promise<void> | void
 }) {
   const [level, setLevel] = useState(defaultValue ?? "")
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
+
+  async function choose(next: string) {
+    const prev = level
+    setLevel(next)
+    if (!onChange) return
+    setStatus("saving")
+    try {
+      await onChange(next)
+      setStatus("saved")
+    } catch {
+      setLevel(prev)
+      setStatus("error")
+    }
+  }
 
   return (
     <div className="flex flex-col items-center gap-2 rounded-lg border border-border bg-background/40 p-3">
       <input type="hidden" name={name} value={level} />
-      <div className="w-40">
-        <GaugeDial level={level} onSelect={disabled ? undefined : setLevel} />
+      <div className="w-44">
+        <GaugeDial level={level} onSelect={disabled ? undefined : choose} />
+      </div>
+      <div className="h-4 text-[11px] text-muted-foreground" aria-live="polite">
+        {status === "saving" && "Saving…"}
+        {status === "saved" && "Saved"}
+        {status === "error" && <span className="text-destructive">Could not save, try again</span>}
       </div>
       <div role="radiogroup" aria-label="Fuel level" className="flex w-full justify-between gap-1">
         {FUEL_LEVELS.map((l) => (
@@ -126,7 +148,7 @@ export function FuelGaugeInput({
             role="radio"
             aria-checked={level === l}
             disabled={disabled}
-            onClick={() => setLevel(l)}
+            onClick={() => choose(l)}
             className={cn(
               "flex-1 rounded-md border px-1 py-1 text-xs font-medium transition disabled:opacity-50",
               level === l

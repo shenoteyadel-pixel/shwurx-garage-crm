@@ -16,6 +16,7 @@ import {
   saveInspectionDetails,
   completeInspection,
   setJobBodyType,
+  setInspectionFuelLevel,
   type MarkerView,
   type DamageType,
   type Severity,
@@ -236,7 +237,10 @@ export function InspectionPanel({
                   key={inspection.fuel_level ?? ""}
                   name="fuel_level"
                   defaultValue={inspection.fuel_level}
-                  disabled={completed}
+                  onChange={async (level) => {
+                    await setInspectionFuelLevel(jobId, level)
+                    router.refresh()
+                  }}
                 />
               </Field>
             </form>
@@ -249,7 +253,6 @@ export function InspectionPanel({
                 aria-label="Diagram body type override"
                 value={override ?? ""}
                 onChange={(e) => handleBodyType(e.target.value as BodyType)}
-                disabled={completed}
                 className="h-8 w-auto text-sm"
               >
                 <option value="">Auto (from make &amp; model)</option>

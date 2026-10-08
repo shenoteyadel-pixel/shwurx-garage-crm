@@ -98,6 +98,7 @@ export function AttendanceView(props: {
   selfTracked?: boolean
   canViewAll: boolean
   canManage: boolean
+  canRecord?: boolean
   canEditSettings: boolean
   company: Company
 }) {
@@ -735,7 +736,8 @@ type Draft = {
   reason: string
 }
 
-function RecordsTable({ records, staff, settings, month, today, canManage }: Parameters<typeof AttendanceView>[0]) {
+function RecordsTable({ records, staff, settings, month, today, canManage, canRecord }: Parameters<typeof AttendanceView>[0]) {
+  const canLog = canManage || !!canRecord
   const router = useRouter()
   const [employee, setEmployee] = useState("")
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -764,7 +766,7 @@ function RecordsTable({ records, staff, settings, month, today, canManage }: Par
             ))}
           </Select>
         </div>
-        {canManage && (
+        {canLog && (
           <PrimaryButton
             type="button"
             size="sm"
@@ -793,7 +795,7 @@ function RecordsTable({ records, staff, settings, month, today, canManage }: Par
         settings={settings}
         names={names}
         onEdit={
-          canManage
+          canLog
             ? (r) =>
                 setDraft({
                   userId: r.user_id,

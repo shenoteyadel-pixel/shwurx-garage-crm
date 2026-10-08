@@ -27,6 +27,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
 
   const canViewAll = ctxCanAny(ctx, ["attendance.view_all", "attendance.manage"])
   const canManage = ctxCan(ctx, "attendance.manage")
+  const canRecord = ctxCanAny(ctx, ["attendance.manage", "attendance.record"])
   const canEditSettings = ctxCanAny(ctx, ["attendance.manage", "settings.manage"])
 
   const supabase = await createClient()
@@ -90,6 +91,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
           selfTracked={!isOwner}
           canViewAll={canViewAll}
           canManage={canManage}
+          canRecord={canRecord}
           canEditSettings={canEditSettings}
           company={{ name: company.legal_name || company.company_name, trn: company.trn, address: company.address }}
         />

@@ -156,7 +156,7 @@ export interface ManualRecordInput {
 
 export async function saveManualRecord(input: ManualRecordInput): Promise<Result> {
   const ctx = await requireStaff()
-  if (!ctxCan(ctx, "attendance.manage")) return { ok: false, error: "You don't have permission to edit attendance." }
+  if (!ctxCanAny(ctx, ["attendance.manage", "attendance.record"])) return { ok: false, error: "You don't have permission to edit attendance." }
 
   const reason = input.reason.trim()
   if (reason.length < 3) return { ok: false, error: "Enter a reason for this correction." }

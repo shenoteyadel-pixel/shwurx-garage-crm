@@ -457,6 +457,7 @@ export const ROLE_LABELS: Record<Locale, Record<string, string>> = {
     accounts: "Accountant",
     receptionist: "Receptionist",
     marketing: "Marketing",
+    security: "Security",
     viewer: "Viewer",
   },
   ar: {
@@ -471,6 +472,7 @@ export const ROLE_LABELS: Record<Locale, Record<string, string>> = {
     accounts: "محاسب",
     receptionist: "موظف استقبال",
     marketing: "التسويق",
+    security: "الأمن",
     viewer: "مشاهد",
   },
 }

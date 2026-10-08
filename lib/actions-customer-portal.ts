@@ -24,6 +24,17 @@ export type CustomerAccessResult = {
 }
 
 /**
+ * Staff and customers share one auth user per email. If a customer record uses
+ * a staff member's email, provisioning a portal login must NOT overwrite that
+ * staff profile with role=customer (it would lock them out of the CRM).
+ */
+async function isStaffAccount(userId: string): Promise<boolean> {
+  const svc = createServiceClient()
+  const { data } = await svc.from("profiles").select("role").eq("id", userId).maybeSingle()
+  return !!data?.role && data.role !== "customer"
+}
+
+/**
  * Idempotently ensure a customer has a portal login when their job card is
  * created, then email them the rich check-in message (vehicle, plate, job,
  * portal, tracking, set-password). Returns an honest status object so the UI
@@ -77,6 +88,7 @@ export async function ensureCustomerPortalForJob(input: {
           metadata: { full_name: customer.full_name, must_set_password: true, is_customer: true },
         })
         userId = created.userId
+        if (await isStaffAccount(userId)) return fail({ hasEmail: true })
         const { error: pErr } = await svc.from("profiles").upsert(
           {
             id: userId,
@@ -195,6 +207,9 @@ export async function inviteCustomerToPortal(customerId: string): Promise<Creden
     })
     userId = created.userId
     alreadyExisted = created.alreadyExisted
+    if (await isStaffAccount(userId)) {
+      throw new Error("This email belongs to a staff account. Use a different email for the customer portal.")
+    }
 
     const { error: pErr } = await svc.from("profiles").upsert(
       {
@@ -264,6 +279,7 @@ export async function autoProvisionCustomerPortal(customerId: string): Promise<v
       email,
       metadata: { full_name: customer.full_name, must_set_password: true, is_customer: true },
     })
+    if (await isStaffAccount(userId)) return
 
     const { error: pErr } = await svc.from("profiles").upsert(
       {

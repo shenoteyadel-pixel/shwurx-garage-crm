@@ -594,6 +594,48 @@ export async function transferVehicleOwner(vehicleId: string, newCustomerId: str
   revalidatePath("/customers")
 }
 
+// Owner-only: remove a sold vehicle from a customer's profile. A vehicle with
+// job history is unlinked (customer_id = null) so job cards, invoices and the
+// audit trail stay intact; a vehicle with no jobs is deleted outright.
+export async function removeVehicleFromCustomer(
+  vehicleId: string,
+  customerId: string,
+): Promise<{ ok: true; mode: "deleted" | "unlinked" } | { ok: false; error: string }> {
+  const { ctx } = await guard("vehicles.view")
+  if (ctx.role !== "owner") return { ok: false, error: "Only the owner account can remove vehicles." }
+
+  const svc = createServiceClient()
+  const { data: vehicle } = await svc
+    .from("vehicles")
+    .select("id, customer_id, make, model, plate_number")
+    .eq("id", vehicleId)
+    .maybeSingle()
+  if (!vehicle || vehicle.customer_id !== customerId) {
+    return { ok: false, error: "Vehicle not found on this customer." }
+  }
+
+  const { count } = await svc.from("jobs").select("id", { count: "exact", head: true }).eq("vehicle_id", vehicleId)
+  const hasJobs = (count ?? 0) > 0
+
+  const { error } = hasJobs
+    ? await svc
+        .from("vehicles")
+        .update({ customer_id: null, updated_at: new Date().toISOString() })
+        .eq("id", vehicleId)
+    : await svc.from("vehicles").delete().eq("id", vehicleId)
+  if (error) return { ok: false, error: error.message }
+
+  const mode = hasJobs ? "unlinked" : "deleted"
+  await logAction(ctx, "vehicle.remove_from_customer", "vehicle", vehicleId, {
+    customer_id: customerId,
+    mode,
+    vehicle: [vehicle.make, vehicle.model, vehicle.plate_number].filter(Boolean).join(" "),
+  })
+  revalidatePath(`/customers/${customerId}`)
+  revalidatePath("/vehicles")
+  return { ok: true, mode }
+}
+
 /* ---------------- Job creation from master records ---------------- */
 
 export type JobCreateResult =

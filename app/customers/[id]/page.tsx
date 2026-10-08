@@ -9,6 +9,7 @@ import { STAGES } from "@/lib/constants"
 import { VehicleVisual } from "@/components/vehicle-visual"
 import { PortalLinkButton } from "@/components/portal-link-button"
 import { CustomerHistoryButton } from "@/components/customer-history-button"
+import { RemoveVehicleButton } from "@/components/remove-vehicle-button"
 import { getSettings } from "@/lib/settings"
 import { ArrowLeft, Pencil, Plus, Phone, Mail, Building2, Car, FileText, ReceiptText, Wrench } from "lucide-react"
 
@@ -216,8 +217,8 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {(vehicles ?? []).map((v) => (
-                <Link key={v.id} href={`/vehicles/${v.id}`}>
-                  <Card className="flex items-center gap-3 p-4 transition-colors hover:border-primary/50">
+                <Card key={v.id} className="flex items-center gap-2 p-4 transition-colors hover:border-primary/50">
+                  <Link href={`/vehicles/${v.id}`} className="flex min-w-0 flex-1 items-center gap-3">
                     <div className="h-14 w-20 shrink-0 overflow-hidden rounded-md border border-border bg-muted">
                       <VehicleVisual
                         make={v.make}
@@ -237,8 +238,15 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                       <div className="mt-0.5 text-xs text-muted-foreground">{plateLabel(v)}</div>
                       {v.vin ? <div className="text-xs text-muted-foreground">VIN {v.vin}</div> : null}
                     </div>
-                  </Card>
-                </Link>
+                  </Link>
+                  {user.role === "owner" ? (
+                    <RemoveVehicleButton
+                      vehicleId={v.id}
+                      customerId={id}
+                      label={[[v.year, v.make, v.model].filter(Boolean).join(" ") || "Vehicle", plateLabel(v)].join(" · ")}
+                    />
+                  ) : null}
+                </Card>
               ))}
             </div>
           )}

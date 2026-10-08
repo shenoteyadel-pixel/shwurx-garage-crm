@@ -77,7 +77,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
       }}
     >
       <Card className="p-6">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Identity</h2>
+        <h2 id="identity" className="mb-4 scroll-mt-24 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Identity</h2>
         <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
           The legal name, Trade License, and TRN appear on all official documents (Tax Invoice, Approval Certificate).
           These are legally required — keep them accurate.
@@ -101,7 +101,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           <Field label="Logo URL (optional)" name="logo_url" defaultValue={settings.logo_url} />
         </div>
 
-        <h2 className="mb-4 mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Contact</h2>
+        <h2 id="contact" className="mb-4 mt-8 scroll-mt-24 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Contact</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Phone" name="phone" defaultValue={settings.phone} />
           <Field label="Email" name="email" type="email" defaultValue={settings.email} />
@@ -112,7 +112,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           </div>
         </div>
 
-        <h2 className="mb-4 mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Defaults</h2>
+        <h2 id="defaults" className="mb-4 mt-8 scroll-mt-24 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Defaults</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="Default labour rate (AED/hr)"
@@ -138,7 +138,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           </div>
         </div>
 
-        <h2 className="mb-2 mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 id="pricing" className="mb-2 mt-8 scroll-mt-24 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Parts pricing &amp; VAT
         </h2>
         <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
@@ -174,7 +174,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           </div>
         </div>
 
-        <h2 className="mb-2 mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 id="tracking" className="mb-2 mt-8 scroll-mt-24 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Customer tracking
         </h2>
         <p className="mb-4 text-xs leading-relaxed text-muted-foreground">

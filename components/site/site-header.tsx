@@ -8,25 +8,11 @@ import { cn } from "@/lib/utils"
 import { track } from "@/lib/site-track"
 import { stripLocale } from "@/lib/website/paths"
 import { SiteControls, SiteControlsStacked } from "@/components/site/site-controls"
+import { BrandLogo } from "@/components/brand-logo"
 
 export interface HeaderLink {
   href: string
   label: string
-}
-
-// The wordmark keeps the official English brand lock-up and slogan in every
-// language, as required by the brand guidelines.
-function Wordmark() {
-  return (
-    <span className="flex flex-col leading-none" dir="ltr">
-      <span className="text-xl font-black tracking-tight">
-        SHWUR<span className="text-primary">X</span>
-      </span>
-      <span className="mt-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        ONE GARAGE. <span className="text-primary">LIMITLESS SOLUTIONS.</span>
-      </span>
-    </span>
-  )
 }
 
 export function SiteHeader({
@@ -64,7 +50,7 @@ export function SiteHeader({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logo.url} alt={logo.alt} className="h-11 w-auto max-w-44 object-contain" />
           ) : (
-            <Wordmark />
+            <BrandLogo className="h-11 max-w-44" />
           )}
         </Link>
 

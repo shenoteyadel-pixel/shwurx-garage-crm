@@ -30,6 +30,18 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
 
   if (!quotation) notFound()
 
+  const { data: approvals } = await supabase
+    .from("approval_requests")
+    .select("quotation_id, version, status, signer_name, signer_signature, decided_at, certificate_number")
+    .eq("job_id", id)
+    .eq("kind", "quotation")
+    .in("status", ["approved", "partial"])
+    .not("signer_signature", "is", null)
+    .order("decided_at", { ascending: false })
+    .limit(5)
+  const approval =
+    (approvals ?? []).find((a) => a.quotation_id === quotation.id) ?? (approvals ?? [])[0] ?? null
+
   const items = (quotation.quotation_items ?? []) as any[]
   const partItems = items.filter((it) => it.kind === "part")
   const labourItems = items.filter((it) => it.kind !== "part")
@@ -127,6 +139,8 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
           </div>
         </div>
 
+        <ApprovalBlock quoteNumber={job.job_number} approval={approval} />
+
         {/* Brands */}
         <DocBrandStrip />
 
@@ -138,6 +152,103 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
         </div>
       </div>
     </main>
+  )
+}
+
+type Approval = {
+  version: number | null
+  status: string
+  signer_name: string | null
+  signer_signature: string | null
+  decided_at: string | null
+  certificate_number: string | null
+}
+
+function formatDubaiDateTime(d: string | null) {
+  if (!d) return "—"
+  return new Date(d).toLocaleString("en-GB", {
+    timeZone: "Asia/Dubai",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  })
+}
+
+function ApprovalBlock({ quoteNumber, approval }: { quoteNumber: string | null; approval: Approval | null }) {
+  const quoteRef = [quoteNumber, approval?.version && approval.version > 1 ? `v${approval.version}` : null]
+    .filter(Boolean)
+    .join(" · ")
+
+  return (
+    <section
+      aria-label="Customer approval"
+      className="mt-8 break-inside-avoid rounded-md border border-neutral-300 print:break-inside-avoid"
+    >
+      <div className="flex items-center justify-between border-b border-neutral-300 bg-neutral-50 px-4 py-2">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-700">Customer approval</span>
+        {approval ? (
+          <span className="rounded border border-[#3f9a0c] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#3f9a0c]">
+            {approval.status === "partial" ? "Partially approved" : "Approved & signed"}
+          </span>
+        ) : (
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Awaiting signature</span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-6 p-4 text-sm">
+        <dl className="flex flex-col gap-2">
+          <ApprovalRow label="Quotation no." value={quoteRef || "—"} mono />
+          <ApprovalRow label="Approved by" value={approval?.signer_name || ""} />
+          <ApprovalRow
+            label="Date & time"
+            value={approval ? `${formatDubaiDateTime(approval.decided_at)} (GST)` : ""}
+          />
+          {approval?.certificate_number && (
+            <ApprovalRow label="Certificate no." value={approval.certificate_number} mono />
+          )}
+        </dl>
+
+        <div className="flex flex-col justify-end">
+          <div className="flex h-24 items-end justify-center border-b border-neutral-800 pb-1">
+            {approval?.signer_signature && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={approval.signer_signature || "/placeholder.svg"}
+                alt={`Signature of ${approval.signer_name ?? "customer"}`}
+                className="max-h-20 max-w-full object-contain"
+              />
+            )}
+          </div>
+          <div className="mt-1 flex justify-between text-[11px] text-neutral-500">
+            <span>Customer signature</span>
+            {approval?.signer_name && <span className="font-medium text-neutral-700">{approval.signer_name}</span>}
+          </div>
+        </div>
+      </div>
+
+      {approval && (
+        <p className="border-t border-neutral-200 px-4 py-2 text-[10px] leading-relaxed text-neutral-500">
+          Signed electronically by the customer through the SHWURX approval link. This signature confirms
+          acceptance of the work and prices listed in this quotation.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function ApprovalRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline gap-3">
+      <dt className="w-28 shrink-0 text-[11px] uppercase tracking-wide text-neutral-400">{label}</dt>
+      <dd
+        className={`min-h-5 flex-1 border-b border-dotted border-neutral-300 font-medium text-neutral-900 ${mono ? "font-mono text-xs" : ""}`}
+      >
+        {value}
+      </dd>
+    </div>
   )
 }
 

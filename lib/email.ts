@@ -34,7 +34,9 @@ export async function sendEmail(opts: {
   return { sent: true }
 }
 
-function shell(title: string, bodyHtml: string, cta: { label: string; url: string }) {
+const LINK_FOOTNOTE = "This link will expire for your security. If you didn't expect this email, you can ignore it."
+
+function shell(title: string, bodyHtml: string, cta: { label: string; url: string }, footnote: string | null = LINK_FOOTNOTE) {
   return `<!doctype html><html><body style="margin:0;background:#0f1115;font-family:Arial,Helvetica,sans-serif;color:#e5e7eb;padding:32px">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
     <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#171a21;border:1px solid #262b36;border-radius:14px;overflow:hidden">
@@ -49,7 +51,7 @@ function shell(title: string, bodyHtml: string, cta: { label: string; url: strin
           <span style="color:#93c5fd;word-break:break-all">${cta.url}</span></p>
       </td></tr>
     </table>
-    <p style="margin:16px 0 0;font-size:11px;color:#6b7280">This link will expire for your security. If you didn't expect this email, you can ignore it.</p>
+    ${footnote ? `<p style="margin:16px 0 0;font-size:11px;color:#6b7280">${footnote}</p>` : ""}
   </td></tr></table></body></html>`
 }
 
@@ -140,6 +142,32 @@ export async function sendAppointmentConfirmationEmail(opts: {
     subject: `We received your ${typeLabel} request — ${BRAND}`,
     html: shell("Your booking is confirmed", body, { label: "Visit our website", url: siteUrl }),
   })
+}
+
+/**
+ * The complete written answer promised by the public AI service advisor.
+ * The write-up is model output, so it is escaped and rendered as plain paragraphs.
+ */
+export function advisorAnswerEmail(opts: { name: string; vehicle: string | null; writeUp: string; bookUrl: string; lang: "en" | "ar" }) {
+  const ar = opts.lang === "ar"
+  const paragraphs = opts.writeUp
+    .split(/\n{2,}/)
+    .map((block) => {
+      const lines = block.split("\n").map((l) => l.trim()).filter(Boolean)
+      if (lines.length && lines.every((l) => l.startsWith("- "))) {
+        return `<ul style="margin:0 0 12px;padding-inline-start:18px">${lines.map((l) => `<li style="margin:0 0 4px">${esc(l.slice(2))}</li>`).join("")}</ul>`
+      }
+      return `<p style="margin:0 0 12px">${lines.map(esc).join("<br/>")}</p>`
+    })
+    .join("")
+  const body = `
+    <div dir="${ar ? "rtl" : "ltr"}">
+    <p>${ar ? "مرحباً" : "Hi"} ${esc(opts.name) || (ar ? "" : "there")},</p>
+    <p>${ar ? "إليك الإجابة الكاملة من مستشار الخدمة الذكي" : "Here is the complete answer from our AI service advisor"}${opts.vehicle ? ` ${ar ? "بخصوص" : "about your"} <strong>${esc(opts.vehicle)}</strong>` : ""}. ${ar ? "سيتواصل معك أحد مستشاري الخدمة لدينا قريباً." : "One of our service advisors will follow up with you shortly."}</p>
+    <div style="margin:16px 0;padding:16px 18px;background:#0f1115;border:1px solid #262b36;border-radius:10px;color:#e5e7eb">${paragraphs}</div>
+    <p style="font-size:12px;color:#8b93a1">${ar ? "هذه إرشادات أولية مبنية على وصفك. يتم تأكيد التشخيص والتكلفة بعد فحص السيارة في الورشة." : "This is initial guidance based on your description. Diagnosis and cost are confirmed after the car is inspected at the workshop."}</p>
+    </div>`
+  return shell(ar ? "إجابتك الكاملة" : "Your complete answer", body, { label: ar ? "احجز موعداً" : "Book an appointment", url: opts.bookUrl }, null)
 }
 
 export function customerWelcomeEmail(opts: { name: string; url: string }) {

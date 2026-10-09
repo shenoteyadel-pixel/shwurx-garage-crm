@@ -35,6 +35,7 @@ import {
   Inbox,
   Trash2,
   History,
+  Bot,
   ScanLine,
   Sparkles,
   Clock,
@@ -73,6 +74,7 @@ const NAV_GROUPS = [
   {
     label: "Workshop",
     items: [
+      { href: "/advisor", label: "Advisor AI", icon: Bot, anyOf: ["jobs.view_all"] },
       { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all"] },
       { href: "/jobs", label: "Job Cards", icon: Car, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
       { href: "/appointments", label: "Appointments", icon: CalendarClock, anyOf: ["appointments.view"] },

@@ -23,6 +23,7 @@ import { getServerI18n } from "@/lib/i18n/server"
 import { resolveImage } from "@/lib/site-content"
 import { interpolate } from "@/lib/i18n/dictionaries"
 import { TrackLink } from "@/components/site/track-link"
+import { TrackShowcase } from "@/components/site/track-showcase"
 import { listLiveArticles } from "@/lib/blog"
 import { illustrativeStripMembers, isIllustrativeMedia, isPublicTeamMember, isTeamPagePublic } from "@/lib/website/normalize"
 import { IllustrativeStrip } from "@/components/site/team-grid"
@@ -435,10 +436,23 @@ export default async function HomePage() {
     ),
   }
 
+  const trackShowcase = (
+    <TrackShowcase
+      key="track"
+      t={t.trackShowcase}
+      bookHref={lp(doc.pages.appointment.visible ? "/appointment" : "/contact")}
+      bookLabel={doc.pages.appointment.visible ? dict.cta.bookAppointment : dict.nav.contact}
+    />
+  )
+  const rendered = home.sections.filter((s) => s.visible && sections[s.key])
+  const locationIndex = rendered.findIndex((s) => s.key === "location")
+  const bands = rendered.map((s) => sections[s.key])
+  bands.splice(locationIndex === -1 ? bands.length : locationIndex, 0, trackShowcase)
+
   return (
     <>
       {!heroVisible && <h1 className="sr-only">{pick(home.title, lang)}</h1>}
-      {home.sections.filter((s) => s.visible).map((s) => sections[s.key] || null)}
+      {bands}
     </>
   )
 }

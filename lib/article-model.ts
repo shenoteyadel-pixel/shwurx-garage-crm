@@ -252,7 +252,25 @@ export interface ArticleFilters {
   brand?: string
   service?: string
   q?: string
+  /** Model name (e.g. "Continental GT / GTC"); ranks matching articles first, never hides brand-wide ones. */
+  model?: string
   page?: number
+}
+
+/** "Continental GT / GTC" -> ["continental gt", "gtc"]; drops fragments too short to match safely. */
+function modelTerms(model: string): string[] {
+  return model
+    .split("/")
+    .map((t) => t.trim().toLowerCase())
+    .filter((t) => t.length >= 3)
+}
+
+export function articleMatchesModel(a: Article, lang: ArticleLang, model: string): boolean {
+  const terms = modelTerms(model)
+  if (terms.length === 0) return false
+  const c = a.content[lang]
+  const hay = `${c.title} ${c.excerpt} ${c.body} ${a.brief?.modelScope ?? ""}`.toLowerCase()
+  return terms.some((t) => hay.includes(t))
 }
 
 /** Filter/search/paginate articles that are live in `lang`. */
@@ -268,9 +286,19 @@ export function queryArticles(all: Article[], lang: ArticleLang, f: ArticleFilte
       return `${c.title} ${c.excerpt} ${c.body}`.toLowerCase().includes(q)
     })
     .sort((x, y) => (y.publishedAt ?? "").localeCompare(x.publishedAt ?? ""))
+  const model = f.model?.trim()
+  const modelIds = new Set(model ? matches.filter((a) => articleMatchesModel(a, lang, model)).map((a) => a.id) : [])
+  if (modelIds.size > 0) matches.sort((x, y) => Number(modelIds.has(y.id)) - Number(modelIds.has(x.id)))
   const pages = Math.max(1, Math.ceil(matches.length / PAGE_SIZE))
   const page = Math.min(Math.max(1, Math.floor(f.page ?? 1)), pages)
-  return { total: matches.length, page, pages, items: matches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) }
+  return {
+    total: matches.length,
+    modelMatches: modelIds.size,
+    modelIds,
+    page,
+    pages,
+    items: matches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+  }
 }
 
 /** Related live articles: explicit keys first, then same brand, then shared service. */

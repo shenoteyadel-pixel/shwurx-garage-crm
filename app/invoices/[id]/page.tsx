@@ -6,6 +6,9 @@ import { AppShell } from "@/components/app-shell"
 import { Card, Badge } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { InvoiceActions } from "@/components/invoice-actions"
+import { InvoiceComments } from "@/components/invoice-comments"
+import { loadInvoiceComments } from "@/lib/invoice-comments"
+import { getSessionContext } from "@/lib/rbac/context"
 import { ArrowLeft, Printer } from "lucide-react"
 
 const STATUS: Record<string, string> = {
@@ -27,6 +30,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
     .eq("id", id)
     .maybeSingle()
   if (!inv) notFound()
+  const [comments, ctx] = await Promise.all([loadInvoiceComments([id]), getSessionContext()])
 
   const items = ((inv.invoice_items ?? []) as any[]).sort((a, b) => a.sort_order - b.sort_order)
   const payments = ((inv.payments ?? []) as any[]).filter((p) => p.direction === "in")
@@ -124,6 +128,13 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           </div>
         </Card>
       )}
+
+      <InvoiceComments
+        invoiceId={id}
+        comments={comments}
+        currentUserId={ctx?.userId ?? null}
+        isOwner={ctx?.role === "owner"}
+      />
 
       <InvoiceActions
         invoiceId={id}

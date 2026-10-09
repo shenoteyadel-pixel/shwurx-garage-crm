@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { getSettings } from "@/lib/settings"
+import { loadInvoiceComments } from "@/lib/invoice-comments"
 import { DocHeader, DocFooter, DocWatermark, DocBrandStrip } from "@/components/doc-header"
 import { PrintButton } from "@/components/print-button"
 import { formatCurrency, formatDate } from "@/lib/utils"
@@ -18,6 +19,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
     supabase.from("invoices").select("*, invoice_items(*)").eq("id", id).maybeSingle(),
   ])
   if (!inv) notFound()
+  const comments = await loadInvoiceComments([id])
   const items = ((inv.invoice_items ?? []) as any[]).sort((a, b) => a.sort_order - b.sort_order)
 
   // Pull the linked customer's company details (company customers show their
@@ -142,6 +144,22 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
         })()}
 
         {inv.notes && <p className="mt-6 whitespace-pre-wrap text-sm text-neutral-600">{inv.notes}</p>}
+
+        {comments.length > 0 && (
+          <section className="mt-6 break-inside-avoid rounded-md border border-neutral-300 p-4">
+            <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-700">Comments</h3>
+            <ul className="flex flex-col gap-2">
+              {comments.map((c) => (
+                <li key={c.id} className="border-l-2 border-neutral-400 pl-3">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-900">{c.body}</p>
+                  <p className="mt-0.5 text-xs text-neutral-500">
+                    {c.author_name || "SHWURX"} · {formatDate(c.created_at)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <DocBrandStrip />
         <DocFooter settings={settings} />

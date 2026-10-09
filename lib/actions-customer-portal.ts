@@ -28,7 +28,9 @@ export type CustomerAccessResult = {
  * a staff member's email, provisioning a portal login must NOT overwrite that
  * staff profile with role=customer (it would lock them out of the CRM).
  */
-async function isStaffAccount(userId: string): Promise<boolean> {
+async function isStaffAccount(userId: string, alreadyExisted: boolean): Promise<boolean> {
+  // A login we just created is never staff, even if the signup trigger gave it a default role.
+  if (!alreadyExisted) return false
   const svc = createServiceClient()
   const { data } = await svc.from("profiles").select("role").eq("id", userId).maybeSingle()
   return !!data?.role && data.role !== "customer"
@@ -85,10 +87,10 @@ export async function ensureCustomerPortalForJob(input: {
       try {
         const created = await createManagedAuthUser({
           email,
-          metadata: { full_name: customer.full_name, must_set_password: true, is_customer: true },
+          metadata: { full_name: customer.full_name, must_set_password: true, is_customer: true, role: "customer" },
         })
         userId = created.userId
-        if (await isStaffAccount(userId)) return fail({ hasEmail: true })
+        if (await isStaffAccount(userId, created.alreadyExisted)) return fail({ hasEmail: true })
         const { error: pErr } = await svc.from("profiles").upsert(
           {
             id: userId,
@@ -203,11 +205,11 @@ export async function inviteCustomerToPortal(customerId: string): Promise<Creden
   if (!userId) {
     const created = await createManagedAuthUser({
       email,
-      metadata: { full_name: customer.full_name, must_set_password: true, is_customer: true },
+      metadata: { full_name: customer.full_name, must_set_password: true, is_customer: true, role: "customer" },
     })
     userId = created.userId
     alreadyExisted = created.alreadyExisted
-    if (await isStaffAccount(userId)) {
+    if (await isStaffAccount(userId, alreadyExisted)) {
       throw new Error("This email belongs to a staff account. Use a different email for the customer portal.")
     }
 
@@ -277,9 +279,9 @@ export async function autoProvisionCustomerPortal(customerId: string): Promise<v
     const email = customer.email.trim().toLowerCase()
     const { userId, alreadyExisted } = await createManagedAuthUser({
       email,
-      metadata: { full_name: customer.full_name, must_set_password: true, is_customer: true },
+      metadata: { full_name: customer.full_name, must_set_password: true, is_customer: true, role: "customer" },
     })
-    if (await isStaffAccount(userId)) return
+    if (await isStaffAccount(userId, alreadyExisted)) return
 
     const { error: pErr } = await svc.from("profiles").upsert(
       {

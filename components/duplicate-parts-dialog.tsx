@@ -2,15 +2,29 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Copy, ReceiptText } from "lucide-react"
+import { Copy, PenLine, ReceiptText, TrendingUp } from "lucide-react"
 import { Button, Card } from "@/components/ui"
 import { CrmModal } from "@/components/crm/crm-modal"
 import { resolveDuplicateParts } from "@/lib/actions-quote-duplicates"
-import type { DuplicateGroup } from "@/lib/quote-duplicates"
+import type { CostSource, DuplicateGroup } from "@/lib/quote-duplicates"
 
 const money = (v: number) => v.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-export function DuplicatePartsDialog({ jobId, groups }: { jobId: string; groups: DuplicateGroup[] }) {
+const COST_LABEL: Record<CostSource, string> = {
+  purchase: "purchase cost",
+  request: "parts request cost",
+  stock: "stock cost",
+}
+
+export function DuplicatePartsDialog({
+  jobId,
+  groups,
+  showCosts,
+}: {
+  jobId: string
+  groups: DuplicateGroup[]
+  showCosts: boolean
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(true)
   const [pending, start] = useTransition()
@@ -21,6 +35,8 @@ export function DuplicatePartsDialog({ jobId, groups }: { jobId: string; groups:
 
   if (groups.length === 0) return null
   const removeCount = groups.reduce((s, g) => s + g.lines.length - 1, 0)
+  const purchaseCount = groups.reduce((s, g) => s + g.lines.filter((l) => l.fromInvoice).length, 0)
+  const manualCount = groups.reduce((s, g) => s + g.lines.filter((l) => !l.fromInvoice).length, 0)
 
   return (
     <>
@@ -32,19 +48,24 @@ export function DuplicatePartsDialog({ jobId, groups }: { jobId: string; groups:
               {groups.length} part{groups.length === 1 ? " is" : "s are"} repeated on this job card
             </p>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Choose which line to keep so the customer is not charged twice.
+              {purchaseCount} from purchase invoices · {manualCount} added manually. Merge them so the customer is
+              charged once.
             </p>
           </div>
         </div>
-        <Button onClick={() => setOpen(true)}>Review duplicates</Button>
+        <Button onClick={() => setOpen(true)}>Review &amp; merge</Button>
       </Card>
 
       <CrmModal
         open={open}
         onClose={() => setOpen(false)}
         closeLabel="Close"
-        title="Repeated parts on job card"
-        description="Only one line per part can stay on the job card. Lines linked to a purchase invoice are selected first."
+        title="Merge repeated parts"
+        description={
+          showCosts
+            ? "Each part stays once. The line with the bigger profit is selected for you; you can pick another."
+            : "Each part stays once. The most profitable line is selected for you; you can pick another."
+        }
         icon={<Copy className="mt-1 h-5 w-5 shrink-0 text-amber-400" aria-hidden="true" />}
         footer={
           <>
@@ -72,7 +93,7 @@ export function DuplicatePartsDialog({ jobId, groups }: { jobId: string; groups:
                 })
               }
             >
-              {pending ? "Saving..." : `Keep selected · remove ${removeCount}`}
+              {pending ? "Merging..." : `Merge · remove ${removeCount} line${removeCount === 1 ? "" : "s"}`}
             </Button>
           </>
         }
@@ -85,6 +106,7 @@ export function DuplicatePartsDialog({ jobId, groups }: { jobId: string; groups:
               </legend>
               {g.lines.map((l) => {
                 const checked = keep[g.key] === l.id
+                const best = l.id === g.defaultKeepId
                 return (
                   <label
                     key={l.id}
@@ -102,21 +124,43 @@ export function DuplicatePartsDialog({ jobId, groups }: { jobId: string; groups:
                     />
                     <span className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium">{l.name}</span>
                         {l.fromInvoice ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
-                            <ReceiptText className="h-3 w-3" aria-hidden="true" /> Purchase invoice
+                            <ReceiptText className="h-3 w-3" aria-hidden="true" /> From purchase
                           </span>
                         ) : (
-                          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                            Manual / request
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                            <PenLine className="h-3 w-3" aria-hidden="true" /> Added manually
+                          </span>
+                        )}
+                        {best && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">
+                            <TrendingUp className="h-3 w-3" aria-hidden="true" /> Bigger profit
                           </span>
                         )}
                       </span>
                       <span className="text-xs leading-relaxed text-muted-foreground">
-                        {l.partNumber ? `${l.partNumber} · ` : ""}Qty {l.quantity} × AED {money(l.unitPrice)}
+                        {l.partNumber ? `${l.partNumber} · ` : ""}Qty {l.quantity} × AED {money(l.unitPrice)} = AED{" "}
+                        {money(l.revenue)}
                         {l.detail ? ` · ${l.detail}` : ""}
                       </span>
+                      {showCosts && (
+                        <span className="text-xs leading-relaxed">
+                          {l.profit !== null && l.unitCost !== null && l.costSource ? (
+                            <>
+                              <span className={l.profit >= 0 ? "font-medium text-emerald-300" : "font-medium text-red-300"}>
+                                Profit AED {money(l.profit)}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {" "}
+                                · cost AED {money(l.unitCost)}/unit ({COST_LABEL[l.costSource]})
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">No cost recorded — ranked by selling total</span>
+                          )}
+                        </span>
+                      )}
                     </span>
                   </label>
                 )

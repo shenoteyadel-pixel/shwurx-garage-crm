@@ -507,7 +507,10 @@ async function addPartToJobQuotation(
   if (match?.id) {
     const incomingFromInvoice = isInvoiceLinked(part.detail)
     const takeInvoice = incomingFromInvoice && !isInvoiceLinked(match.detail)
-    match.unit_price = part.unitPrice
+    // Merging a purchase into a manual line: it is the same part at the same
+    // cost, so keep whichever selling price earns more.
+    const unitPrice = takeInvoice ? Math.max(Number(match.unit_price) || 0, part.unitPrice) : part.unitPrice
+    match.unit_price = unitPrice
     match.part_number = takeInvoice ? part.partNumber || match.part_number : match.part_number || part.partNumber
     if (takeInvoice) {
       match.quantity = part.quantity
@@ -517,7 +520,7 @@ async function addPartToJobQuotation(
     const { error } = await supabase
       .from("quotation_items")
       .update({
-        unit_price: part.unitPrice,
+        unit_price: unitPrice,
         part_number: match.part_number,
         quantity: match.quantity,
         ...(takeInvoice ? { detail: part.detail } : {}),

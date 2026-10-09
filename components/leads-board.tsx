@@ -17,7 +17,11 @@ import {
   Megaphone,
   StickyNote,
   Send,
+  Car,
+  ExternalLink,
+  Sparkles,
 } from "lucide-react"
+import { leadOrigin, ORIGIN_FILTERS, type LeadOriginKind } from "@/lib/lead-origin"
 import {
   setLeadStatus,
   assignLead,
@@ -59,6 +63,9 @@ export function LeadsBoard({
   canManage: boolean
 }) {
   const [filter, setFilter] = useState<"all" | LeadStatus>("all")
+  const [origin, setOrigin] = useState<"all" | LeadOriginKind>("all")
+
+  const origins = useMemo(() => new Map(leads.map((l) => [l.id, leadOrigin(l.metadata)])), [leads])
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: leads.length }
@@ -67,13 +74,45 @@ export function LeadsBoard({
     return c
   }, [leads])
 
+  const originCounts = useMemo(() => {
+    const c: Record<string, number> = { all: leads.length }
+    for (const o of origins.values()) {
+      const key = o.kind === "appointment" ? "other" : o.kind
+      c[key] = (c[key] ?? 0) + 1
+    }
+    return c
+  }, [leads.length, origins])
+
   const visible = useMemo(
-    () => (filter === "all" ? leads : leads.filter((l) => l.status === filter)),
-    [leads, filter],
+    () =>
+      leads.filter((l) => {
+        if (filter !== "all" && l.status !== filter) return false
+        if (origin === "all") return true
+        const kind = origins.get(l.id)?.kind
+        return origin === "other" ? kind === "other" || kind === "appointment" : kind === origin
+      }),
+    [leads, filter, origin, origins],
   )
 
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <label htmlFor="lead-origin-filter" className="text-xs font-medium text-muted-foreground">
+          Origin
+        </label>
+        <select
+          id="lead-origin-filter"
+          value={origin}
+          onChange={(e) => setOrigin(e.target.value as "all" | LeadOriginKind)}
+          className="h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          {ORIGIN_FILTERS.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label} ({originCounts[o.key] ?? 0})
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((f) => {
           const active = filter === f.key
@@ -122,7 +161,9 @@ function LeadCard({ lead, staff, canManage }: { lead: LeadRow; staff: StaffOptio
   const meta = STATUS_META[lead.status]
   const md = lead.metadata ?? {}
   const notes = Array.isArray(md.notes) ? md.notes : []
-  const utm = [md.utm_source, md.utm_medium, md.utm_campaign].filter(Boolean).join(" · ")
+  const origin = leadOrigin(md)
+  const utm = origin.campaign
+  const vehicle = [origin.model, origin.year].filter(Boolean).join(" · ")
   const isConverted = lead.status === "converted"
 
   function run(fn: () => Promise<unknown>) {
@@ -158,29 +199,53 @@ function LeadCard({ lead, staff, canManage }: { lead: LeadRow; staff: StaffOptio
               </a>
             ) : null}
           </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            {origin.path ? (
+              <a
+                href={origin.path}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-1 font-medium text-primary hover:bg-primary/15"
+              >
+                {origin.kind === "advisor" ? <Sparkles className="h-3 w-3" /> : <Globe className="h-3 w-3" />}
+                {origin.label}
+                <ExternalLink className="h-3 w-3 opacity-70" />
+                <span className="sr-only">(opens the website page)</span>
+              </a>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-1 font-medium text-primary">
+                {origin.kind === "advisor" ? <Sparkles className="h-3 w-3" /> : <Globe className="h-3 w-3" />}
+                {origin.label}
+              </span>
+            )}
+            {vehicle ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-foreground">
+                <Car className="h-3 w-3 text-primary" /> {vehicle}
+              </span>
+            ) : null}
+          </div>
           {lead.service_interest ? (
             <div className="mt-2 inline-flex items-center gap-1.5 text-sm text-foreground">
               <Wrench className="h-3.5 w-3.5 text-primary" /> {lead.service_interest}
             </div>
           ) : null}
           {lead.message ? (
-            <p className="mt-1.5 flex items-start gap-1.5 text-sm text-muted-foreground">
-              <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {lead.message}
+            <p className="mt-1.5 flex items-start gap-1.5 whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+              <MessageSquare className="mt-1 h-3.5 w-3.5 shrink-0" /> {lead.message}
             </p>
           ) : null}
-          {utm || md.referrer || md.page_path ? (
+          {utm || origin.referrer ? (
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
               {utm ? (
                 <span className="inline-flex items-center gap-1">
                   <Megaphone className="h-3 w-3" /> {utm}
                 </span>
               ) : null}
-              {md.referrer ? (
+              {origin.referrer ? (
                 <span className="inline-flex items-center gap-1">
-                  <Globe className="h-3 w-3" /> {md.referrer}
+                  <Globe className="h-3 w-3" /> {origin.referrer}
                 </span>
               ) : null}
-              {md.page_path ? <span className="opacity-70">{md.page_path}</span> : null}
             </div>
           ) : null}
         </div>

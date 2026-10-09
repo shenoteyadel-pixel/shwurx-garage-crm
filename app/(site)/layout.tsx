@@ -11,6 +11,7 @@ import { buildSiteGraph, jsonLdString } from "@/lib/website/structured-data"
 import { effectiveAnalytics, siteAnalytics } from "@/lib/website/analytics-server"
 import { normalizeRuntime } from "@/lib/website/analytics"
 import { ConsentBanner } from "@/components/site/consent-banner"
+import { AiAdvisor } from "@/components/site/ai-advisor"
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
@@ -74,6 +75,11 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
         {children}
       </main>
       <SiteFooter doc={doc} lang={lang} showPrivacyChoices={consentNeeded(tags)} />
+      <AiAdvisor
+        lang={lang}
+        bookHref={localePath(lang, doc.pages.appointment.visible ? "/appointment" : "/contact#enquire")}
+        whatsapp={doc.business.whatsapp.trim() || null}
+      />
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import "server-only"
 import { createServiceClient } from "@/lib/supabase/server"
 import { STAGE_MAP, STAGE_ORDER, type Stage } from "@/lib/constants"
+import { loadInvoiceComments } from "@/lib/invoice-comments"
 
 export interface PortalJob {
   id: string
@@ -22,6 +23,7 @@ export interface PortalInvoice {
   created_at: string
   pay_link_url: string | null
   pay_link_label: string | null
+  comments: { id: string; body: string; author_name: string | null; created_at: string }[]
 }
 
 export interface PortalData {
@@ -148,8 +150,10 @@ export async function loadPortalDataByCustomer(customerId: string): Promise<Port
     }
   })
 
-  const portalInvoices: PortalInvoice[] = (invoices ?? [])
-    .filter((inv) => inv.job_id && jobIds.has(inv.job_id))
+  const ownInvoices = (invoices ?? []).filter((inv) => inv.job_id && jobIds.has(inv.job_id))
+  const allComments = await loadInvoiceComments(ownInvoices.map((inv) => inv.id))
+
+  const portalInvoices: PortalInvoice[] = ownInvoices
     .map((inv) => {
       const bal = Math.max(0, (Number(inv.total) || 0) - (Number(inv.amount_paid) || 0))
       const linkLive = !!(inv as any).payment_link_enabled && !!(inv as any).payment_link_url && bal > 0.01
@@ -162,6 +166,9 @@ export async function loadPortalDataByCustomer(customerId: string): Promise<Port
         created_at: inv.created_at,
         pay_link_url: linkLive ? ((inv as any).payment_link_url as string) : null,
         pay_link_label: linkLive ? (((inv as any).payment_link_label as string) ?? null) : null,
+        comments: allComments
+          .filter((c) => c.invoice_id === inv.id)
+          .map((c) => ({ id: c.id, body: c.body, author_name: c.author_name, created_at: c.created_at })),
       }
     })
 

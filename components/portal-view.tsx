@@ -1,4 +1,4 @@
-import { Car, FileText, Clock, CheckCircle2, AlertCircle, CreditCard } from "lucide-react"
+import { Car, FileText, Clock, CheckCircle2, AlertCircle, CreditCard, MessageSquare } from "lucide-react"
 import { portalStageProgress, type PortalData } from "@/lib/portal-data"
 import { formatCurrency } from "@/lib/utils"
 
@@ -152,6 +152,31 @@ export function PortalView({
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {invoices.some((inv) => inv.comments.length > 0) && (
+          <div className="mt-4 flex flex-col gap-3">
+            {invoices
+              .filter((inv) => inv.comments.length > 0)
+              .map((inv) => (
+                <section key={inv.id} className="rounded-xl border border-border bg-card p-4">
+                  <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                    <MessageSquare className="h-4 w-4 text-primary" />
+                    Comments on {inv.invoice_number ?? inv.id.slice(0, 8)}
+                  </h3>
+                  <ul className="flex flex-col gap-2">
+                    {inv.comments.map((c) => (
+                      <li key={c.id} className="rounded-lg border border-border bg-background/40 p-3">
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed">{c.body}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {c.author_name || "SHWURX team"} · {fmtDate(c.created_at)}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
           </div>
         )}
 

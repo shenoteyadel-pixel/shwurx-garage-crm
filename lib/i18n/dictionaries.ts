@@ -103,6 +103,33 @@ const en = {
     brandsMissing: "Don't see your vehicle brand? Contact {company}.",
     ctaTitle: "Ready to Get Started?",
     ctaSubtitle: "Book your service appointment today.",
+    trackShowcase: {
+      eyebrow: "Live car tracking",
+      title1: "Follow your car,",
+      title2: "stage by stage.",
+      body:
+        "No need to call and ask. While your car is with us, you can see exactly where it is in the workshop from your phone — anytime.",
+      steps: [
+        {
+          title: "Get your private link",
+          body: "When your car checks in, we send you a personal tracking link by email or WhatsApp.",
+        },
+        {
+          title: "Open it on any phone",
+          body: "Tap the link, or enter your code on our Track page. No app and no sign-up needed.",
+        },
+        {
+          title: "Watch every step live",
+          body: "See the current status, your quotation, parts and progress — from check-in to ready for collection.",
+        },
+      ],
+      cta: "Track my car",
+      note: "Your link is private to you and only shows your own vehicle's service details.",
+      shot1Alt: "Tracking page showing the car's current repair status and approved quotation",
+      shot1Caption: "Live status & quotation",
+      shot2Alt: "Tracking page showing the service progress timeline from check-in to delivery",
+      shot2Caption: "Service progress timeline",
+    },
   },
   servicesPage: {
     title: "Our services",
@@ -436,6 +463,33 @@ const ar: typeof en = {
     brandsMissing: "لا ترى ماركة سيارتك؟ تواصل مع {company}.",
     ctaTitle: "جاهز للبدء؟",
     ctaSubtitle: "احجز موعد خدمتك اليوم.",
+    trackShowcase: {
+      eyebrow: "تتبّع سيارتك مباشرة",
+      title1: "تابع سيارتك",
+      title2: "مرحلة بمرحلة.",
+      body:
+        "لا حاجة للاتصال والسؤال. أثناء وجود سيارتك لدينا، يمكنك معرفة مكانها في الورشة بالضبط من هاتفك — في أي وقت.",
+      steps: [
+        {
+          title: "استلم رابطك الخاص",
+          body: "عند استلام سيارتك، نرسل لك رابط تتبّع شخصيًا عبر البريد الإلكتروني أو واتساب.",
+        },
+        {
+          title: "افتحه من أي هاتف",
+          body: "اضغط على الرابط، أو أدخل رمزك في صفحة التتبّع. لا حاجة لتطبيق أو تسجيل.",
+        },
+        {
+          title: "تابع كل خطوة مباشرة",
+          body: "اطّلع على الحالة الحالية وعرض السعر وقطع الغيار وسير العمل — من الاستلام حتى جاهزية السيارة للتسليم.",
+        },
+      ],
+      cta: "تتبّع سيارتي",
+      note: "رابطك خاص بك ويعرض تفاصيل خدمة سيارتك فقط.",
+      shot1Alt: "صفحة التتبّع تعرض حالة إصلاح السيارة الحالية وعرض السعر المعتمد",
+      shot1Caption: "الحالة المباشرة وعرض السعر",
+      shot2Alt: "صفحة التتبّع تعرض مراحل الخدمة من الاستلام حتى التسليم",
+      shot2Caption: "مراحل الخدمة",
+    },
   },
   servicesPage: {
     title: "خدماتنا",

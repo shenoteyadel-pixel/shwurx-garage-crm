@@ -35,6 +35,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return buildMetadata(doc, lang, "/", doc.pages.home.seo, preview)
 }
 
+const HERO_VIDEO = "/site/hero-workshop.mp4"
 const HERO_ICONS = [UserCog, Cpu, BadgeCheck]
 const ABOUT_ICONS = [Star, Cpu, BadgeCheck, ClipboardCheck, HeartHandshake]
 
@@ -183,14 +184,16 @@ export default async function HomePage() {
             {heroImg && (
               <figure className="min-w-0 lg:col-span-7">
                 <div className="relative aspect-[1672/941] overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
-                  <Image
-                    src={heroImg}
-                    alt={heroAlt}
-                    fill
-                    priority
-                    sizes="(min-width: 1600px) 850px, (min-width: 1024px) 56vw, 100vw"
-                    className="object-cover"
-                    style={{ objectPosition: `${heroMedia?.focalX ?? 50}% ${heroMedia?.focalY ?? 50}%` }}
+                  <video
+                    src={HERO_VIDEO}
+                    poster={heroImg}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    aria-label={heroAlt}
+                    className="absolute inset-0 h-full w-full object-cover"
                   />
                 </div>
                 {heroCaption && <figcaption className="mt-3 text-sm text-muted-foreground">{heroCaption}</figcaption>}

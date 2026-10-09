@@ -277,7 +277,7 @@ export function seedDocument(): WebsiteDocument {
       appointment: appointmentDefaults().page,
       home: {
         eyebrow: t("Independent premium car workshop · Al Quoz, Dubai", "ورشة مستقلة للسيارات الفاخرة · القوز، دبي"),
-        title: t("Premium car repair, diagnosed before it is quoted.", "إصلاح السيارات الفاخرة، بتشخيص يسبق عرض السعر."),
+        title: t("Expert luxury automotive center in Dubai.", "مركز خبراء السيارات الفاخرة في دبي."),
         subtitle: t(
           "Mechanical, diagnostics, bodywork, paint and programming for 2016+ premium and sports cars. Inspection first, written quotation, and nothing done without your approval.",
           "ميكانيكا وتشخيص وهيكل ودهان وبرمجة للسيارات الفاخرة والرياضية موديلات 2016 وأحدث. الفحص أولاً، عرض سعر مكتوب، ولا يُنفّذ شيء دون موافقتك.",

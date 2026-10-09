@@ -25,7 +25,7 @@ const en = {
   },
   cta: {
     bookService: "Book a Service",
-    getQuote: "Get a Quote",
+    getQuote: "Book Appointment",
     bookAppointment: "Book Appointment",
     contactUs: "Contact Us",
     learnMore: "Learn More",
@@ -102,7 +102,7 @@ const en = {
     brandsSub: "European & Performance Vehicle Service, Diagnostics, Programming and Repair.",
     brandsMissing: "Don't see your vehicle brand? Contact {company}.",
     ctaTitle: "Ready to Get Started?",
-    ctaSubtitle: "Book your service or get a quote today.",
+    ctaSubtitle: "Book your service appointment today.",
   },
   servicesPage: {
     title: "Our services",
@@ -358,7 +358,7 @@ const ar: typeof en = {
   },
   cta: {
     bookService: "احجز خدمة",
-    getQuote: "اطلب عرض سعر",
+    getQuote: "احجز موعداً",
     bookAppointment: "احجز موعداً",
     contactUs: "تواصل معنا",
     learnMore: "اعرف المزيد",
@@ -435,7 +435,7 @@ const ar: typeof en = {
     brandsSub: "خدمة وتشخيص وبرمجة وإصلاح المركبات الأوروبية وسيارات الأداء.",
     brandsMissing: "لا ترى ماركة سيارتك؟ تواصل مع {company}.",
     ctaTitle: "جاهز للبدء؟",
-    ctaSubtitle: "احجز خدمتك أو اطلب عرض سعر اليوم.",
+    ctaSubtitle: "احجز موعد خدمتك اليوم.",
   },
   servicesPage: {
     title: "خدماتنا",
@@ -548,7 +548,7 @@ const ar: typeof en = {
     },
     pickupDetails: "تفاصيل الاستلام",
     pickupAddress: "عنوان الاستلام",
-    pickupAddressPlaceholder: "الشارع، المبنى، رقم الشقة/الفيلا.",
+    pickupAddressPlaceholder: "الشارع، المبنى، رقم الشق��/الفيلا.",
     building: "المبنى / الفيلا (اختياري)",
     buildingPlaceholder: "مثال: برج مارينا، فيلا 12",
     area: "المنطقة / الحي (اختياري)",

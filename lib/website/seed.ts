@@ -283,7 +283,7 @@ export function seedDocument(): WebsiteDocument {
           "ميكانيكا وتشخيص وهيكل ودهان وبرمجة للسيارات الفاخرة والرياضية موديلات 2016 وأحدث. الفحص أولاً، عرض سعر مكتوب، ولا يُنفّذ شيء دون موافقتك.",
         ),
         heroImageId: HERO_CONCEPT_ID,
-        primaryCta: { label: t("Request a quote", "اطلب عرض سعر"), href: "/contact" },
+        primaryCta: { label: t("Book an appointment", "احجز موعداً"), href: "/appointment" },
         secondaryCta: { label: t("Book an inspection", "احجز فحصاً"), href: "/appointment" },
         highlights: [
           { id: "h1", title: t("2016+ premium & sports", "فاخرة ورياضية 2016+"), body: t("Our focus models", "الموديلات التي نركز عليها") },

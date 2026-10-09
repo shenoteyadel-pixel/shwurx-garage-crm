@@ -58,7 +58,7 @@ export const SITE_CONTENT_GROUPS: EditableGroup[] = [
     group: "Buttons",
     fields: [
       { path: "cta.bookService", label: "Book a Service" },
-      { path: "cta.getQuote", label: "Get a Quote" },
+      { path: "cta.getQuote", label: "Book Appointment" },
       { path: "cta.bookAppointment", label: "Book Appointment" },
       { path: "cta.contactUs", label: "Contact Us" },
       { path: "cta.trackCar", label: "Track your car" },

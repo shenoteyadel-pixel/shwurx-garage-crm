@@ -6,7 +6,10 @@ import {
   brandHeroMedia,
   HERO_CONCEPT_ID,
   HOME_SECTION_DEFAULTS,
+  HOME_TITLE,
+  IDENTITY_SEED,
   ILLUSTRATIVE_SEED,
+  LEGACY_HOME_TITLE,
   illustrativeMedia,
   illustrativePortraitId,
   seedDocument,
@@ -277,6 +280,7 @@ export function normalizeDocument(input: unknown, drops?: string[]): WebsiteDocu
   migrateHomeSections(doc, clean)
   applyIllustrativeSeed(doc, clean)
   applyBrandHeroSeed(doc, clean)
+  applyIdentitySeed(doc)
   doc.schemaVersion = 1
   return doc
 }
@@ -408,6 +412,20 @@ export function applyBrandHeroSeed(doc: WebsiteDocument, clean: unknown) {
 }
 
 /** True when the media item is generated artwork rather than a real photo. */
+/**
+ * Once-only: the home title moves to the alias-aware wording only per language
+ * where it still equals the previous seed default, so owner-edited titles stick.
+ * The business identity text itself needs no migration: an absent field takes
+ * the seed default through shape(), and a stored (even empty) value wins.
+ */
+export function applyIdentitySeed(doc: WebsiteDocument) {
+  if (doc.appliedSeeds.includes(IDENTITY_SEED)) return
+  const title = doc.pages.home.seo.title
+  if (title.en === LEGACY_HOME_TITLE.en) title.en = HOME_TITLE.en
+  if (title.ar === LEGACY_HOME_TITLE.ar) title.ar = HOME_TITLE.ar
+  doc.appliedSeeds.push(IDENTITY_SEED)
+}
+
 export function isIllustrativeSource(source: MediaSource | undefined): boolean {
   return source === "ai_illustration" || source === "ai_generated"
 }

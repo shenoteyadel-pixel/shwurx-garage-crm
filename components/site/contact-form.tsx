@@ -6,13 +6,31 @@ import { Button, Field, Input, Textarea } from "@/components/ui"
 import { emitConversion, intakeEnvelope, newSubmissionId, submitLead } from "@/lib/site-track"
 import { useI18n } from "@/lib/i18n/provider"
 import { DryRunNotice } from "@/components/site/dry-run-notice"
+import {
+  ContactVehicleFields,
+  readContactModel,
+  type ContactBrandOption,
+  type ContactServiceOption,
+} from "@/components/site/contact-vehicle-fields"
+import { MIN_VEHICLE_YEAR, cleanYearInput, validatePhone, validateVehicleYear } from "@/lib/website/intake-validate"
 
 type Status = "idle" | "submitting" | "done" | "error" | "dry_run"
 
-export function ContactForm({ heading, sub }: { heading?: string; sub?: string }) {
+export function ContactForm({
+  heading,
+  sub,
+  brands = [],
+  services = [],
+}: {
+  heading?: string
+  sub?: string
+  brands?: ContactBrandOption[]
+  services?: ContactServiceOption[]
+}) {
   const { dict } = useI18n()
   const t = dict.contactForm
   const [status, setStatus] = useState<Status>("idle")
+  const [yearInvalid, setYearInvalid] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const submissionId = useRef<string>("")
   if (!submissionId.current && typeof window !== "undefined") submissionId.current = newSubmissionId()
@@ -30,12 +48,33 @@ export function ContactForm({ heading, sub }: { heading?: string; sub?: string }
       setStatus("error")
       return
     }
+    const phoneCheck = validatePhone(phone, { required: false })
+    if (!phoneCheck.ok) {
+      setError(t.errPhone)
+      setStatus("error")
+      return
+    }
+    const year = cleanYearInput(String(fd.get("year") ?? ""))
+    if (!validateVehicleYear(year).ok) {
+      setYearInvalid(true)
+      setError(t.errYear.replace("{min}", String(MIN_VEHICLE_YEAR)).replace("{max}", String(new Date().getFullYear() + 1)))
+      setStatus("error")
+      return
+    }
+    setYearInvalid(false)
+    const brand = String(fd.get("brand") ?? "")
+    const service = String(fd.get("service") ?? "")
+    const model = readContactModel(fd)
     try {
       const result = await submitLead({
         name: fd.get("name") || null,
-        phone: phone || null,
+        phone: phoneCheck.value || null,
         email: email || null,
         message: fd.get("message") || null,
+        brand: brand || null,
+        service: service || null,
+        model: model || null,
+        year: year || null,
         source: "website",
         ...intakeEnvelope(submissionId.current),
       })
@@ -84,12 +123,15 @@ export function ContactForm({ heading, sub }: { heading?: string; sub?: string }
           </Field>
           <div className="grid gap-5 sm:grid-cols-2">
             <Field label={t.phone} htmlFor="phone">
-              <Input id="phone" name="phone" type="tel" placeholder={t.phonePlaceholder} dir="ltr" className="h-11" />
+              <Input id="phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder={t.phonePlaceholder} dir="ltr" className="h-11" />
             </Field>
             <Field label={t.email} htmlFor="email">
-              <Input id="email" name="email" type="email" placeholder={t.emailPlaceholder} dir="ltr" className="h-11" />
+              <Input id="email" name="email" type="email" autoComplete="email" placeholder={t.emailPlaceholder} dir="ltr" className="h-11" />
             </Field>
           </div>
+          {(brands.length > 0 || services.length > 0) && (
+            <ContactVehicleFields brands={brands} services={services} labels={t} yearInvalid={yearInvalid} />
+          )}
           <Field label={t.message} htmlFor="message">
             <Textarea id="message" name="message" rows={5} placeholder={t.messagePlaceholder} className="min-h-32" />
           </Field>

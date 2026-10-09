@@ -439,6 +439,12 @@ function BusinessSection({ doc, mutate }: SectionProps) {
     <>
       <SectionTitle title="Business details" intro="Shown in the header, footer, contact page and Google listing data. Leave hours empty if not confirmed." />
       <L10nField label="Business name" value={b.name} onChange={(v) => mutate((d) => void (d.business.name = v))} />
+      <L10nField
+        label="Identity statement (home + about; facts only — leave empty to hide)"
+        value={b.identity}
+        onChange={(v) => mutate((d) => void (d.business.identity = v))}
+        multiline
+      />
       <div className="grid gap-4 md:grid-cols-3">
         <TextField label="Phone" value={b.phone} onChange={(v) => mutate((d) => void (d.business.phone = v))} placeholder="+971..." />
         <TextField label="WhatsApp" value={b.whatsapp} onChange={(v) => mutate((d) => void (d.business.whatsapp = v))} placeholder="+971..." />

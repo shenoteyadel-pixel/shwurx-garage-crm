@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { MapPin, Phone, Mail } from "lucide-react"
 import { BrandLogo } from "@/components/brand-logo"
+import { PrivacyChoicesButton } from "@/components/site/consent-banner"
 import { localePath, pick, publicMedia, visibleNav } from "@/lib/website/render"
 import type { Lang, WebsiteDocument } from "@/lib/website/types"
 
@@ -15,7 +16,15 @@ const T = {
   ar: { quick: "استكشف", services: "الخدمات", contact: "تواصل معنا", rights: "جميع الحقوق محفوظة.", staff: "دخول الموظفين", tl: "الرخصة التجارية", trn: "الرقم الضريبي" },
 }
 
-export function SiteFooter({ doc, lang }: { doc: WebsiteDocument; lang: Lang }) {
+export function SiteFooter({
+  doc,
+  lang,
+  showPrivacyChoices = false,
+}: {
+  doc: WebsiteDocument
+  lang: Lang
+  showPrivacyChoices?: boolean
+}) {
   const t = T[lang]
   const b = doc.business
   const logo = publicMedia(doc, b.logoId)
@@ -116,6 +125,7 @@ export function SiteFooter({ doc, lang }: { doc: WebsiteDocument; lang: Lang }) 
         <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-4 py-5 text-xs text-muted-foreground lg:flex-row lg:items-center lg:px-8">
           <span className="flex items-center gap-3">
             © {year} {pick(b.name, lang)}. {t.rights}
+            {showPrivacyChoices && <PrivacyChoicesButton lang={lang} />}
             <Link href="/crm" className="text-muted-foreground/70 transition hover:text-foreground">
               {t.staff}
             </Link>

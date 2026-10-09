@@ -6,7 +6,7 @@ import { Button, Field, Input } from "@/components/ui"
 import { emitConversion, intakeEnvelope, newSubmissionId, submitAppointment } from "@/lib/site-track"
 import { APPOINTMENT_TYPES, type AppointmentFormConfig } from "@/lib/website/appointment"
 import type { Lang } from "@/lib/website/types"
-import { MIN_VEHICLE_YEAR } from "@/lib/website/intake-validate"
+import { MIN_VEHICLE_YEAR, cleanYearInput, validatePhone, validateVehicleYear } from "@/lib/website/intake-validate"
 import { DryRunNotice } from "@/components/site/dry-run-notice"
 
 type Status = "idle" | "submitting" | "done" | "error" | "dry_run"
@@ -57,6 +57,23 @@ export function AppointmentForm({ config, lang, services }: {
     setStatus("submitting")
     setError(null)
     const fd = new FormData(e.currentTarget)
+    const ar = lang === "ar"
+    const phoneCheck = validatePhone(String(fd.get("phone") ?? ""), { required: true })
+    if (!phoneCheck.ok) {
+      setError(ar ? "أدخل رقم هاتف صحيحاً (7 إلى 15 رقماً)." : "Enter a valid phone number (7 to 15 digits).")
+      setStatus("error")
+      return
+    }
+    const vehicleYear = cleanYearInput(String(fd.get("vehicleYear") ?? ""))
+    if (!validateVehicleYear(vehicleYear).ok) {
+      setError(
+        ar
+          ? `أدخل سنة طراز من ${MIN_VEHICLE_YEAR} إلى ${new Date().getFullYear() + 1}، أو اتركها فارغة.`
+          : `Enter a model year from ${MIN_VEHICLE_YEAR} to ${new Date().getFullYear() + 1}, or leave it blank.`,
+      )
+      setStatus("error")
+      return
+    }
 
     let logistics: Record<string, unknown> | undefined
     if (needsPickup) {
@@ -88,11 +105,11 @@ export function AppointmentForm({ config, lang, services }: {
     try {
       const result = await submitAppointment({
         name: fd.get("name"),
-        phone: fd.get("phone"),
+        phone: phoneCheck.value,
         email: fd.get("email") || null,
         vehicleMake: fd.get("vehicleMake") || null,
         vehicleModel: fd.get("vehicleModel") || null,
-        vehicleYear: fd.get("vehicleYear") || null,
+        vehicleYear: vehicleYear || null,
         plateNumber: fd.get("plateNumber") || null,
         serviceInterest: fd.get("serviceInterest") || null,
         preferredDate: fd.get("preferredDate") || null,
@@ -155,7 +172,7 @@ export function AppointmentForm({ config, lang, services }: {
           <Input id="vehicleModel" name="vehicleModel" placeholder={f.carModelPlaceholder} />
         </Field>
         <Field label={f.year} htmlFor="vehicleYear">
-          <Input id="vehicleYear" name="vehicleYear" type="number" min={MIN_VEHICLE_YEAR} max={new Date().getFullYear() + 1} step={1} inputMode="numeric" placeholder={f.yearPlaceholder} />
+          <Input id="vehicleYear" name="vehicleYear" type="text" inputMode="numeric" autoComplete="off" dir="ltr" placeholder={f.yearPlaceholder} />
         </Field>
         {config.optionalFields.plate && <Field label={f.plate} htmlFor="plateNumber">
           <Input id="plateNumber" name="plateNumber" placeholder={f.platePlaceholder} />

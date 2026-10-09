@@ -27,6 +27,9 @@ export default async function AboutPage() {
           {paragraphs.map((p, i) => (
             <p key={i} className="mt-4 text-pretty text-base leading-relaxed text-muted-foreground">{p}</p>
           ))}
+          {pick(doc.business.identity, lang) && (
+            <p className="mt-4 text-pretty text-base leading-relaxed text-muted-foreground">{pick(doc.business.identity, lang)}</p>
+          )}
         </div>
 
         <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-border">

@@ -146,6 +146,8 @@ export interface BusinessInfo {
   hours: L10n
   socials: SocialLink[]
   logoId: string | null
+  /** short factual identity statement shown on home/about (aliases + company name) */
+  identity: L10n
 }
 
 export interface NavLink {

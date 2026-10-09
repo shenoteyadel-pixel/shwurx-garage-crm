@@ -6,7 +6,8 @@ import { TrackingGate } from "@/components/site/tracking-gate"
 import { consentNeeded } from "@/lib/website/consent-needed"
 import { PreviewBar } from "@/components/site/preview-bar"
 import { SiteTracking } from "@/components/site-tracking"
-import { localePath, pick, publicMedia, siteContext, visibleNav } from "@/lib/website/render"
+import { localePath, pick, publicMedia, SITE_URL, siteContext, visibleNav } from "@/lib/website/render"
+import { buildSiteGraph, jsonLdString } from "@/lib/website/structured-data"
 import { effectiveAnalytics, siteAnalytics } from "@/lib/website/analytics-server"
 import { normalizeRuntime } from "@/lib/website/analytics"
 import { ConsentBanner } from "@/components/site/consent-banner"
@@ -35,6 +36,20 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
 
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground" lang={lang} dir={ar ? "rtl" : "ltr"}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdString(
+            buildSiteGraph({
+              doc,
+              lang,
+              origin: SITE_URL,
+              pick,
+              logoUrl: siteLogo ? (siteLogo.url.startsWith("/") ? `${SITE_URL}${siteLogo.url}` : siteLogo.url) : null,
+            }),
+          ),
+        }}
+      />
       <SiteTracking tags={tags} />
       <TrackingGate tags={tags} />
       {consentNeeded(tags) && <ConsentBanner lang={lang} privacyHref={localePath(lang, "/privacy")} />}
@@ -58,7 +73,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
       <main id="main" className="flex-1">
         {children}
       </main>
-      <SiteFooter doc={doc} lang={lang} />
+      <SiteFooter doc={doc} lang={lang} showPrivacyChoices={consentNeeded(tags)} />
     </div>
   )
 }

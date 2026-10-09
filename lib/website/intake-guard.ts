@@ -30,10 +30,5 @@ export async function readBoundedJson(request: Request): Promise<Record<string, 
   }
 }
 
-/** Digits only, with a leading UAE 0 / 00 normalised to the 971 country code. */
-export function normalizePhone(raw: string): string {
-  let d = raw.replace(/\D/g, "")
-  if (d.startsWith("00")) d = d.slice(2)
-  if (d.startsWith("05") && d.length === 10) d = "971" + d.slice(1)
-  return d
-}
+/** Digits only, with a leading UAE 0 / 00 normalised to the 971 country code (shared with the browser). */
+export { normalizePhone } from "./intake-validate"

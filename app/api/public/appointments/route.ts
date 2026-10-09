@@ -7,7 +7,7 @@ import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
 import { submitOnce } from "@/lib/website/submit-once"
 import { getPublishedDocumentStrict } from "@/lib/website/store"
 import { appointmentRequestIssue } from "@/lib/website/appointment"
-import { validateVehicleYear } from "@/lib/website/intake-validate"
+import { validatePhone, validateVehicleYear } from "@/lib/website/intake-validate"
 
 export const runtime = "nodejs"
 
@@ -27,10 +27,14 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const body = raw as any
     const name = String(body?.name ?? "").trim()
-    const phone = String(body?.phone ?? "").trim()
+    const phoneCheck = validatePhone(body?.phone, { required: true })
 
     if (!name) return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_name" }, 400)
-    if (!phone) return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_phone" }, 400)
+    if (!phoneCheck.ok) {
+      const error = phoneCheck.error === "required" ? "missing_phone" : "invalid_phone"
+      return jsonWithCors(request, { ok: false, outcome: "invalid", error, fields: { phone: phoneCheck.error } }, 400)
+    }
+    const phone = phoneCheck.value ?? ""
     const year = validateVehicleYear(body?.vehicleYear ?? body?.vehicle_year)
     if (!year.ok) return jsonWithCors(request, { ok: false, outcome: "invalid", error: "invalid_vehicle_year", fields: { year: year.error } }, 400)
 

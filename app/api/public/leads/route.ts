@@ -4,6 +4,9 @@ import { notifyByPermission } from "@/lib/actions-notifications"
 import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
 import { findBySubmission, intakeMetadata, SUBMISSION_UUID } from "@/lib/website/intake-dedupe"
 import { conversionToken } from "@/lib/website/conversion-token"
+import { validatePhone } from "@/lib/website/intake-validate"
+import { hasVehicleInput, resolveContactVehicle, vehicleSummary } from "@/lib/website/contact-vehicle"
+import { getPublishedDocumentStrict } from "@/lib/website/store"
 
 export const runtime = "nodejs"
 
@@ -21,12 +24,26 @@ export async function POST(request: Request) {
     const body = await readBoundedJson(request)
     if (!body) return jsonWithCors(request, { ok: false, outcome: "rejected", error: "bad_request" }, 413)
     const name = String(body?.name ?? "").trim()
-    const phone = String(body?.phone ?? "").trim()
     const email = String(body?.email ?? "").trim()
+    // Phone is optional here (email-only contact is valid), but when present the RAW
+    // value must pass the shared rules: never truncated into a valid number.
+    const phoneCheck = validatePhone(body?.phone, { required: false })
+    const phone = phoneCheck.ok ? phoneCheck.value ?? "" : ""
 
+    if (!phoneCheck.ok) {
+      return jsonWithCors(request, { ok: false, outcome: "invalid", error: "invalid_phone", fields: { phone: phoneCheck.error } }, 400)
+    }
     if (!phone && !email) {
       return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_contact" }, 400)
     }
+
+    // Optional structured vehicle context, re-derived from the published catalog.
+    const doc = hasVehicleInput(body) ? await getPublishedDocumentStrict().catch(() => null) : null
+    const vehicleCheck = resolveContactVehicle(doc, body)
+    if (!vehicleCheck.ok) {
+      return jsonWithCors(request, { ok: false, outcome: "invalid", error: "invalid_vehicle", fields: vehicleCheck.fields }, 400)
+    }
+    const vehicle = vehicleCheck.vehicle
 
     // Previews validate but never create production leads or staff alerts.
     if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
@@ -40,15 +57,26 @@ export async function POST(request: Request) {
       if (existing) return persisted("duplicate", existing)
     }
 
+    const rawMessage = typeof body?.message === "string" ? body.message.trim() : ""
+    const summary = vehicleSummary(vehicle)
+    const message = [summary, rawMessage].filter(Boolean).join("\n\n") || null
     const supabase = createServiceClient()
     const { data, error } = await supabase.rpc("submit_lead", {
       p_name: name || null,
       p_phone: phone || null,
       p_email: email || null,
-      p_message: body?.message ?? null,
-      p_service_interest: body?.serviceInterest ?? body?.service_interest ?? null,
+      p_message: message,
+      p_service_interest:
+        [vehicle.brandName, vehicle.serviceName].filter(Boolean).join(" · ") || (body?.serviceInterest ?? body?.service_interest ?? null),
       p_source: body?.source ?? "website",
-      p_metadata: intakeMetadata(body, "contact", submissionId, []),
+      p_metadata: {
+        ...intakeMetadata(body, "contact", submissionId, []),
+        phone_digits: phoneCheck.digits,
+        brand_slug: vehicle.brandSlug,
+        service_slug: vehicle.serviceSlug,
+        vehicle_model: vehicle.model,
+        vehicle_year: vehicle.year,
+      },
     })
 
     if (error || !data?.ok) {

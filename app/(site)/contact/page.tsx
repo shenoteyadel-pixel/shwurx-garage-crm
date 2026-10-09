@@ -143,7 +143,16 @@ export default async function ContactPage() {
             )}
           </aside>
 
-          <ContactForm heading={t.formHeading} sub={t.formSub} />
+          <div id="enquire" className="scroll-mt-24">
+            <ContactForm
+              heading={t.formHeading}
+              sub={t.formSub}
+              brands={doc.brands
+                .filter((x) => x.visible)
+                .map((x) => ({ slug: x.slug, name: pick(x.name, lang), models: x.models.map((mo) => mo.name), serviceSlugs: x.serviceSlugs }))}
+              services={doc.services.filter((x) => x.visible).map((x) => ({ slug: x.slug, name: pick(x.name, lang) }))}
+            />
+          </div>
         </div>
       </div>
     </div>

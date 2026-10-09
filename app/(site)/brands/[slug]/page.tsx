@@ -9,6 +9,7 @@ import { FaqList } from "@/components/site/faq-list"
 import { MediaGallery } from "@/components/site/media-gallery"
 import { ArticleCard } from "@/components/site/article-card"
 import { listLiveArticles } from "@/lib/blog"
+import { businessId, jsonLdString, websiteId } from "@/lib/website/structured-data"
 
 export const dynamic = "force-dynamic"
 
@@ -74,20 +75,23 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
   const enquire = "#enquire"
   const articles = (await listLiveArticles(lang)).filter((a) => a.brandSlug === brand.slug).slice(0, 3)
 
+  const pageUrl = `${SITE_URL}${localePath(lang, `/brands/${brand.slug}`)}`
   const jsonLd = {
     "@context": "https://schema.org",
-    "@type": "AutoRepair",
-    name: pick(doc.business.name, lang),
-    address: { "@type": "PostalAddress", streetAddress: pick(doc.business.address, lang), addressLocality: "Dubai", addressCountry: "AE" },
-    telephone: doc.business.phone || undefined,
-    url: `${SITE_URL}${localePath(lang, `/brands/${brand.slug}`)}`,
-    knowsAbout: `${brand.name.en} repair`,
+    "@type": "WebPage",
+    "@id": `${pageUrl}#webpage`,
+    url: pageUrl,
+    name: pick(brand.name, lang),
+    inLanguage: lang === "ar" ? "ar-AE" : "en-AE",
+    isPartOf: { "@id": websiteId(SITE_URL) },
+    about: { "@type": "Brand", name: brand.name.en },
+    provider: { "@id": businessId(SITE_URL) },
   }
 
   return (
     <>
     <div className="mx-auto max-w-6xl px-4 py-16 lg:px-8">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(jsonLd) }} />
       <header className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
         <div className="max-w-2xl">
           {brand.kind === "model_family" && brand.parentName && (

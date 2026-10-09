@@ -106,6 +106,21 @@ export function illustrativeMedia(): MediaAsset[] {
 }
 export const BRAND_HERO_SEED = "brand-garage-heroes-v2"
 
+/** Once-only marker: home title moves to the alias-aware title only if it is still the old seed default. */
+export const IDENTITY_SEED = "identity-aliases-v1"
+export const LEGACY_HOME_TITLE = {
+  en: "SHWURX — Premium Car Repair in Al Quoz, Dubai",
+  ar: "شوركس — إصلاح السيارات الفاخرة في القوز، دبي",
+}
+export const HOME_TITLE = {
+  en: "SHWURX (Wurx Garage) | Car Repair in Al Quoz, Dubai",
+  ar: "شوركس (Wurx Garage) | إصلاح السيارات في القوز، دبي",
+}
+export const IDENTITY_TEXT = {
+  en: "SHWURX (Wurx Garage) is an independent car repair workshop in Al Quoz, Dubai. The company is SHENOTEY ESKANDER GARAGE CO.",
+  ar: "شوركس (Wurx Garage) ورشة مستقلة لإصلاح السيارات في القوز، دبي. الشركة هي SHENOTEY ESKANDER GARAGE CO.",
+}
+
 /**
  * AI compositions of each marque outside the SHWURX facade (beige corrugated
  * exterior, purple trim, lime/black sign, open bay), generated from the owner's
@@ -239,6 +254,7 @@ export function seedDocument(): WebsiteDocument {
       hours: t("", ""),
       socials: [],
       logoId: null,
+      identity: t(IDENTITY_TEXT.en, IDENTITY_TEXT.ar),
     },
     nav: {
       header: [
@@ -276,8 +292,8 @@ export function seedDocument(): WebsiteDocument {
         ],
         sections: HOME_SECTION_DEFAULTS.map((s) => structuredClone(s)),
         seo: pageSeo(
-          "SHWURX — Premium Car Repair in Al Quoz, Dubai",
-          "شوركس — إصلاح السيارات الفاخرة في القوز، دبي",
+          HOME_TITLE.en,
+          HOME_TITLE.ar,
           "Independent repair, diagnostics, bodywork, paint and programming for 2016+ premium and sports cars in Al Quoz Industrial Area 2.",
           "إصلاح وتشخيص وهيكل ودهان وبرمجة مستقلة للسيارات الفاخرة والرياضية موديلات 2016 وأحدث في القوز الصناعية 2.",
         ),
@@ -402,6 +418,6 @@ export function seedDocument(): WebsiteDocument {
     analytics: structuredClone(DEFAULT_ANALYTICS),
     strings: { en: {}, ar: {} },
     images: {},
-    appliedSeeds: [ILLUSTRATIVE_SEED, BRAND_HERO_SEED],
+    appliedSeeds: [ILLUSTRATIVE_SEED, BRAND_HERO_SEED, IDENTITY_SEED],
   }
 }

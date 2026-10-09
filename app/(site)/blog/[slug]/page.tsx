@@ -7,6 +7,7 @@ import { localePath, pick, siteContext, SITE_URL } from "@/lib/website/render"
 import { displayImageAlt, displayImageCaption } from "@/lib/website/media-display"
 import { isIndexableDeployment } from "@/lib/website/env"
 import { getPublishedArticle, listLiveArticles } from "@/lib/blog"
+import { businessId, jsonLdString, websiteId } from "@/lib/website/structured-data"
 import { isLocaleLive, liveLocales, relatedArticles, type Article, type ArticleLang } from "@/lib/article-model"
 import { withSuffix } from "@/lib/safe-markdown"
 import { ArticleBody } from "@/components/site/article-body"
@@ -116,14 +117,15 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
     dateModified: article.updatedAt || undefined,
     mainEntityOfPage: abs(lang, article.slug),
     image: article.coverUrl ? (article.coverUrl.startsWith("/") ? `${SITE_URL}${article.coverUrl}` : article.coverUrl) : undefined,
-    publisher: { "@type": "AutoRepair", name: pick(doc.business.name, lang), url: SITE_URL },
+    publisher: { "@id": businessId(SITE_URL) },
+    isPartOf: { "@id": websiteId(SITE_URL) },
     about: brand ? { "@type": "Brand", name: brand.name.en } : undefined,
     citation: article.sources.map((s) => s.url),
   }
 
   return (
     <article className="mx-auto max-w-3xl px-4 py-16 lg:px-8 lg:py-24">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(jsonLd) }} />
       <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm">
         <Link href={localePath(lang, "/blog")} className="font-semibold text-primary hover:underline">
           {u.back}

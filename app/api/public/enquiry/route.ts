@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { resolveEnquiryContext } from "@/lib/website/intake-context"
-import { validateVehicleYear } from "@/lib/website/intake-validate"
+import { needsMoreDetails, validatePhone, validateVehicleYear } from "@/lib/website/intake-validate"
 import { preflight, jsonWithCors } from "@/lib/public-cors"
 import { notifyByPermission } from "@/lib/actions-notifications"
 import { getPublishedDocumentStrict } from "@/lib/website/store"
@@ -80,8 +80,10 @@ export async function POST(request: Request) {
 
     const errors: Record<string, string> = {}
     const name = str(body.name, 80)
-    const phone = str(body.phone, 24)
-    const phoneDigits = normalizePhone(phone)
+    // The RAW phone is validated before any slicing so overlong input is rejected, not truncated.
+    const phoneCheck = validatePhone(body.phone, { required: true })
+    const phone = phoneCheck.ok ? phoneCheck.value ?? "" : ""
+    const phoneDigits = phoneCheck.ok ? phoneCheck.digits ?? "" : normalizePhone(typeof body.phone === "string" ? body.phone : "")
     const model = str(body.model, 60)
     const details = str(body.details, 1000)
     const locale = body.locale === "ar" ? "ar" : "en"
@@ -105,14 +107,14 @@ export async function POST(request: Request) {
     if (brand && service && !brand.serviceSlugs.includes(service.slug)) errors.service = "not_for_brand"
 
     if (name.length < 2) errors.name = "required"
-    if (phoneDigits.length < 7 || phoneDigits.length > 15) errors.phone = "invalid"
+    if (!phoneCheck.ok) errors.phone = phoneCheck.error
 
     // Validate the RAW year before any normalization so "20160" is rejected, not truncated.
     const yearCheck = validateVehicleYear(body.year)
     const year = yearCheck.ok ? yearCheck.year : null
     if (!yearCheck.ok) errors.year = yearCheck.error
     // A known service gives enough context; otherwise ask for a model or details.
-    if (!service && !model && details.length < 5) errors.details = "required"
+    if (needsMoreDetails({ service: service?.slug, model, details })) errors.details = "required"
     if (Object.keys(errors).length) return reply(request, "invalid", 400, { fields: errors })
 
     if (await intakeIsDryRun()) return reply(request, "dry_run", 200, { id: null })

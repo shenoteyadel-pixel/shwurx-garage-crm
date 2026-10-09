@@ -5,7 +5,7 @@ import { useId, useRef, useState } from "react"
 import { CheckCircle2, Loader2 } from "lucide-react"
 import { emitConversion, getAttribution, track } from "@/lib/site-track"
 import { buildEnquiryPayload } from "@/lib/website/intake-context"
-import { servicesForBrand, validateVehicleYear } from "@/lib/website/intake-validate"
+import { cleanYearInput, needsMoreDetails, servicesForBrand, validatePhone, validateVehicleYear } from "@/lib/website/intake-validate"
 
 export interface EnquiryFormProps {
   lang: "en" | "ar"
@@ -118,9 +118,9 @@ export function EnquiryForm(p: EnquiryFormProps) {
     const v = (k: string) => String(fd.get(k) ?? "").trim()
     const next: Partial<Record<Field, string>> = {}
     if (v("name").length < 2) next.name = m.required
-    if (v("phone").replace(/\D/g, "").length < 7) next.phone = m.phone
+    if (!validatePhone(v("phone"), { required: true }).ok) next.phone = m.phone
     if (!validateVehicleYear(v("year")).ok) next.year = m.year
-    if (!v("model") && !v("details") && !service) next.details = m.details
+    if (needsMoreDetails({ service, model: v("model"), details: v("details") })) next.details = m.details
     setErrors(next)
     setFormError(null)
     if (Object.keys(next).length) {
@@ -150,7 +150,7 @@ export function EnquiryForm(p: EnquiryFormProps) {
             phone: v("phone"),
             brand: brand || null,
             model: v("model"),
-            year: v("year"),
+            year: cleanYearInput(v("year")),
             service: service || null,
             details: v("details"),
             submitPath: window.location.pathname,
@@ -278,7 +278,6 @@ export function EnquiryForm(p: EnquiryFormProps) {
             inputMode="tel"
             autoComplete="tel"
             dir="ltr"
-            maxLength={24}
             placeholder="+971 5X XXX XXXX"
             className={`${input} text-start`}
             {...aria("phone")}

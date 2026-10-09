@@ -423,11 +423,11 @@ export default async function HomePage() {
               </a>
             )}
             <TrackLink
-              href={lp("/contact")}
-              label="Get a Quote — location"
+              href={lp("/appointment")}
+              label="Book Appointment — location"
               className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
             >
-              {dict.cta.getQuote} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
+              {dict.cta.bookAppointment} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
             </TrackLink>
           </div>
         </div>

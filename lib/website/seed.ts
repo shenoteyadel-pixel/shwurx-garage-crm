@@ -276,11 +276,11 @@ export function seedDocument(): WebsiteDocument {
     pages: {
       appointment: appointmentDefaults().page,
       home: {
-        eyebrow: t("Independent premium car workshop · Al Quoz, Dubai", "ورشة مستقلة للسيارات الفاخرة · القوز، دبي"),
+        eyebrow: t("Luxury & sports car specialists · Al Quoz, Dubai", "متخصصون في السيارات الفاخرة والرياضية · القوز، دبي"),
         title: t("Expert luxury automotive center in Dubai.", "مركز خبراء السيارات الفاخرة في دبي."),
         subtitle: t(
-          "Mechanical, diagnostics, bodywork, paint and programming for 2016+ premium and sports cars. Inspection first, written quotation, and nothing done without your approval.",
-          "ميكانيكا وتشخيص وهيكل ودهان وبرمجة للسيارات الفاخرة والرياضية موديلات 2016 وأحدث. الفحص أولاً، عرض سعر مكتوب، ولا يُنفّذ شيء دون موافقتك.",
+          "Mechanical, diagnostics, bodywork, paint and programming for 2016+ luxury and sports cars, all under one roof in Al Quoz.",
+          "ميكانيكا وتشخيص وهيكل ودهان وبرمجة للسيارات الفاخرة والرياضية موديلات 2016 وأحدث، كلها تحت سقف واحد في القوز.",
         ),
         heroImageId: HERO_CONCEPT_ID,
         primaryCta: { label: t("Book an appointment", "احجز موعداً"), href: "/appointment" },
@@ -322,7 +322,7 @@ export function seedDocument(): WebsiteDocument {
           "Contact SHWURX — Al Quoz, Dubai",
           "تواصل مع شوركس — القوز، دبي",
           "Call, WhatsApp or send an enquiry to SHWURX Auto Service Center in Al Quoz Industrial Area 2.",
-          "اتصل أو راسل أو أرسل استفساراً إلى مركز شوركس لخدمة السيارات في القوز ال��ناعية 2.",
+          "اتصل أو راسل أو أرسل استفساراً إلى مركز شوركس لخدمة السيارات في ال��وز ال��ناعية 2.",
         ),
       },
       brandsIndex: {

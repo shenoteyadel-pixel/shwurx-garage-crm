@@ -64,8 +64,8 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
         logo={siteLogo ? { url: siteLogo.url, alt: pick(siteLogo.alt, lang) || "SHWURX" } : null}
         nav={visibleNav(doc, doc.nav.header).map((l) => ({ href: localePath(lang, l.href), label: pick(l.label, lang) }))}
         homeHref={localePath(lang, "/")}
-        enquireHref={localePath(lang, "/contact#enquire")}
-        enquireLabel={ar ? "أرسل استفساراً" : "Send an enquiry"}
+        enquireHref={localePath(lang, doc.pages.appointment.visible ? "/appointment" : "/contact#enquire")}
+        enquireLabel={ar ? "احجز موعداً" : "Book an appointment"}
         trackHref="/track"
         trackLabel={ar ? "تتبع سيارتك" : "Track your car"}
         menuLabel={ar ? "القائمة" : "Menu"}

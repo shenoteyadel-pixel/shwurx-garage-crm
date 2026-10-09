@@ -20,7 +20,7 @@ const UI = {
     knowledge: "What we check",
     services: "Services for this brand",
     faq: "Questions",
-    cta: "Send an enquiry",
+    cta: "Book an appointment",
     gallery: "From our workshop",
     caseStudies: "Documented jobs",
     family: "A model family by",
@@ -33,7 +33,7 @@ const UI = {
     knowledge: "ما الذي نفحصه",
     services: "الخدمات لهذه العلامة",
     faq: "الأسئلة",
-    cta: "أرسل استفساراً",
+    cta: "احجز موعداً",
     gallery: "من ورشتنا",
     caseStudies: "أعمال موثقة",
     family: "فئة طرازات من",
@@ -102,7 +102,7 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
           <h1 className="mt-1 text-balance text-4xl font-bold tracking-tight md:text-5xl">{pick(brand.seo.title, lang) || pick(brand.name, lang)}</h1>
           <p className="mt-5 text-pretty text-base leading-relaxed text-muted-foreground">{pick(brand.intro, lang)}</p>
           <Link
-            href={enquire}
+            href={doc.pages.appointment.visible ? localePath(lang, "/appointment") : enquire}
             className="mt-8 inline-flex h-12 items-center gap-2 rounded-lg bg-primary px-6 text-base font-semibold text-primary-foreground hover:opacity-90"
           >
             {u.cta} <ArrowRight className="h-5 w-5 rtl:rotate-180" />

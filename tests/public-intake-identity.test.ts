@@ -19,7 +19,7 @@ import type { L10n, Lang } from "../lib/website/types"
 
 const root = path.resolve(__dirname, "..")
 const src = (p: string) => readFileSync(path.join(root, p), "utf8")
-const pick = (v: L10n, lang: Lang) => (lang === "ar" ? v.ar || v.en : v.en)
+const pick = (v: L10n | undefined, lang: Lang) => (!v ? "" : lang === "ar" ? v.ar || v.en : v.en)
 const NOW = new Date("2026-10-09T10:00:00Z")
 
 // ---------- A1: phone ----------

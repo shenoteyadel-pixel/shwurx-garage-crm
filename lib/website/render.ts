@@ -6,6 +6,7 @@ import { isIndexableDeployment, resolveSiteOrigin } from "./env"
 import { isIllustrativeSource, isTeamPagePublic } from "./normalize"
 import { displayImageAlt, displayImageCaption } from "./media-display"
 import { isAppointmentPath } from "./appointment"
+import { homeAwareTitle } from "./page-title"
 import type { L10n, Lang, MediaAsset, NavLink, SeoFields, WebsiteDocument } from "./types"
 
 // The live apex 308-redirects to www, so canonicals always use the www origin.
@@ -64,7 +65,7 @@ export function buildMetadata(
   seo: SeoFields,
   preview = false,
 ): Metadata {
-  const title = pick(seo.title, lang) + pick(doc.seo.titleSuffix, lang)
+  const title = homeAwareTitle(pick(seo.title, lang), pick(doc.seo.titleSuffix, lang), path)
   const description = pick(seo.description, lang) || pick(doc.seo.defaultDescription, lang)
   const og = publicMedia(doc, seo.ogImageId) ?? publicMedia(doc, doc.seo.defaultOgImageId)
   const url = `${SITE_URL}${localePath(lang, path)}`

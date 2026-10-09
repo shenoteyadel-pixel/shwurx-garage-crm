@@ -185,16 +185,13 @@ export default async function HomePage() {
             {heroImg && (
               <figure className="min-w-0 lg:col-span-7">
                 <div className="relative aspect-[1672/941] overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
-                  <video
-                    src={HERO_VIDEO}
-                    poster={heroImg}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    preload="metadata"
-                    aria-label={heroAlt}
-                    className="absolute inset-0 h-full w-full object-cover"
+                  <Image
+                    src={heroImg}
+                    alt={heroAlt}
+                    fill
+                    priority
+                    sizes="(min-width: 1024px) 58vw, 100vw"
+                    className="object-cover"
                   />
                 </div>
                 {heroCaption && <figcaption className="mt-3 text-sm text-muted-foreground">{heroCaption}</figcaption>}
@@ -444,10 +441,47 @@ export default async function HomePage() {
       bookLabel={doc.pages.appointment.visible ? dict.cta.bookAppointment : dict.nav.contact}
     />
   )
+  const isArabic = lang === "ar"
+  const workshopVideo = (
+    <section key="workshop-video" className="border-b border-border bg-background" aria-labelledby="home-workshop-video">
+      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-16 lg:flex-row lg:items-center lg:gap-12 lg:px-8">
+        <div className="min-w-0 lg:w-2/5">
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">
+            {isArabic ? "داخل الورشة" : "Inside the workshop"}
+          </p>
+          <h2 id="home-workshop-video" className="mt-4 text-balance text-3xl font-black leading-tight tracking-tight sm:text-4xl">
+            {isArabic ? "شاهد فريقنا أثناء العمل" : "See our team at work"}
+          </h2>
+          <p className="mt-4 text-pretty text-base leading-relaxed text-muted-foreground">
+            {isArabic
+              ? "لمحة حقيقية من ورشتنا في دبي، حيث يعتني فنيونا بكل سيارة فاخرة بعناية ودقة."
+              : "A real look inside our Dubai workshop, where our technicians care for every luxury car with precision."}
+          </p>
+        </div>
+        <div className="min-w-0 lg:w-3/5">
+          <div className="relative aspect-video overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+            <video
+              src={HERO_VIDEO}
+              autoPlay
+              muted
+              loop
+              playsInline
+              controls
+              preload="metadata"
+              aria-label={isArabic ? "فيديو من داخل ورشة SHWURX" : "Video from inside the SHWURX workshop"}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+
   const rendered = home.sections.filter((s) => s.visible && sections[s.key])
   const locationIndex = rendered.findIndex((s) => s.key === "location")
   const bands = rendered.map((s) => sections[s.key])
   bands.splice(locationIndex === -1 ? bands.length : locationIndex, 0, trackShowcase)
+  bands.splice(bands.indexOf(sections.hero) + 1, 0, workshopVideo)
 
   return (
     <>

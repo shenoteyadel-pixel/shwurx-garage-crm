@@ -284,7 +284,7 @@ export function seedDocument(): WebsiteDocument {
         ),
         heroImageId: HERO_CONCEPT_ID,
         primaryCta: { label: t("Book an appointment", "احجز موعداً"), href: "/appointment" },
-        secondaryCta: { label: t("Book an inspection", "احجز فحصاً"), href: "/appointment" },
+        secondaryCta: { label: t("Book an appointment", "احجز موعداً"), href: "/appointment" },
         highlights: [
           { id: "h1", title: t("2016+ premium & sports", "فاخرة ورياضية 2016+"), body: t("Our focus models", "الموديلات التي نركز عليها") },
           { id: "h2", title: t("Inspection first", "الفحص أولاً"), body: t("Diagnosis before quotation", "التشخيص قبل عرض السعر") },
@@ -322,7 +322,7 @@ export function seedDocument(): WebsiteDocument {
           "Contact SHWURX — Al Quoz, Dubai",
           "تواصل مع شوركس — القوز، دبي",
           "Call, WhatsApp or send an enquiry to SHWURX Auto Service Center in Al Quoz Industrial Area 2.",
-          "اتصل أو راسل أو أرسل استفساراً إلى مركز شوركس لخدمة السيارات في القوز الصناعية 2.",
+          "اتصل أو راسل أو أرسل استفساراً إلى مركز شوركس لخدمة السيارات في القوز ال��ناعية 2.",
         ),
       },
       brandsIndex: {

@@ -127,7 +127,9 @@ export default async function HomePage() {
   const ctas = [
     { cta: home.primaryCta, label: "hero primary", primary: true },
     { cta: home.secondaryCta, label: "hero secondary", primary: false },
-  ].filter((c) => pick(c.cta.label, lang) && c.cta.href && (doc.pages.appointment.visible || !isAppointmentPath(c.cta.href)))
+  ]
+    .filter((c) => pick(c.cta.label, lang) && c.cta.href && (doc.pages.appointment.visible || !isAppointmentPath(c.cta.href)))
+    .filter((c, i, all) => all.findIndex((o) => o.cta.href === c.cta.href) === i)
 
   const sections: Partial<Record<HomeSectionKey, React.ReactNode>> = {
     hero: (

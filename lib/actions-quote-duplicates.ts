@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requirePermission, logCurrent } from "@/lib/rbac/context"
-import { findDuplicateParts } from "@/lib/quote-duplicates"
+import { findJobDuplicateParts } from "@/lib/part-costs"
 
 const num = (v: unknown) => {
   const x = Number(v)
@@ -35,16 +35,39 @@ export async function resolveDuplicateParts(
     if (!quote) return { ok: false, error: "This job card has no quotation." }
 
     const items = (quote.quotation_items as any[]) ?? []
-    const groups = findDuplicateParts(items)
+    const groups = await findJobDuplicateParts(supabase, jobId, items)
     if (groups.length === 0) return { ok: true, removed: 0 }
 
     const removeIds: string[] = []
+    const keptUpdates: { id: string; patch: { part_number?: string; detail?: string } }[] = []
     for (const g of groups) {
       const chosen = keep[g.key]
       const keepId = g.lines.some((l) => l.id === chosen) ? chosen : g.defaultKeepId
-      for (const l of g.lines) if (l.id !== keepId) removeIds.push(l.id)
+      const kept = g.lines.find((l) => l.id === keepId)!
+      const others = g.lines.filter((l) => l.id !== keepId)
+      for (const l of others) removeIds.push(l.id)
+
+      // Carry the purchase reference and part number onto the surviving line so
+      // the job card still shows where the part was bought.
+      const patch: { part_number?: string; detail?: string } = {}
+      const pn = others.find((l) => l.partNumber)?.partNumber
+      if (!kept.partNumber && pn) patch.part_number = pn
+      const invoiceDetail = others.find((l) => l.fromInvoice)?.detail
+      if (!kept.fromInvoice && invoiceDetail) {
+        patch.detail = kept.detail ? `${kept.detail} · ${invoiceDetail}` : invoiceDetail
+      }
+      if (Object.keys(patch).length) keptUpdates.push({ id: keepId, patch })
     }
     if (removeIds.length === 0) return { ok: true, removed: 0 }
+
+    for (const u of keptUpdates) {
+      const { error: upErr } = await supabase
+        .from("quotation_items")
+        .update(u.patch)
+        .eq("quotation_id", quote.id)
+        .eq("id", u.id)
+      if (upErr) throw new Error(upErr.message)
+    }
 
     const { error: delErr } = await supabase
       .from("quotation_items")

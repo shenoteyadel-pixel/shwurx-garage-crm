@@ -30,7 +30,7 @@ import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { RefreshVehicleImageButton } from "@/components/refresh-vehicle-image"
 import { STAGE_MAP, QC_STATUSES, canViewPrices, type Stage } from "@/lib/constants"
 import { formatDate } from "@/lib/utils"
-import { findDuplicateParts } from "@/lib/quote-duplicates"
+import { findJobDuplicateParts } from "@/lib/part-costs"
 import { DuplicatePartsDialog } from "@/components/duplicate-parts-dialog"
 import {
   ArrowLeft,
@@ -178,6 +178,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .eq("job_id", id)
     .order("expense_date", { ascending: false })
   const sessionCtx = await getSessionContext()
+  const duplicateGroups = sessionCtx?.permissions.has("quotations.edit")
+    ? await findJobDuplicateParts(supabase, id, quotation?.quotation_items as any[])
+    : []
   const canManageExpenses = sessionCtx?.permissions.has("purchase_orders.manage") ?? false
   const canEditVehicle = sessionCtx?.permissions.has("jobs.update_status") ?? false
   const isOwner = sessionCtx?.role === "owner"
@@ -444,17 +447,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               canEditLocked={isOwner}
               partCatalog={partCatalog}
             />
-              {sessionCtx?.permissions.has("quotations.edit") &&
-                (() => {
-                  const groups = findDuplicateParts(quotation?.quotation_items as any[])
-                  return groups.length > 0 ? (
-                    <DuplicatePartsDialog
-                      key={groups.map((g) => g.key).join(",")}
-                      jobId={job.id}
-                      groups={groups}
-                    />
-                  ) : null
-                })()}
+              {duplicateGroups.length > 0 && (
+                <DuplicatePartsDialog
+                  key={duplicateGroups.map((g) => g.key).join(",")}
+                  jobId={job.id}
+                  groups={duplicateGroups}
+                  showCosts={sessionCtx?.permissions.has("costs.view") ?? false}
+                />
+              )}
               <AddonServices jobId={job.id} addons={addons} locked={locked} />
               {locked && (
                 <SendPartsToPurchaser

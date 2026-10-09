@@ -1,3 +1,7 @@
+export type CostSource = "purchase" | "request" | "stock"
+
+export type PartCost = { unitCost: number; source: CostSource }
+
 export type DuplicateLine = {
   id: string
   name: string
@@ -6,12 +10,17 @@ export type DuplicateLine = {
   quantity: number
   unitPrice: number
   fromInvoice: boolean
+  /** Per-unit cost used for the profit figure, or null when nothing is known. */
+  unitCost: number | null
+  costSource: CostSource | null
+  revenue: number
+  profit: number | null
 }
 
 export type DuplicateGroup = {
   key: string
   lines: DuplicateLine[]
-  /** Line kept by default: the one linked to a purchase invoice, else the first. */
+  /** Line kept by default: highest profit, then purchase-invoice line, then the first. */
   defaultKeepId: string
 }
 
@@ -28,15 +37,21 @@ type RawItem = {
   sort_order?: number | null
 }
 
-const norm = (v: unknown) => String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ")
+export type CostLookup = (line: { name: string; partNumber: string; fromInvoice: boolean }) => PartCost | null
+
+export const normPart = (v: unknown) => String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ")
 
 export const isInvoiceLinked = (detail: unknown) => /supplier invoice/i.test(String(detail ?? ""))
 
+const SOURCE_RANK: Record<CostSource, number> = { purchase: 0, request: 1, stock: 2 }
+
 /**
  * Groups job-card part lines that describe the same part — same name or same
- * part number — so staff can keep exactly one of each.
+ * part number — and ranks each group by profit so the most profitable line is
+ * kept. Lines without their own cost borrow the group's best-known cost, since
+ * they refer to the same physical part.
  */
-export function findDuplicateParts(items: RawItem[] | null | undefined): DuplicateGroup[] {
+export function findDuplicateParts(items: RawItem[] | null | undefined, costOf?: CostLookup): DuplicateGroup[] {
   const parts = [...(items ?? [])]
     .filter((i) => i.id && !i.addon_type && i.kind !== "labor" && i.kind !== "service")
     .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
@@ -50,8 +65,8 @@ export function findDuplicateParts(items: RawItem[] | null | undefined): Duplica
   const byName = new Map<string, number>()
   const byNumber = new Map<string, number>()
   parts.forEach((p, i) => {
-    const name = norm(p.name || p.description)
-    const pn = norm(p.part_number)
+    const name = normPart(p.name || p.description)
+    const pn = normPart(p.part_number)
     if (name) {
       const seen = byName.get(name)
       if (seen === undefined) byName.set(name, i)
@@ -64,27 +79,61 @@ export function findDuplicateParts(items: RawItem[] | null | undefined): Duplica
     }
   })
 
-  const groups = new Map<number, DuplicateLine[]>()
+  const groups = new Map<number, { line: DuplicateLine; own: PartCost | null }[]>()
   parts.forEach((p, i) => {
     const root = find(i)
     const list = groups.get(root) ?? []
+    const name = String(p.name || p.description || "Part")
+    const partNumber = String(p.part_number ?? "")
+    const fromInvoice = isInvoiceLinked(p.detail)
+    const quantity = Number(p.quantity) || 0
+    const unitPrice = Number(p.unit_price) || 0
     list.push({
-      id: String(p.id),
-      name: String(p.name || p.description || "Part"),
-      partNumber: String(p.part_number ?? ""),
-      detail: String(p.detail ?? ""),
-      quantity: Number(p.quantity) || 0,
-      unitPrice: Number(p.unit_price) || 0,
-      fromInvoice: isInvoiceLinked(p.detail),
+      line: {
+        id: String(p.id),
+        name,
+        partNumber,
+        detail: String(p.detail ?? ""),
+        quantity,
+        unitPrice,
+        fromInvoice,
+        unitCost: null,
+        costSource: null,
+        revenue: quantity * unitPrice,
+        profit: null,
+      },
+      own: costOf ? costOf({ name, partNumber, fromInvoice }) : null,
     })
     groups.set(root, list)
   })
 
   return [...groups.values()]
-    .filter((lines) => lines.length > 1)
-    .map((lines) => ({
-      key: lines.map((l) => l.id).sort().join("|"),
-      lines,
-      defaultKeepId: (lines.find((l) => l.fromInvoice) ?? lines[0]).id,
-    }))
+    .filter((entries) => entries.length > 1)
+    .map((entries) => {
+      const shared = entries
+        .map((e) => e.own)
+        .filter((c): c is PartCost => c !== null)
+        .sort((a, b) => SOURCE_RANK[a.source] - SOURCE_RANK[b.source])[0]
+
+      const lines = entries.map(({ line, own }) => {
+        const cost = own ?? shared ?? null
+        return {
+          ...line,
+          unitCost: cost ? cost.unitCost : null,
+          costSource: cost ? cost.source : null,
+          profit: cost ? line.quantity * (line.unitPrice - cost.unitCost) : null,
+        }
+      })
+
+      const score = (l: DuplicateLine) => l.profit ?? l.revenue
+      const best = [...lines].sort(
+        (a, b) => score(b) - score(a) || Number(b.fromInvoice) - Number(a.fromInvoice),
+      )[0]
+
+      return {
+        key: lines.map((l) => l.id).sort().join("|"),
+        lines,
+        defaultKeepId: best.id,
+      }
+    })
 }

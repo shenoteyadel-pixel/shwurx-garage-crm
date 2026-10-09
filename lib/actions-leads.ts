@@ -5,9 +5,9 @@ import { revalidatePath } from "next/cache"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import { notifyByPermission } from "@/lib/actions-notifications"
 
-export type LeadStatus = "new" | "contacted" | "qualified" | "converted" | "lost"
+import { LEAD_STATUSES, type LeadStatus } from "@/lib/lead-status"
 
-export const LEAD_STATUSES: LeadStatus[] = ["new", "contacted", "qualified", "converted", "lost"]
+export type { LeadStatus }
 
 export interface LeadNote {
   at: string

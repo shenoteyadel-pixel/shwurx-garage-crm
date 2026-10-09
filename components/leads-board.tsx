@@ -28,11 +28,10 @@ import {
   addLeadNote,
   convertLeadToCustomer,
   findCustomerForLead,
-  LEAD_STATUSES,
   type LeadRow,
-  type LeadStatus,
   type CustomerMatch,
 } from "@/lib/actions-leads"
+import { LEAD_STATUSES, type LeadStatus } from "@/lib/lead-status"
 
 const STATUS_META: Record<LeadStatus, { label: string; tone: string }> = {
   new: { label: "New", tone: "bg-amber-500/15 text-amber-400" },

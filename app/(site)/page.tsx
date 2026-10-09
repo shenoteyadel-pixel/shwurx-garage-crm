@@ -478,9 +478,9 @@ export default async function HomePage() {
   )
 
   const rendered = home.sections.filter((s) => s.visible && sections[s.key])
-  const locationIndex = rendered.findIndex((s) => s.key === "location")
+  const servicesIndex = rendered.findIndex((s) => s.key === "services")
   const bands = rendered.map((s) => sections[s.key])
-  bands.splice(locationIndex === -1 ? bands.length : locationIndex, 0, trackShowcase)
+  bands.splice(servicesIndex === -1 ? bands.length : servicesIndex + 1, 0, trackShowcase)
   bands.splice(bands.indexOf(sections.hero) + 1, 0, workshopVideo)
 
   return (

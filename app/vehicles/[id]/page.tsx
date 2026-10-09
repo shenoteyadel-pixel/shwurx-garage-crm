@@ -49,9 +49,14 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
   ])
 
   const stageLabel = (v: string) => STAGES.find((s) => s.key === v)?.label ?? v
-  const totalInvoiced = (invoices ?? []).reduce((s: number, i: any) => s + Number(i.total || 0), 0)
-  const invByJob = new Map<string, any>()
-  for (const inv of invoices ?? []) if (inv.job_id) invByJob.set(inv.job_id, inv)
+  const totalInvoiced = (invoices ?? [])
+    .filter((i: any) => i.status !== "cancelled")
+    .reduce((s: number, i: any) => s + Number(i.total || 0), 0)
+  const invByJob = new Map<string, any[]>()
+  for (const inv of invoices ?? []) {
+    if (!inv.job_id) continue
+    invByJob.set(inv.job_id, [...(invByJob.get(inv.job_id) ?? []), inv])
+  }
   const quoteByJob = new Map<string, any>()
   for (const q of quotations ?? []) if (q.job_id) quoteByJob.set(q.job_id, q)
 
@@ -146,7 +151,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
               ) : (
                 <ol className="relative space-y-4 border-l border-border pl-5">
                   {(jobs ?? []).map((j) => {
-                    const inv = invByJob.get(j.id)
+                    const invs = invByJob.get(j.id) ?? []
                     const quote = quoteByJob.get(j.id)
                     return (
                       <li key={j.id} className="relative">
@@ -167,14 +172,24 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
                               <FileText className="h-3 w-3" /> {formatCurrency(Number(quote.total || 0))}
                             </span>
                           ) : null}
-                          {inv ? (
+                          {invs.map((inv: any) => (
                             <Link
+                              key={inv.id}
                               href={`/invoices/${inv.id}`}
                               className="inline-flex items-center gap-1 text-primary hover:underline"
                             >
                               <ReceiptText className="h-3 w-3" /> {inv.invoice_number}
+                              <span
+                                className={
+                                  inv.status === "cancelled"
+                                    ? "text-muted-foreground line-through"
+                                    : "text-muted-foreground"
+                                }
+                              >
+                                {formatCurrency(Number(inv.total || 0))} · {inv.status}
+                              </span>
                             </Link>
-                          ) : null}
+                          ))}
                         </div>
                         {j.complaint ? (
                           <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{j.complaint}</p>

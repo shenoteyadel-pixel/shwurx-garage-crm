@@ -3,7 +3,7 @@ import Image from "next/image"
 import { notFound } from "next/navigation"
 import { EnquirySection } from "@/components/site/enquiry-section"
 import { FaqList } from "@/components/site/faq-list"
-import { buildMetadata, pick, publicMedia, siteContext } from "@/lib/website/render"
+import { buildMetadata, localePath, pick, publicMedia, siteContext } from "@/lib/website/render"
 
 export const dynamic = "force-dynamic"
 
@@ -77,8 +77,8 @@ export default async function CustomPage({ params }: { params: Promise<{ slug: s
               <section key={block.id} className="rounded-2xl border border-primary/30 bg-primary/5 p-6">
                 {heading && <h2 className="text-xl font-semibold">{heading}</h2>}
                 <p className="mt-2 text-pretty leading-relaxed text-muted-foreground">{pick(block.body, lang)}</p>
-                <a href="#enquire" className="mt-4 inline-flex h-11 items-center rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90">
-                  {lang === "ar" ? "أرسل استفساراً" : "Send an enquiry"}
+                <a href={doc.pages.appointment.visible ? localePath(lang, "/appointment") : "#enquire"} className="mt-4 inline-flex h-11 items-center rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90">
+                  {lang === "ar" ? "احجز موعداً" : "Book an appointment"}
                 </a>
               </section>
             )

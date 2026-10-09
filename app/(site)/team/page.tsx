@@ -95,10 +95,10 @@ export default async function TeamPage() {
             context="team"
           />
           <Link
-            href={localePath(lang, "/contact")}
+            href={localePath(lang, doc.pages.appointment.visible ? "/appointment" : "/contact")}
             className="inline-flex h-12 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
           >
-            {ar ? "أرسل استفساراً" : "Send an enquiry"} <ArrowRight className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />
+            {ar ? "احجز موعداً" : "Book an appointment"} <ArrowRight className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />
           </Link>
         </div>
       </section>

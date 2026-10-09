@@ -10,8 +10,8 @@ import { MediaGallery, resolveGallery } from "@/components/site/media-gallery"
 export const dynamic = "force-dynamic"
 
 const UI = {
-  en: { includes: "What it covers", how: "How it works", prepare: "Before you visit", faq: "Questions", brands: "Brands", cta: "Send an enquiry", gallery: "From our workshop" },
-  ar: { includes: "ما تشمله الخدمة", how: "طريقة العمل", prepare: "قبل زيارتك", faq: "الأسئلة", brands: "العلامات", cta: "أرسل استفساراً", gallery: "من ورشتنا" },
+  en: { includes: "What it covers", how: "How it works", prepare: "Before you visit", faq: "Questions", brands: "Brands", cta: "Book an appointment", gallery: "From our workshop" },
+  ar: { includes: "ما تشمله الخدمة", how: "طريقة العمل", prepare: "قبل زيارتك", faq: "الأسئلة", brands: "العلامات", cta: "احجز موعداً", gallery: "من ورشتنا" },
 }
 
 async function load(slug: string) {
@@ -40,7 +40,7 @@ export default async function ServicePage({ params }: { params: Promise<{ slug: 
       <h1 className="text-balance text-4xl font-bold tracking-tight md:text-5xl">{pick(service.name, lang)}</h1>
       <p className="mt-5 max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground">{pick(service.intro, lang)}</p>
       <Link
-        href="#enquire"
+        href={doc.pages.appointment.visible ? localePath(lang, "/appointment") : "#enquire"}
         className="mt-8 inline-flex h-12 items-center gap-2 rounded-lg bg-primary px-6 text-base font-semibold text-primary-foreground hover:opacity-90"
       >
         {u.cta} <ArrowRight className="h-5 w-5 rtl:rotate-180" />

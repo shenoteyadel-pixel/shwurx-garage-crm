@@ -26,7 +26,7 @@ const UI = {
     services: "Related services",
     related: "Keep reading",
     brandPage: (n: string) => `${n} at SHWURX`,
-    cta: (n: string) => (n ? `Ask about your ${n}` : "Send an enquiry"),
+    cta: (n: string) => (n ? `Ask about your ${n}` : "Book an appointment"),
     ctaLead: "Tell us the model, year and what you are seeing. We reply with next steps before any work starts.",
   },
   ar: {
@@ -39,7 +39,7 @@ const UI = {
     services: "خدمات ذات صلة",
     related: "تابع القراءة",
     brandPage: (n: string) => `${n} في SHWURX`,
-    cta: (n: string) => (n ? `استفسر عن ${n}` : "أرسل استفساراً"),
+    cta: (n: string) => (n ? `استفسر عن ${n}` : "احجز موعداً"),
     ctaLead: "أخبرنا بالموديل والسنة وما تلاحظه، وسنرد بالخطوات التالية قبل البدء بأي عمل.",
   },
 }
@@ -104,7 +104,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
   const related = relatedArticles(article, liveArticles, lang)
   const publishedArticleHrefs = liveArticles.map((a) => articleHref(a.slug, lang))
   const relatedBrand = (s: string | null) => (s ? pick(doc.brands.find((b) => b.slug === s)?.name, lang) : "")
-  const enquireHref = brand ? `${localePath(lang, `/brands/${brand.slug}`)}#enquire` : localePath(lang, "/contact")
+  const enquireHref = brand ? `${localePath(lang, `/brands/${brand.slug}`)}#enquire` : localePath(lang, doc.pages.appointment.visible ? "/appointment" : "/contact")
   const updatedDiffers = article.updatedAt && article.publishedAt && article.updatedAt.slice(0, 10) !== article.publishedAt.slice(0, 10)
 
   const jsonLd = {

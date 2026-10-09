@@ -13,6 +13,7 @@ import { notifyActivity } from "@/lib/activity"
 import { extractInvoice } from "@/lib/invoice-ocr"
 import { suggestSalePrice } from "@/lib/pricing"
 import { isInvoiceLinked } from "@/lib/quote-duplicates"
+import { linkInvoiceToOpenQuote } from "@/lib/quote-invoice"
 
 // Both purchasing managers and parts staff capture and receive supplier
 // invoices, matching the nav, layout and dashboard buttons.
@@ -419,6 +420,12 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
     )
   }
 
+    try {
+      await linkInvoiceToOpenQuote(createServiceClient(), inv.id, supplierId, extracted?.supplier_name ?? null)
+    } catch (e) {
+      console.error("[v0] linking invoice to supplier quote failed:", e)
+    }
+
     await logAction(ctx, "supplier_invoice_captured", "supplier_invoice", inv.id)
   } catch (e) {
     // Draft is already created and editable — never fail the upload for an
@@ -454,6 +461,7 @@ async function addPartToJobQuotation(
   jobId: string,
   part: { name: string; partNumber: string | null; quantity: number; unitPrice: number; detail: string },
   defaultVat: number,
+  opts: { keepCustomerPrice?: boolean } = {},
 ): Promise<"added" | "updated"> {
   const { data: existing } = await supabase
     .from("quotations")
@@ -504,7 +512,16 @@ async function addPartToJobQuotation(
     )
 
   let outcome: "added" | "updated"
-  if (match?.id) {
+  if (match?.id && opts.keepCustomerPrice) {
+    // The invoice fulfils a quote the customer already approved: the price and
+    // quantity they signed for stay as they are; only the bill reference changes.
+    const { error } = await supabase
+      .from("quotation_items")
+      .update({ detail: part.detail, part_number: match.part_number || part.partNumber })
+      .eq("id", match.id)
+    if (error) throw new Error(`Could not update "${part.name}" on the job card: ${error.message}`)
+    return "updated"
+  } else if (match?.id) {
     const incomingFromInvoice = isInvoiceLinked(part.detail)
     const takeInvoice = incomingFromInvoice && !isInvoiceLinked(match.detail)
     // Merging a purchase into a manual line: it is the same part at the same
@@ -915,7 +932,7 @@ async function applyConfirm(
 ): Promise<ConfirmSummary> {
   const { data: invoice, error: invErr } = await supabase
     .from("supplier_invoices")
-    .select("id, status, doc_type, doc_number, supplier_id, supplier_name_raw, invoice_number, total, ocr_raw")
+    .select("id, status, doc_type, doc_number, supplier_id, supplier_name_raw, invoice_number, total, ocr_raw, source_quote_id")
     .eq("id", id)
     .single()
   if (invErr) throw new Error(invErr.message)
@@ -1262,6 +1279,7 @@ async function applyConfirm(
           detail: crmPartId && oemNumber ? `${crmPartId} · ${reference}` : reference,
         },
         n(settings.vat_rate, 5),
+        { keepCustomerPrice: Boolean(invoice.source_quote_id) },
       )
     }
 

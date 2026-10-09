@@ -12,6 +12,9 @@ import { InvoicePeoplePanel } from "@/components/invoice-people-panel"
 import { ArrowLeft } from "lucide-react"
 import { DeleteInvoiceButton } from "@/components/delete-invoice-button"
 import { ReopenInvoiceButton } from "@/components/invoice-owner-actions"
+import { buildQuoteComparison } from "@/lib/quote-invoice"
+import { QuoteInvoiceComparison } from "@/components/quote-invoice-comparison"
+import { CreateInvoiceFromQuoteButton } from "@/components/create-invoice-from-quote-button"
 
 export const metadata = { title: "Review Invoice · SHWURX Auto Service Center" }
 
@@ -75,6 +78,20 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
     .order("paid_at", { ascending: false })
 
   const linkedVehicles = await getLinkedSalesForSupplierInvoice(supabase, id)
+
+  const comparison = invoice.source_quote_id
+    ? await buildQuoteComparison(serviceDb, invoice.id, invoice.source_quote_id as string)
+    : null
+  const isOpenQuote = invoice.doc_type === "quote" && invoice.status === "quoted" && !invoice.deleted_at
+  const { data: quoteInvoice } = isOpenQuote
+    ? await serviceDb
+        .from("supplier_invoices")
+        .select("id, doc_number, invoice_number, status")
+        .eq("source_quote_id", invoice.id)
+        .is("deleted_at", null)
+        .limit(1)
+        .maybeSingle()
+    : { data: null }
 
   const names = await loadProfileNames(serviceDb, [invoice.created_by, invoice.confirmed_by])
   let duplicateOf: DuplicateMatch[] = []
@@ -176,6 +193,26 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
           confirmedAt={invoice.confirmed_at}
           duplicateOf={duplicateOf}
         />
+        {isOpenQuote && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
+            <div>
+              <p className="text-sm font-semibold">Supplier quote</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {quoteInvoice
+                  ? "An invoice has already been made from this quote."
+                  : "When the parts arrive, make the invoice from this quote. Parts the customer declined are left out."}
+              </p>
+            </div>
+            {quoteInvoice ? (
+              <Link href={`/purchasing/invoices/${quoteInvoice.id}`} className="text-sm font-medium text-primary hover:underline">
+                Open invoice {quoteInvoice.doc_number || quoteInvoice.invoice_number || ""}
+              </Link>
+            ) : (
+              <CreateInvoiceFromQuoteButton quoteId={invoice.id} />
+            )}
+          </div>
+        )}
+        {comparison && <QuoteInvoiceComparison data={comparison} />}
         <InvoiceReview
           invoice={header}
           items={itemRows}

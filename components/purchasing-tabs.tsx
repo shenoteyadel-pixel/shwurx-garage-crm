@@ -11,6 +11,7 @@ type Tab = { href: string; label: string; anyOf: string[] }
 // Supplier Invoices / Payments require purchasing rights.
 const TABS: Tab[] = [
   { href: "/parts", label: "Requests", anyOf: ["parts.view"] },
+  { href: "/purchasing/approved", label: "Approved to Order", anyOf: ["purchase_orders.manage", "parts.view"] },
   { href: "/purchasing", label: "Orders", anyOf: ["purchase_orders.manage"] },
   { href: "/purchasing/invoices", label: "Supplier Invoices", anyOf: ["purchase_orders.manage", "parts.view"] },
   { href: "/purchasing/payments", label: "Payments", anyOf: ["purchase_orders.manage"] },

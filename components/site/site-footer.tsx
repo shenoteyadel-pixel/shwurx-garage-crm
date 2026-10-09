@@ -4,10 +4,10 @@ import { BrandLogo } from "@/components/brand-logo"
 import { PrivacyChoicesButton } from "@/components/site/consent-banner"
 import { localePath, pick, publicMedia, visibleNav } from "@/lib/website/render"
 import type { Lang, WebsiteDocument } from "@/lib/website/types"
+import { LEGAL_NAME } from "@/lib/website/structured-data"
 
 // Public legal identifiers (shown on the storefront footer, as on business cards).
-// Kept separate from the editable public identity; managed in CRM settings.
-const LEGAL_NAME = "SHENOTEY ESKANDER AUTOMOTIVE CENTER"
+// The legal name is shared with the JSON-LD graph so both always match the licence.
 const TRADE_LICENSE = "1033544"
 const TRN = "10044045860003"
 

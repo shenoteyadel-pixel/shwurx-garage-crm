@@ -88,6 +88,9 @@ export function ContactForm({
         formContext: "contact",
         token: result.conversionToken,
         outcome: "lead",
+        // Controlled catalogue slugs only; never model, name, contact details or free text.
+        brand: brand || null,
+        service: service || null,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : t.errGeneric)

@@ -5,7 +5,7 @@ import { intakeIsDryRun, readBoundedJson } from "@/lib/website/intake-guard"
 import { findBySubmission, intakeMetadata, SUBMISSION_UUID } from "@/lib/website/intake-dedupe"
 import { conversionToken } from "@/lib/website/conversion-token"
 import { validatePhone } from "@/lib/website/intake-validate"
-import { hasVehicleInput, resolveContactVehicle, vehicleSummary } from "@/lib/website/contact-vehicle"
+import { checkContactVehicleShape, needsCatalogue, resolveContactVehicle, vehicleSummary } from "@/lib/website/contact-vehicle"
 import { getPublishedDocumentStrict } from "@/lib/website/store"
 
 export const runtime = "nodejs"
@@ -37,18 +37,34 @@ export async function POST(request: Request) {
       return jsonWithCors(request, { ok: false, outcome: "invalid", error: "missing_contact" }, 400)
     }
 
-    // Optional structured vehicle context, re-derived from the published catalog.
-    const doc = hasVehicleInput(body) ? await getPublishedDocumentStrict().catch(() => null) : null
-    const vehicleCheck = resolveContactVehicle(doc, body)
-    if (!vehicleCheck.ok) {
-      return jsonWithCors(request, { ok: false, outcome: "invalid", error: "invalid_vehicle", fields: vehicleCheck.fields }, 400)
+    // Catalogue-independent vehicle checks (shape, slug format, year policy).
+    const shapeFields = checkContactVehicleShape(body)
+    if (Object.keys(shapeFields).length) {
+      return jsonWithCors(request, { ok: false, outcome: "invalid", error: "invalid_vehicle", fields: shapeFields }, 400)
     }
-    const vehicle = vehicleCheck.vehicle
 
-    // Previews validate but never create production leads or staff alerts.
-    if (await intakeIsDryRun()) return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
+    // Selected brand/service are re-derived from the published catalogue. If it
+    // cannot be read, answer 503 and write nothing rather than drop the selection.
+    const resolveVehicle = async () => {
+      const doc = needsCatalogue(body) ? await getPublishedDocumentStrict().catch(() => null) : null
+      const check = resolveContactVehicle(doc, body)
+      if (check.ok) return { vehicle: check.vehicle }
+      if (check.unavailable) {
+        return { reply: jsonWithCors(request, { ok: false, outcome: "unavailable", error: "catalogue_unavailable" }, 503) }
+      }
+      return { reply: jsonWithCors(request, { ok: false, outcome: "invalid", error: "invalid_vehicle", fields: check.fields }, 400) }
+    }
 
-    // A retry of the same browser submission returns the same record, never a second lead.
+    // Previews run full validation but never look up or create real records.
+    if (await intakeIsDryRun()) {
+      const preview = await resolveVehicle()
+      if (preview.reply) return preview.reply
+      return jsonWithCors(request, { ok: true, outcome: "dry_run", id: null })
+    }
+
+    // A retry of an already received submission returns the same record before
+    // any NEW-request catalogue check, so a since-hidden brand/service cannot turn
+    // a response-loss retry into a 400. No metadata rewrite, no second alert.
     const submissionId = typeof body.submissionId === "string" && SUBMISSION_UUID.test(body.submissionId) ? body.submissionId : null
     const persisted = (outcome: "received" | "duplicate", id: string) =>
       jsonWithCors(request, { ok: true, outcome, id, conversionToken: conversionToken("lead", id) })
@@ -56,6 +72,10 @@ export async function POST(request: Request) {
       const existing = await findBySubmission("leads", submissionId)
       if (existing) return persisted("duplicate", existing)
     }
+
+    const resolved = await resolveVehicle()
+    if (resolved.reply) return resolved.reply
+    const vehicle = resolved.vehicle
 
     const rawMessage = typeof body?.message === "string" ? body.message.trim() : ""
     const summary = vehicleSummary(vehicle)

@@ -53,10 +53,12 @@ export function LeadsBoard({
   leads,
   staff,
   canManage,
+  assignmentUnavailable = false,
 }: {
   leads: LeadRow[]
   staff: StaffOption[]
   canManage: boolean
+  assignmentUnavailable?: boolean
 }) {
   const [filter, setFilter] = useState<"all" | LeadStatus>("all")
 
@@ -103,7 +105,13 @@ export function LeadsBoard({
       ) : (
         <div className="grid gap-3">
           {visible.map((lead) => (
-            <LeadCard key={lead.id} lead={lead} staff={staff} canManage={canManage} />
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              staff={staff}
+              canManage={canManage}
+              assignmentUnavailable={assignmentUnavailable}
+            />
           ))}
         </div>
       )}
@@ -111,7 +119,17 @@ export function LeadsBoard({
   )
 }
 
-function LeadCard({ lead, staff, canManage }: { lead: LeadRow; staff: StaffOption[]; canManage: boolean }) {
+function LeadCard({
+  lead,
+  staff,
+  canManage,
+  assignmentUnavailable,
+}: {
+  lead: LeadRow
+  staff: StaffOption[]
+  canManage: boolean
+  assignmentUnavailable: boolean
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [convertOpen, setConvertOpen] = useState(false)
@@ -237,20 +255,25 @@ function LeadCard({ lead, staff, canManage }: { lead: LeadRow; staff: StaffOptio
             ))}
           </Select>
 
-          <Select
-            aria-label="Assign to"
-            className="h-8 w-auto text-xs"
-            value={md.assigned_to ?? ""}
-            disabled={pending}
-            onChange={(e) => run(() => assignLead(lead.id, e.target.value || null))}
-          >
-            <option value="">Unassigned</option>
-            {staff.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
+          {/* Without a staff list the select would misreport the assignee as "Unassigned". */}
+          {assignmentUnavailable ? (
+            <span className="text-xs text-muted-foreground">Assignment unavailable</span>
+          ) : (
+            <Select
+              aria-label="Assign to"
+              className="h-8 w-auto text-xs"
+              value={md.assigned_to ?? ""}
+              disabled={pending}
+              onChange={(e) => run(() => assignLead(lead.id, e.target.value || null))}
+            >
+              <option value="">Unassigned</option>
+              {staff.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          )}
 
           <Button size="sm" variant="outline" disabled={pending} onClick={() => setNoteOpen(true)}>
             <StickyNote className="h-3.5 w-3.5" /> Note

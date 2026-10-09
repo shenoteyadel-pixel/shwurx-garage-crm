@@ -170,7 +170,17 @@ function order(file: string, markers: string[]) {
 test("invalid and preview requests return before any write; duplicates short-circuit before insert", () => {
   order("app/api/public/leads/route.ts", ["validatePhone(", "resolveContactVehicle(", "intakeIsDryRun()", "findBySubmission(", 'rpc("submit_lead"'])
   order("app/api/public/appointments/route.ts", ["validatePhone(", "validateVehicleYear(", "intakeIsDryRun()", "findBySubmission(", ".rpc("])
-  order("app/api/public/enquiry/route.ts", ["validatePhone(", "validateVehicleYear(", "needsMoreDetails(", 'reply(request, "duplicate"', ".rpc("])
+  // Known duplicates answer before catalogue checks so a retry never fails on a since-hidden brand/service.
+  order("app/api/public/enquiry/route.ts", [
+    "validatePhone(",
+    "validateVehicleYear(",
+    "intakeIsDryRun()",
+    'reply(request, "duplicate"',
+    "getPublishedDocumentStrict(",
+    "needsMoreDetails(",
+    'reply(request, "dry_run"',
+    ".rpc(",
+  ])
   const enq = src("app/api/public/enquiry/route.ts")
   assert.ok(/dry_run/.test(enq) && enq.indexOf("dry_run") < enq.indexOf(".rpc("), "enquiry preview isolation before write")
 })

@@ -69,21 +69,41 @@ export async function POST(request: Request) {
     const submissionId = str(body.submissionId, 40)
     if (!UUID.test(submissionId)) return reply(request, "invalid", 400, { fields: { form: "bad_submission" } })
 
-    const doc: WebsiteDocument | null = await getPublishedDocumentStrict()
-    if (!doc) return reply(request, "unavailable", 503)
-    if (!doc.forms.enquiry.enabled) return reply(request, "unavailable", 403)
     for (const k of ["name", "phone", "model", "details"] as const) {
       if (body[k] !== undefined && body[k] !== null && typeof body[k] !== "string") {
         return reply(request, "invalid", 400, { fields: { [k]: "invalid" } })
       }
     }
 
+    // Catalogue-independent checks: these must pass before a submission id is trusted.
     const errors: Record<string, string> = {}
     const name = str(body.name, 80)
     // The RAW phone is validated before any slicing so overlong input is rejected, not truncated.
     const phoneCheck = validatePhone(body.phone, { required: true })
     const phone = phoneCheck.ok ? phoneCheck.value ?? "" : ""
     const phoneDigits = phoneCheck.ok ? phoneCheck.digits ?? "" : normalizePhone(typeof body.phone === "string" ? body.phone : "")
+    // Validate the RAW year before any normalization so "20160" is rejected, not truncated.
+    const yearCheck = validateVehicleYear(body.year)
+    const year = yearCheck.ok ? yearCheck.year : null
+    if (name.length < 2) errors.name = "required"
+    if (!phoneCheck.ok) errors.phone = phoneCheck.error
+    if (!yearCheck.ok) errors.year = yearCheck.error
+
+    const dryRun = await intakeIsDryRun()
+
+    // Production retry of an already-persisted submission: answer from the durable
+    // record before the catalogue is read, so later owner edits (hidden brand/service,
+    // disabled form, unavailable document) cannot turn a received lead into an error.
+    // Preview never reads real records.
+    if (!dryRun && !Object.keys(errors).length) {
+      const existing = await findBySubmission(submissionId)
+      if (existing) return reply(request, "duplicate", 200, { id: existing })
+    }
+
+    const doc: WebsiteDocument | null = await getPublishedDocumentStrict()
+    if (!doc) return reply(request, "unavailable", 503)
+    if (!doc.forms.enquiry.enabled) return reply(request, "unavailable", 403)
+
     const model = str(body.model, 60)
     const details = str(body.details, 1000)
     const locale = body.locale === "ar" ? "ar" : "en"
@@ -106,22 +126,11 @@ export async function POST(request: Request) {
     // A service chosen alongside a brand must be one that brand actually offers.
     if (brand && service && !brand.serviceSlugs.includes(service.slug)) errors.service = "not_for_brand"
 
-    if (name.length < 2) errors.name = "required"
-    if (!phoneCheck.ok) errors.phone = phoneCheck.error
-
-    // Validate the RAW year before any normalization so "20160" is rejected, not truncated.
-    const yearCheck = validateVehicleYear(body.year)
-    const year = yearCheck.ok ? yearCheck.year : null
-    if (!yearCheck.ok) errors.year = yearCheck.error
     // A known service gives enough context; otherwise ask for a model or details.
     if (needsMoreDetails({ service: service?.slug, model, details })) errors.details = "required"
     if (Object.keys(errors).length) return reply(request, "invalid", 400, { fields: errors })
 
-    if (await intakeIsDryRun()) return reply(request, "dry_run", 200, { id: null })
-
-    // Retried submission: return the real persisted lead, no new alert.
-    const existing = await findBySubmission(submissionId)
-    if (existing) return reply(request, "duplicate", 200, { id: existing })
+    if (dryRun) return reply(request, "dry_run", 200, { id: null })
 
     const svc = createServiceClient()
     const since = new Date(Date.now() - 10 * 60 * 1000).toISOString()

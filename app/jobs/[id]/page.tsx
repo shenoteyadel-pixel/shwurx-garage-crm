@@ -24,6 +24,9 @@ import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
 import { DiagnosticsPanel, type DiagnosticTest } from "@/components/diagnostics-panel"
 import { InspectionPanel } from "@/components/inspection/inspection-panel"
+import { FullInspectionPanel, type FullInspectionData } from "@/components/inspection/full-inspection-panel"
+import { JobTypeSwitch } from "@/components/job-type-switch"
+import { normalizeChecklist, type JobType } from "@/lib/full-inspection-config"
 import { TechnicianJobCard } from "@/components/technician-job-card"
 import { TechPartsRequest } from "@/components/tech-parts-request"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
@@ -248,6 +251,34 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     })),
   }
 
+  const isInspectionOnly = job.job_type === "inspection_only"
+  const { data: fullInspectionRow } = await supabase
+    .from("vehicle_inspections")
+    .select("status, checklist, summary, recommendations, odometer, completed_at")
+    .eq("job_id", id)
+    .eq("inspection_type", "full")
+    .maybeSingle()
+  const fullInspection: FullInspectionData | null = fullInspectionRow
+    ? {
+        status: fullInspectionRow.status === "completed" ? "completed" : "in_progress",
+        checklist: normalizeChecklist(fullInspectionRow.checklist),
+        summary: fullInspectionRow.summary,
+        recommendations: fullInspectionRow.recommendations,
+        odometer: fullInspectionRow.odometer,
+        completed_at: fullInspectionRow.completed_at,
+      }
+    : null
+  const fullInspectionPanel = (
+    <FullInspectionPanel
+      jobId={job.id}
+      inspection={fullInspection}
+      defaultOdometer={job.mileage ?? null}
+      printHref={`/jobs/${job.id}/full-inspection/print`}
+    />
+  )
+  const canSetJobType =
+    (sessionCtx?.permissions.has("jobs.edit") || sessionCtx?.permissions.has("jobs.update_status")) ?? false
+
   const staffRows = await getAssignableStaff()
 
   // Active workload per staff member (any job not yet delivered) so the
@@ -402,6 +433,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Job type</span>
+        <JobTypeSwitch
+          jobId={job.id}
+          value={(isInspectionOnly ? "inspection_only" : "repair") as JobType}
+          canEdit={canSetJobType}
+        />
+      </div>
+
       <Card className="mb-6 p-4">
         <StageStepper jobId={job.id} stage={job.stage as Stage} />
       </Card>
@@ -410,6 +450,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         <div className="space-y-6 lg:col-span-2">
           {showPrices ? (
             <>
+              {isInspectionOnly && fullInspectionPanel}
               <JobPhotos
                 jobId={job.id}
                 photos={(photos ?? []) as any}
@@ -418,7 +459,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 uploaderRoles={uploaderRoles}
                 currentUserId={viewerId}
               />
-              <RepairDetails job={job as any} />
+              {!isInspectionOnly && <RepairDetails job={job as any} />}
               <InspectionPanel
                 jobId={job.id}
                 inspection={inspectionData}
@@ -427,13 +468,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 make={job.vehicle_make}
                 model={job.vehicle_model}
               />
-              <DiagnosticsPanel
-                jobId={job.id}
-                session={(diagnosticSession as any) ?? null}
-                tests={diagnosticTests}
-                vehicleSummary={diagnosticVehicleSummary}
-                complaint={job.complaint}
-              />
+              {!isInspectionOnly && (
+                <DiagnosticsPanel
+                  jobId={job.id}
+                  session={(diagnosticSession as any) ?? null}
+                  tests={diagnosticTests}
+                  vehicleSummary={diagnosticVehicleSummary}
+                  complaint={job.complaint}
+                />
+              )}
               <QuotationBuilder
                 jobId={job.id}
                 initialItems={quoteItems}
@@ -456,7 +499,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 />
               )}
               <AddonServices jobId={job.id} addons={addons} locked={locked} />
-              {locked && (
+              {locked && !isInspectionOnly && (
                 <SendPartsToPurchaser
                   jobId={job.id}
                   pendingCount={(parts ?? []).filter((p: any) => !p.released_at && p.status === "required").length}
@@ -464,18 +507,21 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                   canSend={sessionCtx?.permissions.has("quotations.edit") ?? false}
                 />
               )}
-              <PartsManager
-                jobId={job.id}
-                parts={
-                  (sessionCtx?.permissions.has("costs.view")
-                    ? (parts ?? [])
-                    : (parts ?? []).map((p) => ({ ...p, cost: null }))) as any
-                }
-                locked={locked}
-              />
+              {!isInspectionOnly && (
+                <PartsManager
+                  jobId={job.id}
+                  parts={
+                    (sessionCtx?.permissions.has("costs.view")
+                      ? (parts ?? [])
+                      : (parts ?? []).map((p) => ({ ...p, cost: null }))) as any
+                  }
+                  locked={locked}
+                />
+              )}
             </>
           ) : (
             <>
+              {isInspectionOnly && fullInspectionPanel}
               <TechnicianJobCard
                 complaint={job.complaint}
                 approved={locked}
@@ -513,11 +559,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                   />
                 </>
               )}
-              <TechPartsRequest
-                jobId={job.id}
-                parts={(parts ?? []) as any}
-                catalog={partCatalog.map(({ name, part_number, source }) => ({ name, part_number, source }))}
-              />
+              {!isInspectionOnly && (
+                <TechPartsRequest
+                  jobId={job.id}
+                  parts={(parts ?? []) as any}
+                  catalog={partCatalog.map(({ name, part_number, source }) => ({ name, part_number, source }))}
+                />
+              )}
             </>
           )}
         </div>

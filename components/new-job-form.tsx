@@ -21,6 +21,7 @@ import { VehiclePicker, EMPTY_VEHICLE_DRAFT, type VehicleDraft } from "@/compone
 import { identifyVehicle, type VehicleIdentification } from "@/lib/actions-vehicle-id"
 import { VehicleIdCard } from "@/components/vehicle-id-card"
 import { UAE_EMIRATES } from "@/lib/constants"
+import { JOB_TYPES } from "@/lib/full-inspection-config"
 import {
   Search,
   UserPlus,
@@ -789,6 +790,29 @@ function VisitStep({
 
       <Card className="p-5">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">This visit</h2>
+        <fieldset className="mb-4">
+          <legend className="mb-1.5 block text-xs font-medium text-muted-foreground">What does the customer need?</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {JOB_TYPES.map((t) => (
+              <label
+                key={t.value}
+                className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 transition hover:bg-muted/40 has-[:checked]:border-primary has-[:checked]:bg-primary/10"
+              >
+                <input
+                  type="radio"
+                  name="job_type"
+                  value={t.value}
+                  defaultChecked={t.value === "repair"}
+                  className="mt-1 accent-primary"
+                />
+                <span>
+                  <span className="block text-sm font-semibold">{t.label}</span>
+                  <span className="block text-xs leading-relaxed text-muted-foreground">{t.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="mileage">Current mileage / km</Label>

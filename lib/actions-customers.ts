@@ -753,6 +753,7 @@ export async function createJobFromMaster(fd: FormData): Promise<JobCreateResult
       vin: vehicle.vin,
       mileage: freshMileage ?? sanitizeMileage(vehicle.mileage),
       complaint: s(fd, "complaint"),
+      job_type: s(fd, "job_type") === "inspection_only" ? "inspection_only" : "repair",
       advisor_id: s(fd, "advisor_id"),
       technician_id: s(fd, "technician_id"),
       notes: s(fd, "notes"),

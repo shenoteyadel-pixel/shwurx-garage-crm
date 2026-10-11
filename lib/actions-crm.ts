@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import { notifyActivity } from "@/lib/activity"
+import { issueGatePass } from "@/lib/gate-pass"
 import type { Permission } from "@/lib/rbac/roles"
 
 async function requireUser() {
@@ -513,6 +514,7 @@ export async function recordInvoicePayment(invoiceId: string, formData: FormData
       })
       .eq("id", inv.job_id)
       .is("paid_at", null)
+    await issueGatePass(inv.job_id, { amount: paid, method: String(formData.get("method") || "cash"), issuedBy: user.id })
     revalidatePath("/crm")
     revalidatePath("/flow")
     revalidatePath("/history")

@@ -32,6 +32,7 @@ import {
   ShieldCheck,
   CalendarClock,
   Fingerprint,
+  KeySquare,
   Inbox,
   Trash2,
   History,
@@ -60,6 +61,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/crm", label: "Dashboard", icon: LayoutDashboard },
       { href: "/attendance", label: "Check In / Out", icon: Fingerprint },
+      { href: "/gate-pass", label: "Gate Pass & Keys", icon: KeySquare, anyOf: ["gate_pass.release"] },
       { href: "/control-center", label: "AI Control Center", icon: Sparkles, ownerOnly: true },
     ],
   },

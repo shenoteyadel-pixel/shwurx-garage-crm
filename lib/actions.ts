@@ -16,6 +16,8 @@ import { requireJobWork } from "@/lib/rbac/job-access"
 import type { Permission } from "@/lib/rbac/roles"
 import { notifyUser, notifyByPermission } from "@/lib/actions-notifications"
 import { notifyActivity } from "@/lib/activity"
+import { notifyJobTechnicians, notifyPurchasers } from "@/lib/job-notify"
+import { bestPartMatch, isSamePart, partDocLink } from "@/lib/part-match"
 import { syncPendingApproval } from "@/lib/actions-approvals"
 import { resyncQuotationAddons } from "@/lib/addons"
 import { getSettings } from "@/lib/settings"
@@ -854,7 +856,12 @@ export async function sendPartsToQuotation(jobId: string) {
   )
 
   const newParts: QuoteItemInput[] = (parts ?? [])
-    .filter((p) => (p.part_name || "").trim() && !existingPartNames.has((p.part_name || "").trim().toLowerCase()))
+    .filter(
+      (p) =>
+        (p.part_name || "").trim() &&
+        !existingPartNames.has((p.part_name || "").trim().toLowerCase()) &&
+        ![...existingPartNames].some((n) => isSamePart(n, p.part_name)),
+    )
     .map((p) => ({
       kind: "part",
       name: p.part_name,
@@ -909,6 +916,37 @@ export async function addPart(jobId: string, formData: FormData) {
   const quantity = Math.max(1, Math.min(999, Math.round(Number(formData.get("quantity") || 1)) || 1))
   // Only users who may see costs can record supplier/cost; technicians' requests stay price-free.
   const canCost = ctx.permissions.has("costs.view") || ctx.permissions.has("parts.manage")
+
+  // Same part already requested or on the job card (in any wording) — don't double it.
+  const [{ data: openReqs }, { data: quote }] = await Promise.all([
+    supabase.from("parts_requests").select("part_name, quantity, status").eq("job_id", jobId).is("deleted_at", null),
+    supabase
+      .from("quotations")
+      .select("quotation_items(kind, name, quantity, detail)")
+      .eq("job_id", jobId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  const sameName = (n: unknown) => String(n ?? "").trim().toLowerCase() === partName.toLowerCase()
+  const dupReq =
+    (openReqs ?? []).find((r) => sameName(r.part_name)) ?? bestPartMatch(partName, openReqs ?? [], (r) => r.part_name)
+  if (dupReq) {
+    throw new Error(
+      `"${dupReq.part_name}" (qty ${dupReq.quantity}, ${String(dupReq.status).replace(/_/g, " ")}) is already requested on this job. Update that line instead of adding it again.`,
+    )
+  }
+  // Estimate lines still need buying; only lines already covered by a supplier bill are duplicates.
+  const boughtParts = ((quote?.quotation_items as any[]) ?? []).filter(
+    (i) => i.kind === "part" && partDocLink(i.detail) === "bill",
+  )
+  const dupLine = boughtParts.find((i) => sameName(i.name)) ?? bestPartMatch(partName, boughtParts, (i) => i.name)
+  if (dupLine) {
+    throw new Error(
+      `"${dupLine.name}" (qty ${dupLine.quantity}) has already been purchased for this job card. No need to request it again.`,
+    )
+  }
+
   const { error } = await supabase.from("parts_requests").insert({
     job_id: jobId,
     part_name: partName,
@@ -920,9 +958,10 @@ export async function addPart(jobId: string, formData: FormData) {
     requested_by: ctx.userId,
   })
   if (error) throw new Error(error.message)
-  await notifyByPermission("parts.manage", {
-    title: "New parts request",
-    body: `${String(formData.get("part_name") || "A part")} requested for a job.`,
+  const { data: jobRow } = await supabase.from("jobs").select("job_number").eq("id", jobId).maybeSingle()
+  await notifyPurchasers({
+    title: "Parts required",
+    body: `${partName} × ${quantity} needed for job ${jobRow?.job_number ?? jobId.slice(0, 8)}. Get a supplier price.`,
     type: "parts",
     link: `/jobs/${jobId}`,
   })
@@ -937,8 +976,17 @@ export async function updatePart(partId: string, jobId: string, formData: FormDa
   if (formData.get("status")) patch.status = String(formData.get("status"))
   if (formData.has("supplier")) patch.supplier = String(formData.get("supplier") || "") || null
   if (formData.has("cost")) patch.cost = formData.get("cost") ? Number(formData.get("cost")) : null
+  const { data: before } = await supabase.from("parts_requests").select("part_name, quantity, status").eq("id", partId).maybeSingle()
   const { error } = await supabase.from("parts_requests").update(patch).eq("id", partId)
   if (error) throw new Error(error.message)
+  if (patch.status === "received" && before && before.status !== "received") {
+    await notifyJobTechnicians(jobId, (job) => ({
+      title: "Parts ready to fit",
+      body: `${before.part_name} × ${before.quantity} has arrived for job ${job}.`,
+      type: "parts",
+      link: `/jobs/${jobId}`,
+    }))
+  }
   await logCurrent("part.update", "job", jobId, { status: patch.status ?? null })
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/parts")

@@ -1,5 +1,7 @@
 "use server"
 
+import { bestPartMatch, partDocLink } from "@/lib/part-match"
+import { notifyJobAdvisor, notifyJobTechnicians } from "@/lib/job-notify"
 import { logCurrent } from "@/lib/rbac/context"
 
 import { createClient, createServiceClient } from "@/lib/supabase/server"
@@ -505,14 +507,49 @@ async function addPartToJobQuotation(
   // manually added / requested line instead of duplicating it.
   const isPart = (i: QuoteRow) => i.kind === "part"
   const linePn = (i: QuoteRow) => (i.part_number ?? "").trim().toLowerCase()
-  const match =
+  const pnCompatible = (i: QuoteRow) => !pn || !linePn(i) || linePn(i) === pn
+  const incomingDoc = partDocLink(part.detail)
+  // A bill can fulfil an estimate or a supplier-quote line; a supplier quote
+  // can only price a line no supplier document has touched yet.
+  const isOpenFor = (i: QuoteRow) => {
+    const doc = partDocLink(i.detail)
+    return incomingDoc === "bill" ? doc !== "bill" : incomingDoc === "quote" ? doc === null : false
+  }
+  const exactMatch =
     (pn ? items.find((i) => isPart(i) && linePn(i) === pn) : undefined) ??
-    items.find(
-      (i) => isPart(i) && (i.name ?? "").trim().toLowerCase() === nm && (!pn || !linePn(i) || linePn(i) === pn),
-    )
+    items.find((i) => isPart(i) && (i.name ?? "").trim().toLowerCase() === nm && pnCompatible(i))
+  // Different wording for the same part ("Front lower arm (copy)" vs
+  // "FRONT LOWER ARM RH ESCAPE 2013-2017") still fulfils the open line.
+  const smartMatch = exactMatch
+    ? null
+    : bestPartMatch(
+        part.name,
+        items.filter((i) => isPart(i) && isOpenFor(i) && pnCompatible(i)),
+        (i) => i.name,
+      )
+  const match = exactMatch ?? smartMatch
 
+  // One estimate line covered by several purchases (qty 2 "Front lower arm"
+  // bought as one RH + one LH): fulfil part of it and leave the rest open.
+  const split = Boolean(match?.id && isOpenFor(match) && part.quantity < (Number(match.quantity) || 0))
   let outcome: "added" | "updated"
-  if (match?.id && opts.keepCustomerPrice) {
+  if (match?.id && split) {
+    const remaining = (Number(match.quantity) || 0) - part.quantity
+    match.quantity = remaining
+    const mOld = lineMath(match)
+    const { error: splitErr } = await supabase
+      .from("quotation_items")
+      .update({ quantity: remaining, vat: mOld.vat, line_total: mOld.lineTotal })
+      .eq("id", match.id)
+    if (splitErr) throw new Error(`Could not update "${match.name}" on the job card: ${splitErr.message}`)
+    const unitPrice = opts.keepCustomerPrice
+      ? Number(match.unit_price) || 0
+      : incomingDoc === "bill"
+        ? Math.max(Number(match.unit_price) || 0, part.unitPrice)
+        : part.unitPrice
+    part = { ...part, unitPrice }
+  }
+  if (!split && match?.id && opts.keepCustomerPrice) {
     // The invoice fulfils a quote the customer already approved: the price and
     // quantity they signed for stay as they are; only the bill reference changes.
     const { error } = await supabase
@@ -521,9 +558,8 @@ async function addPartToJobQuotation(
       .eq("id", match.id)
     if (error) throw new Error(`Could not update "${part.name}" on the job card: ${error.message}`)
     return "updated"
-  } else if (match?.id) {
-    const incomingFromInvoice = isInvoiceLinked(part.detail)
-    const takeInvoice = incomingFromInvoice && !isInvoiceLinked(match.detail)
+  } else if (!split && match?.id) {
+    const takeInvoice = incomingDoc !== null && isOpenFor(match)
     // Merging a purchase into a manual line: it is the same part at the same
     // cost, so keep whichever selling price earns more.
     const unitPrice = takeInvoice ? Math.max(Number(match.unit_price) || 0, part.unitPrice) : part.unitPrice
@@ -1229,15 +1265,16 @@ async function applyConfirm(
       } else {
         // The part may already be on the job as "ordered" from an earlier
         // supplier quote: close that request rather than adding a duplicate.
-        const { data: openReq } = await supabase
+        const { data: openReqs } = await supabase
           .from("parts_requests")
-          .select("id")
+          .select("id, part_name")
           .eq("job_id", jobId)
-          .ilike("part_name", (it.description || "Part").trim())
           .neq("status", "received")
           .is("deleted_at", null)
-          .limit(1)
-          .maybeSingle()
+        const lineName = (it.description || "Part").trim()
+        const openReq =
+          (openReqs ?? []).find((r) => String(r.part_name ?? "").trim().toLowerCase() === lineName.toLowerCase()) ??
+          bestPartMatch(lineName, openReqs ?? [], (r) => r.part_name)
         if (openReq?.id) {
           await supabase
             .from("parts_requests")
@@ -1332,6 +1369,37 @@ async function applyConfirm(
   if (updErr) throw new Error(updErr.message)
 
   await logAction(ctx, "supplier_invoice_confirmed", "supplier_invoice", id)
+
+  // Supplier quote priced → advisor sends the quotation; bill received →
+  // mechanics can fit the parts. One message per job, listing its parts.
+  const byJob = new Map<string, string[]>()
+  for (const p of parts) {
+    if (!p.jobId) continue
+    byJob.set(p.jobId, [...(byJob.get(p.jobId) ?? []), `${p.name} × ${p.quantity}`])
+  }
+  for (const [jobId, names] of byJob) {
+    const list = names.length > 3 ? `${names.slice(0, 3).join(", ")} +${names.length - 3} more` : names.join(", ")
+    try {
+      if (isQuote) {
+        await notifyJobAdvisor(jobId, (job) => ({
+          title: "Quotation ready to send",
+          body: `Supplier prices are on job ${job}: ${list}. Review and send to the customer.`,
+          type: "quotation",
+          link: `/jobs/${jobId}`,
+        }))
+      } else {
+        await notifyJobTechnicians(jobId, (job) => ({
+          title: "Parts ready to fit",
+          body: `Parts received for job ${job}: ${list}.`,
+          type: "parts",
+          link: `/jobs/${jobId}`,
+        }))
+      }
+    } catch (err) {
+      console.error("[parts] notification failed", jobId, err)
+    }
+  }
+
   return { supplierId: supplierId as string, supplierName, supplierCreated, parts }
 }
 

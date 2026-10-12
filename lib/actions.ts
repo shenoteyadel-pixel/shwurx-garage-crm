@@ -17,6 +17,7 @@ import type { Permission } from "@/lib/rbac/roles"
 import { notifyUser, notifyByPermission } from "@/lib/actions-notifications"
 import { notifyActivity } from "@/lib/activity"
 import { notifyJobTechnicians, notifyPurchasers } from "@/lib/job-notify"
+import { issueGatePass } from "@/lib/gate-pass"
 import { bestPartMatch, isSamePart, partDocLink } from "@/lib/part-match"
 import { syncPendingApproval } from "@/lib/actions-approvals"
 import { resyncQuotationAddons } from "@/lib/addons"
@@ -256,6 +257,8 @@ export async function markJobPaid(
       .eq("id", inv.id)
     revalidatePath(`/invoices/${inv.id}`)
   }
+
+  await issueGatePass(jobId, { amount, method, issuedBy: ctx.userId })
 
   await logAction(ctx, "job.mark_paid", "job", jobId, { amount, method })
   revalidatePath("/crm")

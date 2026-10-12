@@ -64,6 +64,7 @@ const en: CrmDict = {
   nav: {
     "/crm": "Dashboard",
     "/attendance": "Check In / Out",
+    "/gate-pass": "Gate Pass & Keys",
     "/control-center": "AI Control Center",
     "/finance": "Finance & Audit",
     "/finance/expenses": "Expenses & Salaries",
@@ -256,6 +257,7 @@ const ar: CrmDict = {
   nav: {
     "/crm": "لوحة التحكم",
     "/attendance": "تسجيل الحضور / الانصراف",
+    "/gate-pass": "تصريح الخروج والمفاتيح",
     "/control-center": "مركز التحكم الذكي",
     "/finance": "المالية والتدقيق",
     "/finance/expenses": "المصروفات والرواتب",

@@ -60,6 +60,19 @@ export async function notifyJobTechnicians(jobId: string, build: (jobLabel: stri
   await deliver(job.technicianIds, build(job.label))
 }
 
+async function usersWithRole(roles: string[]) {
+  const svc = createServiceClient()
+  const { data } = await svc.from("profiles").select("id").in("role", roles).eq("is_active", true)
+  return (data ?? []).map((u) => u.id as string)
+}
+
+/** Gate security + the job's advisor (all advisors when none is assigned), each once. */
+export async function notifyGateTeam(jobId: string, build: (jobLabel: string) => Payload) {
+  const job = await jobInfo(jobId)
+  const advisors = job.advisorId ? [job.advisorId] : await usersWithRole(["service_advisor"])
+  await deliver([...(await usersWithRole(["security"])), ...advisors], build(job.label))
+}
+
 /** The job's service advisor, or every quotation editor when none is assigned. */
 export async function notifyJobAdvisor(jobId: string, build: (jobLabel: string) => Payload) {
   const job = await jobInfo(jobId)

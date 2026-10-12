@@ -60,7 +60,7 @@ export const ROLE_LIST: RoleMeta[] = [
   { value: "finance", team: "finance", label: "Finance / Accounts", description: "Invoices, payments and financial reports. No workshop edits.", home: "/invoices", staff: true },
   { value: "washing", team: "workshop", label: "Washing / Detailing", description: "Works on assigned wash jobs and updates their status.", home: "/", staff: true },
   { value: "marketing", team: "support", label: "Marketing / Agency", description: "Manages website tracking codes and integrations (GA4, Tag Manager, Meta Pixel) and views leads. No workshop or financial access.", home: "/marketing", staff: true },
-  { value: "security", team: "support", label: "Security / Gate", description: "Takes staff attendance: sees who is in today, the monthly report and records, and logs check-in/out for staff. No payroll, salaries, workshop or financial access.", home: "/attendance", staff: true },
+  { value: "security", team: "support", label: "Security / Gate", description: "Takes staff attendance and releases car keys at the gate against a paid customer's gate pass. No payroll, salaries, workshop or financial access.", home: "/attendance", staff: true },
   { value: "viewer", team: "support", label: "Viewer (Read-only)", description: "Read-only visibility across the CRM.", home: "/", staff: true },
   { value: "customer", team: "support", label: "Customer", description: "Portal access to own vehicles, jobs and invoices only.", home: "/portal", staff: false },
 ]
@@ -99,6 +99,7 @@ export type Permission =
   | "marketing.view" | "marketing.manage"
   | "website.manage"
   | "attendance.view_all" | "attendance.record" | "attendance.manage"
+  | "gate_pass.release"
   | "users.manage" | "permissions.manage" | "settings.manage" | "audit.view"
 
 export interface PermGroup {
@@ -216,6 +217,10 @@ export const PERMISSION_CATALOG: PermGroup[] = [
       { key: "attendance.record", label: "Log staff check-in / check-out (no payroll or deletes)" },
       { key: "attendance.manage", label: "Edit attendance records & shift settings" },
     ],
+  },
+  {
+    group: "Gate & Keys",
+    perms: [{ key: "gate_pass.release", label: "See gate passes & release keys to paid customers" }],
   },
   {
     group: "Administration",

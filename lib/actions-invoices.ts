@@ -268,6 +268,158 @@ export async function extractAndCreateInvoice(input: UploadedInvoiceInput): Prom
   }
 }
 
+type Extracted = Awaited<ReturnType<typeof extractInvoice>>
+type ExtractedLineItem = Extracted["line_items"][number]
+type InvoiceSettings = Awaited<ReturnType<typeof getSettings>>
+
+/** A real number, or null for null/blank/"TBC" — unlike n(), null never becomes 0. */
+const numOrNull = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null
+  const x = Number(v)
+  return Number.isFinite(x) ? x : null
+}
+
+function lineAmounts(l: ExtractedLineItem) {
+  const quantity = numOrNull(l.quantity) ?? 1
+  const unitCost = numOrNull(l.unit_cost) ?? 0
+  const lineTotal = numOrNull(l.line_total) ?? Math.round(unitCost * quantity * 100) / 100
+  return { quantity, unitCost, lineTotal }
+}
+
+/** Header totals; quotations often print no totals row, so derive them from the lines. */
+function extractedTotals(extracted: Extracted | null, vatRate: number) {
+  const lines = extracted?.line_items ?? []
+  const lineSum = Math.round(lines.reduce((s, l) => s + lineAmounts(l).lineTotal, 0) * 100) / 100
+  const subtotal = numOrNull(extracted?.subtotal) ?? lineSum
+  const discount = numOrNull(extracted?.discount_amount) ?? 0
+  const vat = numOrNull(extracted?.vat_amount) ?? Math.round((subtotal - discount) * (n(vatRate) / 100) * 100) / 100
+  const total = numOrNull(extracted?.total) ?? Math.round((subtotal - discount + vat) * 100) / 100
+  return { subtotal, discount_amount: discount, vat_amount: vat, total }
+}
+
+async function insertExtractedLines(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  invoiceId: string,
+  lines: ExtractedLineItem[],
+  settings: InvoiceSettings,
+) {
+  if (!lines.length) return
+  // OEM-first auto-match: a line links to an existing part ONLY when its OEM
+  // number matches exactly one inventory item. Supplier numbers and
+  // descriptions are never used to auto-link — the review UI flags those as
+  // "possible matches" for a human to confirm.
+  const oemIndex = await buildOemIndex(supabase)
+  const openRequests = await loadOpenPartsRequests(supabase)
+  const { error } = await supabase.from("supplier_invoice_items").insert(
+    lines.map((l, i) => {
+      const { quantity, unitCost, lineTotal } = lineAmounts(l)
+      const oem = l.oem_part_number?.trim() || null
+      const supplierPn = l.supplier_part_number?.trim() || null
+      const matchId = oem ? oemIndex.get(normPartNumber(oem)) : undefined
+      const base = l.description?.trim() || "Item"
+      const brand = l.brand?.trim()
+      // Quotes list brand alternatives of the same part; keep them distinguishable.
+      const description = brand && brand !== "—" && brand !== "-" && !base.toLowerCase().includes(brand.toLowerCase())
+        ? `${base} (${brand})`
+        : base
+      const pr = suggestPartsRequest(base, oem, openRequests)
+      return {
+        invoice_id: invoiceId,
+        line_no: i + 1,
+        description,
+        sku: oem ?? supplierPn,
+        oem_part_number: oem,
+        supplier_part_number: supplierPn,
+        quantity,
+        unit: l.unit || "pcs",
+        unit_cost: unitCost,
+        line_total: lineTotal,
+        vat_rate: settings.vat_rate,
+        inventory_item_id: matchId ?? null,
+        match_status: matchId ? "matched" : "new",
+        job_id: pr?.job_id ?? null,
+        parts_request_id: pr?.id ?? null,
+        markup_pct: settings.default_markup_pct,
+        suggested_sale_price: suggestSalePrice(unitCost, settings.pricing_method, settings.default_markup_pct),
+        confidence: l.confidence ?? null,
+      }
+    }),
+  )
+  if (error) throw new Error(`Saving extracted lines failed: ${error.message}`)
+}
+
+/**
+ * Re-run the document reader on an already-uploaded bill or quote whose first
+ * read failed (0 lines). Re-uploading the same photo is blocked as a duplicate,
+ * so this is the only way to recover without typing every line by hand.
+ */
+export async function reextractInvoice(id: string): Promise<InvoiceActionResult & { lines?: number }> {
+  try {
+    const { supabase, ctx } = await guard()
+    const { data: inv, error } = await supabase
+      .from("supplier_invoices")
+      .select("id, status, blob_pathname, file_type")
+      .eq("id", id)
+      .maybeSingle()
+    if (error) return { ok: false, error: error.message }
+    if (!inv) return { ok: false, error: "Document not found" }
+    if (!inv.blob_pathname) return { ok: false, error: "No original file is attached to re-read." }
+    if (inv.status === "confirmed" || inv.status === "void") {
+      return { ok: false, error: "This bill is already confirmed. Reopen it for editing first." }
+    }
+
+    const { count } = await supabase
+      .from("supplier_invoice_items")
+      .select("id", { count: "exact", head: true })
+      .eq("invoice_id", id)
+    if (inv.status === "quoted" && (count ?? 0) > 0) {
+      return { ok: false, error: "These quote prices were already sent to the job quotation." }
+    }
+
+    const stored = await get(inv.blob_pathname, { access: "private" })
+    if (!stored) return { ok: false, error: "The original file could not be found." }
+    const bytes = new Uint8Array(await new Response(stored.stream).arrayBuffer())
+    const contentType = stored.blob.contentType || inv.file_type || "image/jpeg"
+
+    let extracted: Extracted
+    try {
+      extracted = await extractInvoice(bytes, contentType)
+    } catch (e) {
+      console.error("[v0] invoice re-extract failed:", e)
+      return { ok: false, error: "The document still could not be read. Add the lines manually." }
+    }
+    const lines = extracted.line_items ?? []
+    if (!lines.length) return { ok: false, error: "No part lines were found on this document." }
+
+    const settings = await getSettings()
+    if (count) {
+      const { error: delErr } = await supabase.from("supplier_invoice_items").delete().eq("invoice_id", id)
+      if (delErr) return { ok: false, error: delErr.message }
+    }
+    await insertExtractedLines(supabase, id, lines, settings)
+
+    const { error: upErr } = await supabase
+      .from("supplier_invoices")
+      .update({
+        ...extractedTotals(extracted, settings.vat_rate),
+        // A quote that was "sent" with zero lines posted nothing; reopen it so the
+        // prices can be reviewed and sent to the job quotation properly.
+        status: "draft",
+        ocr_confidence: extracted.confidence ?? null,
+        ocr_raw: extracted as unknown as Record<string, unknown>,
+      })
+      .eq("id", id)
+    if (upErr) return { ok: false, error: upErr.message }
+
+    await logAction(ctx, "supplier_invoice_reextracted", "supplier_invoice", id)
+    revalidatePath(`/purchasing/invoices/${id}`)
+    revalidatePath("/purchasing/invoices")
+    return { ok: true, lines: lines.length }
+  } catch (e) {
+    return toActionError(e, "Could not re-read the document.")
+  }
+}
+
 async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<ExtractResult> {
   const { supabase, ctx, userId } = await guard()
 
@@ -345,6 +497,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
     return { ok: false, error: duplicateMessage(sameInvoice), duplicateId: sameInvoice.id }
   }
 
+  const totals = extractedTotals(extracted, settings.vat_rate)
   const { data: inv, error } = await supabase
     .from("supplier_invoices")
     .insert({
@@ -353,10 +506,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
       invoice_number: extracted?.invoice_number ?? null,
       invoice_date: normalizeDate(extracted?.invoice_date),
       currency: extracted?.currency || "AED",
-      subtotal: n(extracted?.subtotal),
-      discount_amount: n(extracted?.discount_amount),
-      vat_amount: n(extracted?.vat_amount),
-      total: n(extracted?.total),
+      ...totals,
       status: "draft",
       blob_pathname: blobPathname,
       file_hash: fileHash,
@@ -383,44 +533,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
   // enrichment — if any of it fails it must NOT fail the upload and strand the
   // user, since the draft is already saved.
   try {
-  const lines = extracted?.line_items ?? []
-  if (lines.length) {
-    // OEM-first auto-match: a line links to an existing part ONLY when its OEM
-    // number matches exactly one inventory item. Supplier numbers and
-    // descriptions are never used to auto-link — the review UI flags those as
-    // "possible matches" for a human to confirm.
-    const oemIndex = await buildOemIndex(supabase)
-    const openRequests = await loadOpenPartsRequests(supabase)
-    await supabase.from("supplier_invoice_items").insert(
-      lines.map((l, i) => {
-        const unitCost = n(l.unit_cost)
-        const oem = l.oem_part_number?.trim() || null
-        const supplierPn = l.supplier_part_number?.trim() || null
-        const matchId = oem ? oemIndex.get(normPartNumber(oem)) : undefined
-        const pr = suggestPartsRequest(l.description || "", oem, openRequests)
-        return {
-          invoice_id: inv.id,
-          line_no: i + 1,
-          description: l.description || "Item",
-          sku: oem ?? supplierPn,
-          oem_part_number: oem,
-          supplier_part_number: supplierPn,
-          quantity: n(l.quantity, 1),
-          unit: l.unit || "pcs",
-          unit_cost: unitCost,
-          line_total: n(l.line_total, unitCost * n(l.quantity, 1)),
-          vat_rate: settings.vat_rate,
-          inventory_item_id: matchId ?? null,
-          match_status: matchId ? "matched" : "new",
-          job_id: pr?.job_id ?? null,
-          parts_request_id: pr?.id ?? null,
-          markup_pct: settings.default_markup_pct,
-          suggested_sale_price: suggestSalePrice(unitCost, settings.pricing_method, settings.default_markup_pct),
-          confidence: l.confidence ?? null,
-        }
-      }),
-    )
-  }
+    await insertExtractedLines(supabase, inv.id, extracted?.line_items ?? [], settings)
 
     try {
       await linkInvoiceToOpenQuote(createServiceClient(), inv.id, supplierId, extracted?.supplier_name ?? null)

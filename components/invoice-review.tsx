@@ -12,12 +12,13 @@ import {
   setSupplierInvoiceOnAccount,
   deleteInvoiceDraft,
   assignInvoiceLineToJob,
+  reextractInvoice,
   type DraftLine,
   type ConfirmSummary,
 } from "@/lib/actions-invoices"
 import Link from "next/link"
 import { PaymentReceiptField, methodNeedsProof } from "@/components/payment-receipt-field"
-import { Loader2, Save, CheckCircle2, Trash2, AlertTriangle, Plus, FileText } from "lucide-react"
+import { Loader2, Save, CheckCircle2, Trash2, AlertTriangle, Plus, FileText, RefreshCw } from "lucide-react"
 
 type SupplierOpt = { id: string; name: string }
 type JobOpt = { id: string; label: string }
@@ -136,6 +137,25 @@ export function InvoiceReview({
   const [action, setAction] = React.useState<"save" | "confirm" | "delete" | null>(null)
   const [err, setErr] = React.useState<string | null>(null)
   const [summary, setSummary] = React.useState<ConfirmSummary | null>(null)
+  const [rereading, startReread] = React.useTransition()
+  const [rereadMsg, setRereadMsg] = React.useState<string | null>(null)
+  const canReread =
+    Boolean(invoice.blob_pathname) &&
+    (invoice.status === "draft" || (invoice.status === "quoted" && lines.length === 0))
+
+  function rereadDocument() {
+    if (lines.length > 0 && !window.confirm("Re-reading replaces the current lines with what the document shows. Continue?")) return
+    setRereadMsg(null)
+    startReread(async () => {
+      const res = await reextractInvoice(invoice.id)
+      if (!res.ok) {
+        setRereadMsg(res.error)
+        return
+      }
+      setRereadMsg(`Read ${res.lines ?? 0} lines from the document.`)
+      router.refresh()
+    })
+  }
 
   const activeJobIds = Array.from(new Set(lines.filter((l) => l.match_status !== "ignore").map((l) => l.job_id ?? "")))
   const invoiceJob = activeJobIds.length === 1 ? activeJobIds[0] || "__stock" : "__mixed"
@@ -459,14 +479,33 @@ export function InvoiceReview({
         <Card className="overflow-hidden">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Line items</h2>
-            {!readOnly && (
-              <Button variant="outline" size="sm" onClick={addLine}>
-                <Plus className="h-4 w-4" /> Add line
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {canReread && (
+                <Button variant="outline" size="sm" onClick={rereadDocument} disabled={rereading}>
+                  {rereading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Re-read document
+                </Button>
+              )}
+              {!readOnly && (
+                <Button variant="outline" size="sm" onClick={addLine}>
+                  <Plus className="h-4 w-4" /> Add line
+                </Button>
+              )}
+            </div>
           </div>
+          {rereadMsg && (
+            <p role="status" className="border-b border-border px-4 py-2 text-sm text-muted-foreground">
+              {rereadMsg}
+            </p>
+          )}
           <div className="divide-y divide-border/60">
-            {lines.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted-foreground">No line items.</p>}
+            {lines.length === 0 && (
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                {canReread
+                  ? "No lines were read from this document. Tap Re-read document, or add the lines manually."
+                  : "No line items."}
+              </p>
+            )}
             {lines.map((l) => (
               <LineRow
                 key={l.key}

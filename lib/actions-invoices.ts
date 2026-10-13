@@ -17,6 +17,7 @@ import { suggestSalePrice } from "@/lib/pricing"
 import { isInvoiceLinked } from "@/lib/quote-duplicates"
 import { linkInvoiceToOpenQuote } from "@/lib/quote-invoice"
 import { reconcileJobParts } from "@/lib/job-parts-reconcile"
+import { reconcilePartsRequests } from "@/lib/parts-requests-reconcile"
 
 // Both purchasing managers and parts staff capture and receive supplier
 // invoices, matching the nav, layout and dashboard buttons.
@@ -1397,24 +1398,48 @@ async function applyConfirm(
             .update({ status: "received", cost, supplier: supplierName || null, updated_at: new Date().toISOString() })
             .eq("id", openReq.id)
           await supabase.from("supplier_invoice_items").update({ parts_request_id: openReq.id }).eq("id", it.id)
+        } else {
+          // A re-confirm (after re-scan or a failed attempt) must reuse the row it already posted.
+          const [{ data: posted }, { data: claimed }] = await Promise.all([
+            supabase
+              .from("parts_requests")
+              .select("id")
+              .eq("job_id", jobId)
+              .eq("notes", reference)
+              .eq("part_name", it.description || "Part")
+              .is("deleted_at", null),
+            supabase
+              .from("supplier_invoice_items")
+              .select("parts_request_id")
+              .eq("invoice_id", invoice.id)
+              .neq("id", it.id)
+              .not("parts_request_id", "is", null),
+          ])
+          const taken = new Set(((claimed ?? []) as { parts_request_id: string }[]).map((c) => c.parts_request_id))
+          const reuse = ((posted ?? []) as { id: string }[]).find((p) => !taken.has(p.id))
+          const { data: pr, error: prErr } = reuse
+            ? await supabase
+                .from("parts_requests")
+                .update({ status: "received", cost, quantity: qty, supplier: supplierName || null })
+                .eq("id", reuse.id)
+                .select("id")
+                .single()
+            : await supabase
+                .from("parts_requests")
+                .insert({
+                  job_id: jobId,
+                  part_name: it.description || "Part",
+                  quantity: qty,
+                  status: "received",
+                  supplier: supplierName || null,
+                  cost,
+                  notes: reference,
+                })
+                .select("id")
+                .single()
+          if (prErr || !pr) throw new Error(`Could not link "${it.description}" to the job card: ${prErr?.message ?? "no row returned"}`)
+          await supabase.from("supplier_invoice_items").update({ parts_request_id: pr.id }).eq("id", it.id)
         }
-        const { data: pr, error: prErr } = openReq?.id
-          ? { data: null, error: null }
-          : await supabase
-          .from("parts_requests")
-          .insert({
-            job_id: jobId,
-            part_name: it.description || "Part",
-            quantity: qty,
-            status: "received",
-            supplier: supplierName || null,
-            cost,
-            notes: reference,
-          })
-          .select("id")
-          .single()
-        if (prErr || !pr) throw new Error(`Could not link "${it.description}" to the job card: ${prErr?.message ?? "no row returned"}`)
-        await supabase.from("supplier_invoice_items").update({ parts_request_id: pr.id }).eq("id", it.id)
       }
 
       // Purchasers (parts role) confirm invoices but don't hold quotation
@@ -1526,6 +1551,7 @@ async function reconcileJobs(jobIds: (string | null | undefined)[]) {
   for (const jobId of [...new Set(jobIds.filter(Boolean) as string[])]) {
     try {
       await reconcileJobParts(db, jobId, { useAI: true })
+      await reconcilePartsRequests(db, jobId)
     } catch (e) {
       console.error("[reconcileJobs] failed for job", jobId, e)
     }

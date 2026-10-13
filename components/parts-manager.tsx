@@ -16,6 +16,20 @@ type Part = {
   supplier: string | null
   cost: number | null
   notes: string | null
+  bucket?: "waiting" | "bought_on_quote" | "bought_extra"
+  source?: "bill" | "quote" | "request"
+}
+
+const SECTIONS = [
+  { key: "waiting", title: "Still needed", hint: "Requested or quoted by a supplier, not bought yet" },
+  { key: "bought_on_quote", title: "Bought for the quotation", hint: "Bought parts that match a line the customer approved" },
+  { key: "bought_extra", title: "Bought, not on the quotation", hint: "On a supplier bill but not quoted to the customer" },
+] as const
+
+const SOURCE_LABEL: Record<NonNullable<Part["source"]>, string> = {
+  bill: "Supplier bill",
+  quote: "Supplier quote",
+  request: "Request",
 }
 
 export function PartsManager({
@@ -134,10 +148,24 @@ export function PartsManager({
         <p className="py-4 text-center text-sm text-muted-foreground">No parts requested yet.</p>
       ) : (
         <>
-          <div className="space-y-2">
-            {parts.map((p) => (
-              <PartRow key={p.id} jobId={jobId} part={p} />
-            ))}
+          <div className="flex flex-col gap-5">
+            {SECTIONS.map((section) => {
+              const rows = parts.filter((p) => (p.bucket ?? "waiting") === section.key)
+              if (!rows.length) return null
+              return (
+                <section key={section.key} aria-label={section.title} className="flex flex-col gap-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <h3 className="text-sm font-semibold">
+                      {section.title} <span className="font-normal text-muted-foreground">({rows.length})</span>
+                    </h3>
+                    <p className="text-xs text-muted-foreground">{section.hint}</p>
+                  </div>
+                  {rows.map((p) => (
+                    <PartRow key={p.id} jobId={jobId} part={p} />
+                  ))}
+                </section>
+              )
+            })}
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm">
             <span className="text-muted-foreground">
@@ -177,8 +205,10 @@ function PartRow({ jobId, part }: { jobId: string; part: Part }) {
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{part.part_name}</div>
         <div className="text-xs text-muted-foreground">
+          {part.source ? `${SOURCE_LABEL[part.source]} · ` : ""}
           Qty {part.quantity}
           {part.supplier ? ` · ${part.supplier}` : ""}
+          {part.notes ? ` · ${part.notes}` : ""}
           {part.cost != null ? ` · ${formatCurrency(part.cost * part.quantity)}` : ""}
         </div>
       </div>

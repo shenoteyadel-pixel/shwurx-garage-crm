@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { reconcileJobParts } from "@/lib/job-parts-reconcile"
+import { bucketParts, classifyPartRows, reconcilePartsRequests } from "@/lib/parts-requests-reconcile"
 import { AppShell } from "@/components/app-shell"
 import { Badge, Card, UAEPlate } from "@/components/ui"
 import { StageStepper } from "@/components/stage-stepper"
@@ -71,6 +72,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   // quoted line next to the bought one. Fold them together before reading the card.
   try {
     await reconcileJobParts(createServiceClient(), id)
+    await reconcilePartsRequests(createServiceClient(), id)
   } catch (e) {
     console.error("[job page] parts reconcile failed", id, e)
   }
@@ -181,6 +183,17 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .eq("job_id", id)
     .is("deleted_at", null)
     .order("created_at")
+
+  const partSources = await classifyPartRows(createServiceClient(), parts ?? [])
+  const quotedPartNames = ((quotation?.quotation_items as any[]) ?? [])
+    .filter((q) => q.kind === "part" && !/supplier invoice|\bbill\b|manual purchase/i.test(String(q.detail ?? "")))
+    .map((q) => String(q.name ?? ""))
+  const partBuckets = bucketParts(parts ?? [], partSources, quotedPartNames)
+  const groupedParts = (parts ?? []).map((p) => ({
+    ...p,
+    bucket: partBuckets.get(p.id) ?? "waiting",
+    source: partSources.get(p.id) ?? "request",
+  }))
 
   // Per-car expenses (incl. no-invoice cash costs). RLS returns rows only to
   // viewers with costs.view / purchase_orders.manage, so a null result for
@@ -523,8 +536,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                   jobId={job.id}
                   parts={
                     (sessionCtx?.permissions.has("costs.view")
-                      ? (parts ?? [])
-                      : (parts ?? []).map((p) => ({ ...p, cost: null }))) as any
+                      ? groupedParts
+                      : groupedParts.map((p) => ({ ...p, cost: null }))) as any
                   }
                   locked={locked}
                 />

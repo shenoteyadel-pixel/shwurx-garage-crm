@@ -6,6 +6,7 @@ import { requirePermission, logCurrent } from "@/lib/rbac/context"
 import { findJobDuplicateParts } from "@/lib/part-costs"
 import { createServiceClient } from "@/lib/supabase/server"
 import { reconcileJobParts, type ReconcileResult } from "@/lib/job-parts-reconcile"
+import { reconcilePartsRequests } from "@/lib/parts-requests-reconcile"
 
 /**
  * Smart parts merge: pairs every supplier-invoice line on the job card with the
@@ -17,6 +18,8 @@ export async function smartMergeJobParts(
   try {
     await requirePermission("quotations.edit")
     const result = await reconcileJobParts(createServiceClient(), jobId, { useAI: true })
+    const cleanup = await reconcilePartsRequests(createServiceClient(), jobId)
+    if (cleanup.removed) revalidatePath(`/jobs/${jobId}`)
     if (result.merges.length) {
       await logCurrent("quotation.smart_merge", "job", jobId, { merges: result.merges })
       revalidatePath(`/jobs/${jobId}`)

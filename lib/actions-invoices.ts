@@ -16,6 +16,7 @@ import { extractInvoice } from "@/lib/invoice-ocr"
 import { suggestSalePrice } from "@/lib/pricing"
 import { isInvoiceLinked } from "@/lib/quote-duplicates"
 import { linkInvoiceToOpenQuote } from "@/lib/quote-invoice"
+import { reconcileJobParts } from "@/lib/job-parts-reconcile"
 
 // Both purchasing managers and parts staff capture and receive supplier
 // invoices, matching the nav, layout and dashboard buttons.
@@ -805,6 +806,7 @@ export async function addManualPurchasedPart(
       { name, partNumber, quantity, unitPrice: salePrice, detail: "Manual purchase (no invoice)" },
       n(settings.vat_rate, 5),
     )
+    await reconcileJobs([jobId])
     await logCurrent("parts.manual_purchase", "job", jobId, { name, partNumber, unitCost, salePrice, quantity })
     revalidatePath(`/jobs/${jobId}`)
     return { ok: true, partNumber, salePrice }
@@ -920,6 +922,7 @@ export async function assignInvoiceLineToJob(itemId: string, jobId: string): Pro
       n(settings.vat_rate, 5),
     )
 
+    await reconcileJobs([jobId])
     await logCurrent("supplier_invoice.line_assigned", "supplier_invoice", it.invoice_id as string, { itemId, jobId })
     revalidatePath(`/purchasing/invoices/${it.invoice_id}`)
     revalidatePath(`/jobs/${jobId}`)
@@ -1517,10 +1520,28 @@ async function applyConfirm(
 }
 
 /** Confirm an already-saved draft (standalone confirm button). */
+/** After parts land on job cards, remove quote lines the invoice just fulfilled. Never blocks the confirm. */
+async function reconcileJobs(jobIds: (string | null | undefined)[]) {
+  const db = createServiceClient()
+  for (const jobId of [...new Set(jobIds.filter(Boolean) as string[])]) {
+    try {
+      await reconcileJobParts(db, jobId, { useAI: true })
+    } catch (e) {
+      console.error("[reconcileJobs] failed for job", jobId, e)
+    }
+  }
+}
+
+async function reconcileInvoiceJobs(invoiceId: string) {
+  const { data } = await createServiceClient().from("supplier_invoice_items").select("job_id").eq("invoice_id", invoiceId)
+  await reconcileJobs(((data as { job_id: string | null }[] | null) ?? []).map((r) => r.job_id))
+}
+
 export async function confirmSupplierInvoice(id: string): Promise<ConfirmResult> {
   try {
     const { supabase, ctx, userId } = await guard()
     const summary = await applyConfirm(supabase, ctx, userId, id)
+    await reconcileInvoiceJobs(id)
     return { ok: true, summary }
   } catch (e) {
     return toActionError(e, "Could not confirm the invoice.")
@@ -1553,6 +1574,7 @@ export async function saveAndConfirmSupplierInvoice(payload: SaveDraftPayload): 
     const { supabase, ctx, userId } = await guard()
     await applyDraft(supabase, ctx, payload)
     const summary = await applyConfirm(supabase, ctx, userId, payload.id)
+    await reconcileInvoiceJobs(payload.id)
     return { ok: true, summary }
   } catch (e) {
     return toActionError(e, "Could not confirm the invoice.")

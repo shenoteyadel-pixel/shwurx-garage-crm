@@ -4,6 +4,28 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requirePermission, logCurrent } from "@/lib/rbac/context"
 import { findJobDuplicateParts } from "@/lib/part-costs"
+import { createServiceClient } from "@/lib/supabase/server"
+import { reconcileJobParts, type ReconcileResult } from "@/lib/job-parts-reconcile"
+
+/**
+ * Smart parts merge: pairs every supplier-invoice line on the job card with the
+ * quote line it fulfils and keeps one line at the higher amount.
+ */
+export async function smartMergeJobParts(
+  jobId: string,
+): Promise<{ ok: true; result: ReconcileResult } | { ok: false; error: string }> {
+  try {
+    await requirePermission("quotations.edit")
+    const result = await reconcileJobParts(createServiceClient(), jobId, { useAI: true })
+    if (result.merges.length) {
+      await logCurrent("quotation.smart_merge", "job", jobId, { merges: result.merges })
+      revalidatePath(`/jobs/${jobId}`)
+    }
+    return { ok: true, result }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not merge the parts." }
+  }
+}
 
 const num = (v: unknown) => {
   const x = Number(v)

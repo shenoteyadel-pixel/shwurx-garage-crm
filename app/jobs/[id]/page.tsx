@@ -5,6 +5,7 @@ import { AppShell } from "@/components/app-shell"
 import { Badge, Card, UAEPlate } from "@/components/ui"
 import { StageStepper } from "@/components/stage-stepper"
 import { QuotationBuilder, type CatalogPart } from "@/components/quotation-builder"
+import { SmartMergeParts } from "@/components/smart-merge-parts"
 import { PartsManager } from "@/components/parts-manager"
 import { ManualPurchasePart } from "@/components/manual-purchase-part"
 import { SendPartsToPurchaser } from "@/components/send-parts-to-purchaser"
@@ -490,6 +491,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               canEditLocked={isOwner}
               partCatalog={partCatalog}
             />
+              {(sessionCtx?.permissions.has("quotations.edit") ?? false) && <SmartMergeParts jobId={job.id} />}
               {duplicateGroups.length > 0 && (
                 <DuplicatePartsDialog
                   key={duplicateGroups.map((g) => g.key).join(",")}

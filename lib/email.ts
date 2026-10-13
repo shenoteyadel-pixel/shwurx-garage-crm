@@ -207,7 +207,7 @@ export function invoiceLinkEmail(opts: {
       <tr><td style="padding:4px 0;color:#8b93a1;font-size:12px;text-transform:uppercase;letter-spacing:1px">Amount due</td>
         <td style="padding:4px 0;color:#ffffff;font-size:14px;font-weight:600">${esc(opts.balance)}</td></tr>
     </table>
-    <p style="margin-top:14px">Review your full invoice and pay securely by card using the button below.</p>`
+    <p style="margin-top:14px">Review your full invoice and choose how to pay (online or bank transfer) using the button below.</p>`
   return shell("Your invoice is ready", body, { label: "View & pay invoice", url: opts.url })
 }
 

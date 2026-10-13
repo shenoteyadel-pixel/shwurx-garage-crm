@@ -31,6 +31,18 @@ const num = (v: FormDataEntryValue | null, d = 0) => {
 }
 const str = (v: FormDataEntryValue | null) => (v ? String(v) : "") || null
 
+/** Only http(s) links are accepted, so a `javascript:` URL can't reach customers. */
+function httpsUrl(v: FormDataEntryValue | null): string | null {
+  const raw = str(v)?.trim()
+  if (!raw) return null
+  try {
+    const u = new URL(raw)
+    return u.protocol === "https:" || u.protocol === "http:" ? u.toString() : null
+  } catch {
+    return null
+  }
+}
+
 /* ============================ Settings ============================ */
 export async function saveSettings(formData: FormData) {
   const { supabase } = await guard("settings.manage")
@@ -52,6 +64,15 @@ export async function saveSettings(formData: FormData) {
     pricing_method: String(formData.get("pricing_method") || "markup") === "margin" ? "margin" : "markup",
     vat_rate: Math.max(0, num(formData.get("vat_rate"), 5)),
     parts_release_mode: String(formData.get("parts_release_mode") || "auto") === "advisor" ? "advisor" : "auto",
+    bank_account_name: str(formData.get("bank_account_name")),
+    bank_name: str(formData.get("bank_name")),
+    bank_iban: str(formData.get("bank_iban"))?.replace(/\s+/g, "").toUpperCase() || null,
+    bank_account_number: str(formData.get("bank_account_number")),
+    bank_swift: str(formData.get("bank_swift"))?.replace(/\s+/g, "").toUpperCase() || null,
+    bank_note: str(formData.get("bank_note")),
+    default_payment_link_url: httpsUrl(formData.get("default_payment_link_url")),
+    default_payment_link_label: str(formData.get("default_payment_link_label")),
+    card_payments_enabled: String(formData.get("card_payments_enabled") || "") === "on",
     updated_at: new Date().toISOString(),
   }
   const { error } = await supabase.from("settings").update(patch).eq("id", 1)

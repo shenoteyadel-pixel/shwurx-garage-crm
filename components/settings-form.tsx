@@ -10,7 +10,7 @@ type SaveStatus = "idle" | "pending" | "saving" | "saved" | "error" | "invalid"
 
 const AUTOSAVE_DELAY_MS = 1200
 
-export function SettingsForm({ settings }: { settings: Settings }) {
+export function SettingsForm({ settings, stripeLive = false }: { settings: Settings; stripeLive?: boolean }) {
   const formRef = useRef<HTMLFormElement>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [pending, start] = useTransition()
@@ -179,8 +179,26 @@ export function SettingsForm({ settings }: { settings: Settings }) {
         </h2>
         <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
           These options appear on the invoice page the customer opens from WhatsApp or email. Leave a field empty to
-          hide it.
+          hide it. Customers always see &quot;Pay at the garage&quot; with WhatsApp and Call buttons using the phone above.
         </p>
+        <div
+          role="status"
+          className={`mb-4 rounded-lg border p-3 text-xs leading-relaxed ${
+            stripeLive
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+              : "border-amber-500/30 bg-amber-500/10 text-amber-300"
+          }`}
+        >
+          {stripeLive ? (
+            <>Stripe is LIVE. Customers can pay by card on the invoice page.</>
+          ) : (
+            <>
+              Stripe is in TEST mode, so card payment is hidden from customers (test mode cannot take real money). To
+              turn it on, activate your Stripe account and replace STRIPE_SECRET_KEY and
+              NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY with your live keys (sk_live_ / pk_live_) in Vars.
+            </>
+          )}
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Account name" name="bank_account_name" defaultValue={settings.bank_account_name} placeholder="SHENOTEY ESKANDER AUTOMOTIVE CENTER" />
           <Field label="Bank" name="bank_name" defaultValue={settings.bank_name} placeholder="Emirates NBD" />

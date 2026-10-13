@@ -97,6 +97,15 @@ export type PaymentOptions = {
     swift: string | null
     note: string | null
   } | null
+  contact: { phone: string; whatsapp: string } | null
+}
+
+/** UAE-friendly: "050 123 4567" → "971501234567" for wa.me links. */
+function toWhatsAppNumber(phone: string) {
+  let d = phone.replace(/\D/g, "")
+  if (d.startsWith("00")) d = d.slice(2)
+  else if (d.startsWith("0")) d = `971${d.slice(1)}`
+  return d
 }
 
 /** Load the customer-facing invoice for a public token (service client, no auth). */
@@ -114,7 +123,7 @@ export async function getPublicInvoice(token: string): Promise<PublicInvoice | n
     svc
       .from("settings")
       .select(
-        "bank_account_name, bank_name, bank_iban, bank_account_number, bank_swift, bank_note, default_payment_link_url, default_payment_link_label, card_payments_enabled",
+        "bank_account_name, bank_name, bank_iban, bank_account_number, bank_swift, bank_note, default_payment_link_url, default_payment_link_label, card_payments_enabled, phone",
       )
       .eq("id", 1)
       .maybeSingle(),
@@ -142,6 +151,9 @@ export async function getPublicInvoice(token: string): Promise<PublicInvoice | n
           swift: s?.bank_swift ?? null,
           note: s?.bank_note ?? null,
         }
+      : null,
+    contact: s?.phone?.trim()
+      ? { phone: s.phone.trim() as string, whatsapp: toWhatsAppNumber(s.phone as string) }
       : null,
   }
 

@@ -2,6 +2,7 @@ import { getSettings } from "@/lib/settings"
 import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { SettingsForm } from "@/components/settings-form"
+import { stripeLiveMode } from "@/lib/stripe"
 
 export const metadata = { title: "Settings · SHWURX Auto Service Center" }
 
@@ -16,7 +17,7 @@ export default async function SettingsPage() {
             These details appear on every quotation, invoice, and purchase order.
           </p>
         </div>
-        <SettingsForm settings={settings} />
+        <SettingsForm settings={settings} stripeLive={stripeLiveMode} />
       </div>
     </AppShell>
   )

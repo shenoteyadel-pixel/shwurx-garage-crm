@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation"
-import { CheckCircle2, ExternalLink, ShieldCheck } from "lucide-react"
+import { CheckCircle2, ExternalLink, MessageCircle, Phone, ShieldCheck, Store } from "lucide-react"
 import { BankDetails } from "./bank-details"
 import { formatCurrency } from "@/lib/utils"
 import { getPublicInvoice, confirmInvoiceCheckout } from "@/lib/actions-invoice-pay"
@@ -116,11 +116,38 @@ export default async function PublicInvoicePage({
               </section>
             )}
 
-            {!inv.pay.link && !inv.pay.bank && !inv.pay.cardEnabled && (
-              <p className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
-                Please contact us to arrange payment for this invoice.
+            <section aria-label="Other ways to pay" className="rounded-xl border border-border bg-card p-5">
+              <div className="mb-1 flex items-center gap-2 text-sm font-medium">
+                <Store className="h-4 w-4 text-primary" aria-hidden="true" />
+                Pay at the garage
+              </div>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                You can pay by cash or card when you collect your car
+                {inv.pay.contact ? ", or contact us for any other payment method." : "."}
               </p>
-            )}
+              {inv.pay.contact && (
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <a
+                    href={`https://wa.me/${inv.pay.contact.whatsapp}?text=${encodeURIComponent(
+                      `Hello, I would like to pay invoice ${inv.invoice_number}.`,
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted"
+                  >
+                    <MessageCircle className="h-4 w-4" aria-hidden="true" />
+                    WhatsApp us
+                  </a>
+                  <a
+                    href={`tel:${inv.pay.contact.phone.replace(/\s/g, "")}`}
+                    className="flex items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted"
+                  >
+                    <Phone className="h-4 w-4" aria-hidden="true" />
+                    Call {inv.pay.contact.phone}
+                  </a>
+                </div>
+              )}
+            </section>
           </div>
         )}
       </main>

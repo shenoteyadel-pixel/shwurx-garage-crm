@@ -1,10 +1,11 @@
 import Link from "next/link"
-import { Car, ReceiptText, Search, Users, X } from "lucide-react"
+import { Archive, Car, ReceiptText, Search, Users, X } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 import { AppShell } from "@/components/app-shell"
 import { cn } from "@/lib/utils"
 import {
   isStatus,
+  loadClosedJobs,
   loadHistory,
   searchHistory,
   summarizeCustomers,
@@ -14,14 +15,16 @@ import {
 import { HistoryInvoices } from "@/components/history/history-invoices"
 import { HistoryCustomers, HistoryVehicles } from "@/components/history/history-groups"
 import { STATUS_LABEL, aed } from "@/components/history/history-shared"
+import { HistoryClosedJobs } from "@/components/history/history-closed-jobs"
 
 export const dynamic = "force-dynamic"
 
-type View = "invoices" | "customers" | "vehicles"
+type View = "invoices" | "customers" | "vehicles" | "closed"
 const VIEWS: { key: View; label: string; icon: typeof ReceiptText }[] = [
   { key: "invoices", label: "Invoices", icon: ReceiptText },
   { key: "customers", label: "Customers", icon: Users },
   { key: "vehicles", label: "Cars", icon: Car },
+  { key: "closed", label: "Closed jobs", icon: Archive },
 ]
 
 function buildHref(params: { view: View; q: string; status: HistoryStatus | null }) {
@@ -40,16 +43,18 @@ export default async function HistoryPage({
 }) {
   const sp = await searchParams
   const q = (sp.q ?? "").slice(0, 100).trim()
-  const view: View = sp.view === "customers" || sp.view === "vehicles" ? sp.view : "invoices"
+  const view: View =
+    sp.view === "customers" || sp.view === "vehicles" || sp.view === "closed" ? sp.view : "invoices"
   const status = isStatus(sp.status) ? sp.status : null
 
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  const [{ data: profile }, all] = await Promise.all([
+  const [{ data: profile }, all, closedJobs] = await Promise.all([
     supabase.from("profiles").select("full_name, role").eq("id", user!.id).maybeSingle(),
     loadHistory(),
+    view === "closed" ? loadClosedJobs(q) : Promise.resolve([]),
   ])
 
   const matched = searchHistory(all, q)
@@ -65,7 +70,16 @@ export default async function HistoryPage({
 
   const customers = view === "customers" ? summarizeCustomers(rows) : []
   const vehicles = view === "vehicles" ? summarizeVehicles(rows) : []
-  const resultCount = view === "customers" ? customers.length : view === "vehicles" ? vehicles.length : rows.length
+  const resultCount =
+    view === "customers"
+      ? customers.length
+      : view === "vehicles"
+        ? vehicles.length
+        : view === "closed"
+          ? closedJobs.length
+          : rows.length
+  const noun =
+    view === "customers" ? "customer" : view === "vehicles" ? "car" : view === "closed" ? "closed job card" : "invoice"
 
   return (
     <AppShell user={{ name: profile?.full_name || user!.email || "Staff", role: profile?.role || "advisor" }}>
@@ -150,7 +164,7 @@ export default async function HistoryPage({
             })}
           </nav>
 
-          <div className="flex flex-wrap gap-1.5" aria-label="Filter by status">
+          <div className={cn("flex flex-wrap gap-1.5", view === "closed" && "hidden")} aria-label="Filter by status">
             {([null, "paid", "partial", "unpaid", "cancelled"] as (HistoryStatus | null)[]).map((s) => {
               const active = s === status
               const count = s ? counts[s] : matched.length
@@ -174,7 +188,7 @@ export default async function HistoryPage({
         </div>
 
         <p className="text-xs text-muted-foreground" aria-live="polite">
-          {resultCount} {view === "customers" ? "customer" : view === "vehicles" ? "car" : "invoice"}
+          {resultCount} {noun}
           {resultCount === 1 ? "" : "s"}
           {q ? ` matching “${q}”` : ""}
         </p>
@@ -182,11 +196,15 @@ export default async function HistoryPage({
         {resultCount === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
             <Search className="mb-3 h-8 w-8 text-muted-foreground/60" aria-hidden="true" />
-            <p className="text-sm font-medium">{q || status ? "Nothing matches this search" : "No invoices yet"}</p>
+            <p className="text-sm font-medium">
+              {q || status ? "Nothing matches this search" : view === "closed" ? "No closed job cards" : "No invoices yet"}
+            </p>
             <p className="text-xs text-muted-foreground">
               {q || status ? "Try a plate number, mobile or invoice number." : "Invoices appear here once issued."}
             </p>
           </div>
+        ) : view === "closed" ? (
+          <HistoryClosedJobs rows={closedJobs} canRestore={profile?.role === "owner"} />
         ) : view === "customers" ? (
           <HistoryCustomers rows={customers} />
         ) : view === "vehicles" ? (

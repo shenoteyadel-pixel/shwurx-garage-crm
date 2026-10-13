@@ -6,6 +6,7 @@ import { Button, Input, Label, Select, Combo } from "@/components/ui"
 import { Modal } from "@/components/modal"
 import { updateJobDetails, deleteJob } from "@/lib/actions"
 import { identifyVehicle } from "@/lib/actions-vehicle-id"
+import { CLOSE_REASONS, type CloseReason } from "@/lib/job-close"
 import { UAE_EMIRATES, COMMON_COLORS } from "@/lib/constants"
 import { BODY_TYPES, inferBodyType, MODEL_SUGGESTIONS } from "@/lib/vehicle"
 import {
@@ -63,6 +64,8 @@ export function EditJobVehicle({
   const [confirmText, setConfirmText] = useState("")
   const [deleting, startDelete] = useTransition()
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [closeReason, setCloseReason] = useState<CloseReason>("customer_took_car")
+  const [closeNote, setCloseNote] = useState("")
 
   // Controlled so the model/variant option lists react to make + year.
   const [make, setMake] = useState(job.vehicle_make ?? "")
@@ -367,10 +370,43 @@ export function EditJobVehicle({
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
                   This moves job card{" "}
-                  <span className="font-mono text-foreground">{jobNumber ?? ""}</span> to the Recycle
-                  Bin. It will be hidden from Car Flow, job lists, CRM and history, but can be restored
-                  later.
+                  <span className="font-mono text-foreground">{jobNumber ?? ""}</span> out of Car Flow
+                  and job lists. The customer, car and job details stay saved under{" "}
+                  <span className="text-foreground">History → Closed jobs</span>, where you can find
+                  and restore them later.
                 </p>
+                <fieldset className="space-y-1.5">
+                  <legend className="mb-1.5 text-sm font-medium">Reason</legend>
+                  <div className="grid gap-1.5">
+                    {CLOSE_REASONS.map((r) => (
+                      <label
+                        key={r.key}
+                        className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/10"
+                      >
+                        <input
+                          type="radio"
+                          name="close-reason"
+                          value={r.key}
+                          checked={closeReason === r.key}
+                          onChange={() => setCloseReason(r.key)}
+                          className="accent-primary"
+                        />
+                        {r.label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <div className="space-y-1.5">
+                  <Label htmlFor="close-note">Note (optional)</Label>
+                  <Input
+                    id="close-note"
+                    value={closeNote}
+                    onChange={(e) => setCloseNote(e.target.value)}
+                    placeholder="e.g. Customer will return next month"
+                    maxLength={500}
+                    autoComplete="off"
+                  />
+                </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="confirm-delete-job">
                     Type <span className="font-mono text-foreground">DELETE</span> to confirm
@@ -405,7 +441,7 @@ export function EditJobVehicle({
                       setDeleteError(null)
                       startDelete(async () => {
                         try {
-                          await deleteJob(job.id)
+                          await deleteJob(job.id, closeReason, closeNote)
                           // deleteJob redirects to /flow on success.
                         } catch (e: any) {
                           setDeleteError(e?.message ?? "Failed to delete job card")
@@ -414,7 +450,7 @@ export function EditJobVehicle({
                     }}
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
-                    {deleting ? "Deleting…" : "Move to Recycle Bin"}
+                    {deleting ? "Closing…" : "Close job card"}
                   </Button>
                 </div>
               </div>

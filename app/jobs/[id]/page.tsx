@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
+import { reconcileJobParts } from "@/lib/job-parts-reconcile"
 import { AppShell } from "@/components/app-shell"
 import { Badge, Card, UAEPlate } from "@/components/ui"
 import { StageStepper } from "@/components/stage-stepper"
@@ -65,6 +66,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const { data: job } = await supabase.from("jobs").select("*").eq("id", id).maybeSingle()
   if (!job || job.deleted_at) notFound()
+
+  // Jobs whose bills landed before auto-merge existed (or via an older path) still carry the
+  // quoted line next to the bought one. Fold them together before reading the card.
+  try {
+    await reconcileJobParts(createServiceClient(), id)
+  } catch (e) {
+    console.error("[job page] parts reconcile failed", id, e)
+  }
 
   const { data: photos } = await supabase
     .from("vehicle_photos")

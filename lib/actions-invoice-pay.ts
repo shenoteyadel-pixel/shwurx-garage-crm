@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
-import { stripe } from "@/lib/stripe"
+import { stripe, stripeLiveMode } from "@/lib/stripe"
 import { appBaseUrl } from "@/lib/account-links"
 import { sendEmail, invoiceLinkEmail } from "@/lib/email"
 import { waMeLink } from "@/lib/whatsapp"
@@ -32,7 +32,7 @@ export async function whatsappInvoiceLink(invoiceId: string): Promise<{ ok: bool
     `Hello ${inv.customer_name || "there"}, this is SHWURX Auto Service Center.\n\n` +
     `Your invoice ${inv.invoice_number}${inv.vehicle_desc ? ` for ${inv.vehicle_desc}` : ""} is ready.\n` +
     `Amount due: ${money(balance)}\n\n` +
-    `View your invoice and pay securely by card here:\n${link}\n\nThank you.`
+    `View your invoice and payment options (online or bank transfer) here:\n${link}\n\nThank you.`
   return { ok: true, url: waMeLink(inv.customer_mobile, message) }
 }
 
@@ -83,21 +83,70 @@ type PublicInvoice = {
   vehicle_desc: string | null
   plate: string | null
   public_token: string
+  pay: PaymentOptions
+}
+
+export type PaymentOptions = {
+  cardEnabled: boolean
+  link: { url: string; label: string } | null
+  bank: {
+    accountName: string | null
+    bankName: string | null
+    iban: string | null
+    accountNumber: string | null
+    swift: string | null
+    note: string | null
+  } | null
 }
 
 /** Load the customer-facing invoice for a public token (service client, no auth). */
 export async function getPublicInvoice(token: string): Promise<PublicInvoice | null> {
   if (!token) return null
   const svc = createServiceClient()
-  const { data } = await svc
-    .from("invoices")
-    .select("id, invoice_number, status, total, amount_paid, customer_name, vehicle_desc, plate, public_token")
-    .eq("public_token", token)
-    .maybeSingle()
+  const [{ data }, { data: s }] = await Promise.all([
+    svc
+      .from("invoices")
+      .select(
+        "id, invoice_number, status, total, amount_paid, customer_name, vehicle_desc, plate, public_token, payment_link_url, payment_link_label, payment_link_enabled",
+      )
+      .eq("public_token", token)
+      .maybeSingle(),
+    svc
+      .from("settings")
+      .select(
+        "bank_account_name, bank_name, bank_iban, bank_account_number, bank_swift, bank_note, default_payment_link_url, default_payment_link_label, card_payments_enabled",
+      )
+      .eq("id", 1)
+      .maybeSingle(),
+  ])
   if (!data) return null
   const total = Number(data.total) || 0
   const amount_paid = Number(data.amount_paid) || 0
+
+  const link =
+    data.payment_link_enabled && data.payment_link_url
+      ? { url: data.payment_link_url as string, label: (data.payment_link_label as string) || "Pay online" }
+      : s?.default_payment_link_url
+        ? { url: s.default_payment_link_url as string, label: (s.default_payment_link_label as string) || "Pay online" }
+        : null
+  const hasBank = !!(s?.bank_iban || s?.bank_account_number)
+  const pay: PaymentOptions = {
+    cardEnabled: stripeLiveMode && (s?.card_payments_enabled ?? true),
+    link,
+    bank: hasBank
+      ? {
+          accountName: s?.bank_account_name ?? null,
+          bankName: s?.bank_name ?? null,
+          iban: s?.bank_iban ?? null,
+          accountNumber: s?.bank_account_number ?? null,
+          swift: s?.bank_swift ?? null,
+          note: s?.bank_note ?? null,
+        }
+      : null,
+  }
+
   return {
+    pay,
     id: data.id,
     invoice_number: data.invoice_number,
     status: data.status,
@@ -121,6 +170,7 @@ export async function createInvoiceCheckoutSession(token: string): Promise<{ cli
   if (!inv) return { clientSecret: null, error: "Invoice not found" }
   if (inv.status === "cancelled") return { clientSecret: null, error: "This invoice was cancelled" }
   if (inv.balance <= 0.01) return { clientSecret: null, error: "This invoice is already paid" }
+  if (!inv.pay.cardEnabled) return { clientSecret: null, error: "Card payment is not available" }
 
   const amountInFils = Math.round(inv.balance * 100)
   const vehicle = inv.vehicle_desc ? ` · ${inv.vehicle_desc}` : ""

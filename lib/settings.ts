@@ -34,6 +34,17 @@ export type Settings = {
   gtm_container_id: string | null
   /** Meta (Facebook) Pixel ID. */
   meta_pixel_id: string | null
+  bank_account_name: string | null
+  bank_name: string | null
+  bank_iban: string | null
+  bank_account_number: string | null
+  bank_swift: string | null
+  bank_note: string | null
+  /** Fallback external pay link shown on every invoice that has no link of its own. */
+  default_payment_link_url: string | null
+  default_payment_link_label: string | null
+  /** Offer Stripe card checkout on the customer pay page (only when Stripe is in live mode). */
+  card_payments_enabled: boolean
 }
 
 const DEFAULTS: Settings = {
@@ -60,6 +71,15 @@ const DEFAULTS: Settings = {
   ga4_measurement_id: null,
   gtm_container_id: null,
   meta_pixel_id: null,
+  bank_account_name: null,
+  bank_name: null,
+  bank_iban: null,
+  bank_account_number: null,
+  bank_swift: null,
+  bank_note: null,
+  default_payment_link_url: null,
+  default_payment_link_label: null,
+  card_payments_enabled: true,
 }
 
 // Fetch the singleton company settings row (id=1). Falls back to sane defaults

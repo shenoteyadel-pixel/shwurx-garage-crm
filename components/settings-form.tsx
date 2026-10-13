@@ -174,6 +174,45 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           </div>
         </div>
 
+        <h2 id="payments" className="mb-2 mt-8 scroll-mt-24 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Customer payments
+        </h2>
+        <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+          These options appear on the invoice page the customer opens from WhatsApp or email. Leave a field empty to
+          hide it.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Account name" name="bank_account_name" defaultValue={settings.bank_account_name} placeholder="SHENOTEY ESKANDER AUTOMOTIVE CENTER" />
+          <Field label="Bank" name="bank_name" defaultValue={settings.bank_name} placeholder="Emirates NBD" />
+          <Field label="IBAN" name="bank_iban" defaultValue={settings.bank_iban} placeholder="AE07 0331 2345 6789 0123 456" />
+          <Field label="Account number" name="bank_account_number" defaultValue={settings.bank_account_number} />
+          <Field label="SWIFT / BIC" name="bank_swift" defaultValue={settings.bank_swift} />
+          <Field label="Transfer note for customer" name="bank_note" defaultValue={settings.bank_note} placeholder="Use the invoice number as reference" />
+          <Field
+            label="Default external payment link"
+            name="default_payment_link_url"
+            type="url"
+            defaultValue={settings.default_payment_link_url}
+            placeholder="https://pay.example.com/shwurx"
+          />
+          <Field label="Link button label" name="default_payment_link_label" defaultValue={settings.default_payment_link_label} placeholder="Pay online" />
+          <label className="flex items-start gap-2 text-sm sm:col-span-2">
+            <input
+              type="checkbox"
+              name="card_payments_enabled"
+              defaultChecked={settings.card_payments_enabled}
+              className="mt-0.5 h-4 w-4 rounded border-border"
+            />
+            <span>
+              Offer card payment through Stripe
+              <span className="block text-xs text-muted-foreground">
+                Card checkout only shows once Stripe uses live keys. While Stripe is in test mode, customers see bank
+                transfer and payment links only.
+              </span>
+            </span>
+          </label>
+        </div>
+
         <h2 id="tracking" className="mb-2 mt-8 scroll-mt-24 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Customer tracking
         </h2>

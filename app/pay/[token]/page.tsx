@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
-import { CheckCircle2, ShieldCheck } from "lucide-react"
+import { CheckCircle2, ExternalLink, ShieldCheck } from "lucide-react"
+import { BankDetails } from "./bank-details"
 import { formatCurrency } from "@/lib/utils"
 import { getPublicInvoice, confirmInvoiceCheckout } from "@/lib/actions-invoice-pay"
 import { InvoiceCheckout } from "./invoice-checkout"
@@ -90,18 +91,43 @@ export default async function PublicInvoicePage({
             </div>
           )
         ) : (
-          <>
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium">
-              <ShieldCheck className="h-4 w-4 text-primary" />
-              Pay securely by card
-            </div>
-            <InvoiceCheckout token={token} />
-          </>
+          <div className="flex flex-col gap-5">
+            {inv.pay.link && (
+              <a
+                href={inv.pay.link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-base font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                {inv.pay.link.label}
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+              </a>
+            )}
+
+            {inv.pay.bank && <BankDetails bank={inv.pay.bank} reference={inv.invoice_number} />}
+
+            {inv.pay.cardEnabled && (
+              <section aria-label="Card payment">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+                  <ShieldCheck className="h-4 w-4 text-primary" />
+                  Pay securely by card
+                </div>
+                <InvoiceCheckout token={token} />
+              </section>
+            )}
+
+            {!inv.pay.link && !inv.pay.bank && !inv.pay.cardEnabled && (
+              <p className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+                Please contact us to arrange payment for this invoice.
+              </p>
+            )}
+          </div>
         )}
       </main>
 
       <footer className="mx-auto max-w-xl px-4 py-8 text-center text-xs text-muted-foreground">
-        Secured by SHWURX Auto Service Center · Payments are processed securely by Stripe.
+        SHWURX Auto Service Center
+        {inv.pay.cardEnabled ? " · Card payments are processed securely by Stripe." : ""}
       </footer>
     </div>
   )

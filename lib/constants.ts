@@ -131,6 +131,11 @@ export const UAE_EMIRATES = [
   { value: "Umm Al Quwain", label: "Umm Al Quwain" },
   { value: "Ras Al Khaimah", label: "Ras Al Khaimah" },
   { value: "Fujairah", label: "Fujairah" },
+  { value: "Saudi Arabia", label: "Saudi Arabia (KSA)" },
+  { value: "Qatar", label: "Qatar" },
+  { value: "Kuwait", label: "Kuwait" },
+  { value: "Bahrain", label: "Bahrain" },
+  { value: "Oman", label: "Oman" },
 ]
 
 // Common suggestions for the free-text vehicle comboboxes.

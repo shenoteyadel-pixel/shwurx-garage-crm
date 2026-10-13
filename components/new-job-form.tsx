@@ -644,7 +644,7 @@ function NewVehicleForm({
       </div>
 
       <div>
-        <Label>Number plate (UAE)</Label>
+        <Label>Number plate (UAE / GCC)</Label>
         <div className="grid gap-3 sm:grid-cols-3">
           <Select value={plateEmirate} onChange={(e) => setPlateEmirate(e.target.value)} aria-label="Emirate">
             {UAE_EMIRATES.map((em) => (

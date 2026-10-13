@@ -170,6 +170,55 @@ export function searchHistory(rows: HistoryRow[], query: string): HistoryRow[] {
   })
 }
 
+export type ClosedJobRow = {
+  id: string
+  jobNumber: string
+  customerName: string | null
+  customerMobile: string | null
+  vehicle: string
+  plate: string
+  vin: string | null
+  openedAt: string
+  closedAt: string
+  closedBy: string
+  reason: string | null
+  note: string | null
+}
+
+/** Job cards the Owner closed (soft-deleted), kept with full customer + car details. */
+export async function loadClosedJobs(query: string): Promise<ClosedJobRow[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("jobs")
+    .select(
+      "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, plate_emirate, plate_code, plate_number, vin, created_at, deleted_at, close_reason, close_note, closer:profiles!jobs_deleted_by_fkey(full_name)",
+    )
+    .not("deleted_at", "is", null)
+    .order("deleted_at", { ascending: false })
+    .limit(500)
+
+  const rows: ClosedJobRow[] = ((data ?? []) as any[]).map((r) => ({
+    id: r.id,
+    jobNumber: r.job_number ?? "Job card",
+    customerName: r.customer_name ?? null,
+    customerMobile: r.customer_mobile ?? null,
+    vehicle: [r.vehicle_year, r.vehicle_make, r.vehicle_model].filter(Boolean).join(" ") || "Vehicle",
+    plate: [r.plate_emirate, r.plate_code, r.plate_number].filter(Boolean).join(" "),
+    vin: r.vin ?? null,
+    openedAt: r.created_at,
+    closedAt: r.deleted_at,
+    closedBy: (Array.isArray(r.closer) ? r.closer[0]?.full_name : r.closer?.full_name) || "Owner",
+    reason: r.close_reason ?? null,
+    note: r.close_note ?? null,
+  }))
+
+  const q = compact(query)
+  if (!q) return rows
+  return rows.filter((r) =>
+    [r.jobNumber, r.customerName, r.customerMobile, r.vehicle, r.plate, r.vin].some((v) => v && compact(v).includes(q)),
+  )
+}
+
 export function isStatus(s: string | undefined): s is HistoryStatus {
   return !!s && (STATUSES as string[]).includes(s)
 }

@@ -22,6 +22,7 @@ import { bestPartMatch, isSamePart, partDocLink } from "@/lib/part-match"
 import { syncPendingApproval } from "@/lib/actions-approvals"
 import { resyncQuotationAddons } from "@/lib/addons"
 import { getSettings } from "@/lib/settings"
+import { isCloseReason } from "@/lib/job-close"
 import {
   PHOTO_KINDS,
   TRADE_VALUES,
@@ -541,15 +542,22 @@ export async function updateJobDetails(jobId: string, formData: FormData) {
  * hard delete would either fail or sever accounting history. Setting deleted_at
  * hides it everywhere while keeping it fully restorable from the Recycle Bin.
  */
-export async function deleteJob(jobId: string) {
+export async function deleteJob(jobId: string, reason?: string, note?: string) {
   const { supabase, ctx } = await guard("jobs.delete")
   if (ctx.role !== "owner") throw new Error("Only the Owner can delete job cards.")
+  const closeReason = isCloseReason(reason) ? reason : "other"
+  const closeNote = (note ?? "").trim().slice(0, 500) || null
   const { error } = await supabase
     .from("jobs")
-    .update({ deleted_at: new Date().toISOString(), deleted_by: ctx.userId })
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: ctx.userId,
+      close_reason: closeReason,
+      close_note: closeNote,
+    })
     .eq("id", jobId)
   if (error) throw new Error(error.message)
-  await logAction(ctx, "job.delete", "job", jobId, {})
+  await logAction(ctx, "job.delete", "job", jobId, { reason: closeReason, note: closeNote })
   revalidatePath("/flow")
   revalidatePath("/crm")
   revalidatePath("/jobs")

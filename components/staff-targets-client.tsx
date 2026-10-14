@@ -6,6 +6,7 @@ import { useState, useTransition } from "react"
 import { Check, ShoppingCart, Sparkles, Trash2, UserCog, Wrench } from "lucide-react"
 import { formatCurrency as money } from "@/lib/utils"
 import { Card, GhostButton, PrimaryButton } from "@/components/ui"
+import { WorkshopTargetCard, type WorkshopTargetData } from "@/components/workshop-target-card"
 import {
   removeStaffTarget,
   saveStaffTarget,
@@ -45,12 +46,14 @@ function shortMonth(month: string) {
 
 export function StaffTargetsClient({
   month,
+  workshop,
   purchasers,
   advisors,
   technicians,
   staff,
 }: {
   month: string
+  workshop: WorkshopTargetData
   purchasers: TargetRow[]
   advisors: TargetRow[]
   technicians: TargetRow[]
@@ -120,6 +123,13 @@ export function StaffTargetsClient({
           Staff Targets
         </span>
       </div>
+
+      <WorkshopTargetCard
+        key={`${month}-${workshop.target?.fromMonth ?? ""}-${workshop.target?.amount ?? 0}`}
+        month={month}
+        data={workshop}
+        staffSalesTargets={advisors.reduce((t, r) => t + r.target, 0)}
+      />
 
       <Card className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-start gap-3">

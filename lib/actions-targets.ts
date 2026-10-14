@@ -72,6 +72,41 @@ export async function removeStaffTarget(userId: string, kind: TargetKind) {
   return { ok: true as const }
 }
 
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
+
+export async function saveWorkshopTarget(month: string, amount: number) {
+  const denied = await requireOwner()
+  if (denied) return denied
+  if (!MONTH.test(month)) return { ok: false as const, error: "Invalid month." }
+  const value = cleanAmount(amount)
+  if (value === null) return { ok: false as const, error: "Enter a target between 0 and 100,000,000." }
+
+  const { error } = await createServiceClient()
+    .from("workshop_targets")
+    .upsert(
+      { month, revenue_target: value, updated_by: await currentUserId(), updated_at: new Date().toISOString() },
+      { onConflict: "month" },
+    )
+  if (error) return { ok: false as const, error: error.message }
+
+  await logCurrent("targets.workshop.save", "user", null, { month, amount: value })
+  revalidatePath("/reports/staff-targets")
+  return { ok: true as const }
+}
+
+export async function removeWorkshopTarget(month: string) {
+  const denied = await requireOwner()
+  if (denied) return denied
+  if (!MONTH.test(month)) return { ok: false as const, error: "Invalid month." }
+
+  const { error } = await createServiceClient().from("workshop_targets").delete().eq("month", month)
+  if (error) return { ok: false as const, error: error.message }
+
+  await logCurrent("targets.workshop.remove", "user", null, { month })
+  revalidatePath("/reports/staff-targets")
+  return { ok: true as const }
+}
+
 export type TargetSuggestion = {
   target: number
   average: number

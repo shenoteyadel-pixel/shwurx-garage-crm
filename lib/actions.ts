@@ -644,6 +644,12 @@ export type QuoteItemInput = {
   discount: number
   category?: string
   recommendation?: "required" | "recommended" | "optional"
+  lead_time_days?: number
+}
+
+function cleanLeadTime(kind: string, days: unknown): number | null {
+  const d = Math.round(Number(days) || 0)
+  return kind === "part" && d >= 1 && d <= 30 ? d : null
 }
 
 export async function saveQuotation(
@@ -777,6 +783,7 @@ export async function saveQuotation(
         line_total: i.line_total,
         category: i.category?.trim() || null,
         recommendation: i.recommendation || "required",
+        lead_time_days: cleanLeadTime(i.kind, i.lead_time_days),
         sort_order: i.sort_order,
       })),
     )
@@ -827,7 +834,7 @@ export async function sendPartsToQuotation(jobId: string) {
   const { data: quotation } = await supabase
     .from("quotations")
     .select(
-      "vat_rate, vat_inclusive, description, internal_notes, quotation_items(kind, name, part_number, detail, quantity, unit_price, labour_hours, labour_rate, discount, category, recommendation, sort_order, addon_type)",
+      "vat_rate, vat_inclusive, description, internal_notes, quotation_items(kind, name, part_number, detail, quantity, unit_price, labour_hours, labour_rate, discount, category, recommendation, lead_time_days, sort_order, addon_type)",
     )
     .eq("job_id", jobId)
     .order("created_at", { ascending: false })
@@ -851,6 +858,7 @@ export async function sendPartsToQuotation(jobId: string) {
       discount: Number(i.discount) || 0,
       category: i.category ?? undefined,
       recommendation: i.recommendation ?? "required",
+      lead_time_days: Number(i.lead_time_days) || 0,
     }))
 
   // Active parts requests for this job.

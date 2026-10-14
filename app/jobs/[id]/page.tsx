@@ -87,7 +87,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const { data: quotation } = await supabase
     .from("quotations")
     .select(
-      "id, vat_rate, vat_inclusive, description, internal_notes, quotation_items(id, kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, category, recommendation, sort_order, addon_type)",
+      "id, vat_rate, vat_inclusive, description, internal_notes, quotation_items(id, kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, category, recommendation, lead_time_days, sort_order, addon_type)",
     )
     .eq("job_id", id)
     .order("created_at", { ascending: false })
@@ -364,6 +364,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       discount: Number(i.discount ?? 0),
       category: i.category || "",
       recommendation: (i.recommendation || "required") as "required" | "recommended" | "optional",
+      lead_time_days: Number(i.lead_time_days ?? 0),
     })) ?? []
 
   const role = profile?.role || "advisor"

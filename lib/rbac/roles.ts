@@ -96,6 +96,7 @@ export type Permission =
   | "expenses.manage" | "payroll.manage"
   | "appointments.view" | "appointments.manage"
   | "leads.view" | "leads.manage"
+  | "whatsapp.view_own" | "whatsapp.view_all" | "whatsapp.assign" | "whatsapp.send"
   | "marketing.view" | "marketing.manage"
   | "website.manage"
   | "attendance.view_all" | "attendance.record" | "attendance.manage"
@@ -208,6 +209,15 @@ export const PERMISSION_CATALOG: PermGroup[] = [
       { key: "marketing.view", label: "View website analytics" },
       { key: "marketing.manage", label: "Manage website tracking & integrations" },
       { key: "website.manage", label: "Edit website content, images & blog" },
+    ],
+  },
+  {
+    group: "WhatsApp Leads",
+    perms: [
+      { key: "whatsapp.view_own", label: "See unassigned & own WhatsApp chats, claim leads" },
+      { key: "whatsapp.view_all", label: "See every WhatsApp chat & lead dashboard" },
+      { key: "whatsapp.assign", label: "Assign / reassign WhatsApp leads" },
+      { key: "whatsapp.send", label: "Reply to customers on WhatsApp" },
     ],
   },
   {

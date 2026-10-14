@@ -6,6 +6,73 @@ import { Card } from "@/components/ui"
 import { Inbox } from "lucide-react"
 import { LeadsBoard } from "@/components/leads-board"
 import type { LeadRow } from "@/lib/actions-leads"
+import { headers } from "next/headers"
+import { createServiceClient } from "@/lib/supabase/server"
+import { googleWebhookKey, metaConfigured, metaVerifyToken } from "@/lib/ad-leads"
+import { AdSourcesCard, type AdSourceStatus } from "@/components/ad-sources-card"
+
+async function siteOrigin(): Promise<string> {
+  const env = process.env.NEXT_PUBLIC_SITE_URL
+  if (env && /^https?:\/\//.test(env)) return env.replace(/\/+$/, "")
+  const h = await headers()
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000"
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https")
+  return `${proto}://${host}`
+}
+
+async function loadAdSources(): Promise<AdSourceStatus[]> {
+  const svc = createServiceClient()
+  const origin = await siteOrigin()
+  const stats = async (provider: "meta" | "google") => {
+    const [{ count }, { data: last }] = await Promise.all([
+      svc.from("ad_webhook_events").select("id", { count: "exact", head: true }).eq("provider", provider),
+      svc
+        .from("ad_webhook_events")
+        .select("received_at, error")
+        .eq("provider", provider)
+        .order("received_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+    return { events: count ?? 0, lastAt: (last?.received_at as string) ?? null, lastError: (last?.error as string) ?? null }
+  }
+  const [metaStats, googleStats] = await Promise.all([stats("meta"), stats("google")])
+  const meta = metaConfigured()
+  const metaMissing = meta.pageToken ? [] : ["META_PAGE_ACCESS_TOKEN"]
+  return [
+    {
+      provider: "meta",
+      label: "Meta (Facebook & Instagram)",
+      url: `${origin}/api/webhooks/meta`,
+      secretLabel: "Verify token",
+      secret: metaVerifyToken(),
+      ready: metaMissing.length === 0,
+      missing: metaMissing,
+      ...metaStats,
+      steps: [
+        "In developers.facebook.com open your app, add Webhooks, choose Page, and paste the URL and verify token.",
+        "Subscribe to the leadgen field and connect your Facebook Page to the app.",
+        "Add a Page access token with leads_retrieval permission as META_PAGE_ACCESS_TOKEN (and the app secret as META_APP_SECRET).",
+        "Test with Meta's Lead Ads Testing Tool.",
+      ],
+    },
+    {
+      provider: "google",
+      label: "Google Ads lead forms",
+      url: `${origin}/api/webhooks/google`,
+      secretLabel: "Key",
+      secret: googleWebhookKey(),
+      ready: Boolean(googleWebhookKey()),
+      missing: [],
+      ...googleStats,
+      steps: [
+        "In Google Ads open the lead form asset and expand Lead delivery options.",
+        "Paste the webhook URL and key, then click Send test data.",
+        "Save the form. Each new submission is pushed to the CRM instantly.",
+      ],
+    },
+  ]
+}
 
 export const metadata = { title: "Leads · SHWURX Auto Service Center" }
 export const dynamic = "force-dynamic"
@@ -37,6 +104,7 @@ export default async function LeadsPage() {
   }))
   const canManage = user.permissions.includes("leads.manage")
   const openCount = leads.filter((l) => l.status !== "converted" && l.status !== "lost").length
+  const adSources = canManage ? await loadAdSources() : null
 
   return (
     <AppShell user={user}>
@@ -45,10 +113,12 @@ export default async function LeadsPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Leads</h1>
             <p className="text-sm text-muted-foreground">
-              {openCount} open lead{openCount === 1 ? "" : "s"} from the website
+              {openCount} open lead{openCount === 1 ? "" : "s"} from the website, Meta and Google Ads
             </p>
           </div>
         </div>
+
+        {adSources ? <AdSourcesCard sources={adSources} /> : null}
 
         {leads.length === 0 ? (
           <Card className="flex flex-col items-center justify-center gap-3 py-16 text-center">

@@ -973,6 +973,7 @@ export async function addPart(jobId: string, formData: FormData) {
     supplier: canCost ? String(formData.get("supplier") || "") || null : null,
     cost: canCost && formData.get("cost") ? Number(formData.get("cost")) : null,
     notes: String(formData.get("notes") || "").slice(0, 1000) || null,
+    lead_time_days: cleanLeadTime("part", Number(formData.get("lead_time_days") || 0)),
     status: "required",
     requested_by: ctx.userId,
   })
@@ -995,6 +996,7 @@ export async function updatePart(partId: string, jobId: string, formData: FormDa
   if (formData.get("status")) patch.status = String(formData.get("status"))
   if (formData.has("supplier")) patch.supplier = String(formData.get("supplier") || "") || null
   if (formData.has("cost")) patch.cost = formData.get("cost") ? Number(formData.get("cost")) : null
+  if (formData.has("lead_time_days")) patch.lead_time_days = cleanLeadTime("part", Number(formData.get("lead_time_days") || 0))
   const { data: before } = await supabase.from("parts_requests").select("part_name, quantity, status").eq("id", partId).maybeSingle()
   const { error } = await supabase.from("parts_requests").update(patch).eq("id", partId)
   if (error) throw new Error(error.message)

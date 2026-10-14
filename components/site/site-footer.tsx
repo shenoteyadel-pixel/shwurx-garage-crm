@@ -12,8 +12,8 @@ const TRADE_LICENSE = "1033544"
 const TRN = "10044045860003"
 
 const T = {
-  en: { quick: "Explore", services: "Services", contact: "Contact", rights: "All rights reserved.", staff: "Staff login", tl: "Trade License", trn: "TRN" },
-  ar: { quick: "استكشف", services: "الخدمات", contact: "تواصل معنا", rights: "جميع الحقوق محفوظة.", staff: "دخول الموظفين", tl: "الرخصة التجارية", trn: "الرقم الضريبي" },
+  en: { quick: "Explore", services: "Services", contact: "Contact", rights: "All rights reserved.", staff: "Staff login", privacy: "Privacy Policy", tl: "Trade License", trn: "TRN" },
+  ar: { quick: "استكشف", services: "الخدمات", contact: "تواصل معنا", rights: "جميع الحقوق محفوظة.", staff: "دخول الموظفين", privacy: "سياسة الخصوصية", tl: "الرخصة التجارية", trn: "الرقم الضريبي" },
 }
 
 export function SiteFooter({
@@ -125,6 +125,9 @@ export function SiteFooter({
         <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-4 py-5 text-xs text-muted-foreground lg:flex-row lg:items-center lg:px-8">
           <span className="flex items-center gap-3">
             © {year} {pick(b.name, lang)}. {t.rights}
+            <Link href={localePath(lang, "/privacy-policy")} className="transition hover:text-foreground">
+              {t.privacy}
+            </Link>
             {showPrivacyChoices && <PrivacyChoicesButton lang={lang} />}
             <Link href="/crm" className="text-muted-foreground/70 transition hover:text-foreground">
               {t.staff}

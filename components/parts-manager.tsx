@@ -16,6 +16,7 @@ type Part = {
   supplier: string | null
   cost: number | null
   notes: string | null
+  lead_time_days?: number | null
   bucket?: "waiting" | "bought_on_quote" | "bought_extra"
   source?: "bill" | "quote" | "request"
 }
@@ -25,6 +26,21 @@ const SECTIONS = [
   { key: "bought_on_quote", title: "Bought for the quotation", hint: "Bought parts that match a line the customer approved" },
   { key: "bought_extra", title: "Bought, not on the quotation", hint: "On a supplier bill but not quoted to the customer" },
 ] as const
+
+const LEAD_TIME_OPTIONS = Array.from({ length: 30 }, (_, i) => i + 1)
+
+function LeadTimeOptions() {
+  return (
+    <>
+      <option value="0">In stock</option>
+      {LEAD_TIME_OPTIONS.map((d) => (
+        <option key={d} value={d}>
+          {d === 1 ? "1 day" : `${d} days`}
+        </option>
+      ))}
+    </>
+  )
+}
 
 const SOURCE_LABEL: Record<NonNullable<Part["source"]>, string> = {
   bill: "Supplier bill",
@@ -133,6 +149,12 @@ export function PartsManager({
           <Input name="supplier" placeholder="Supplier" />
           <Input name="cost" type="number" min="0" step="0.01" placeholder="Cost (per unit)" />
           <Input name="notes" placeholder="Notes" />
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2">
+            Delivery time (if it needs ordering)
+            <Select name="lead_time_days" defaultValue="0">
+              <LeadTimeOptions />
+            </Select>
+          </label>
           <div className="flex justify-end gap-2 sm:col-span-2">
             <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(false)}>
               Cancel
@@ -218,6 +240,15 @@ function PartRow({ jobId, part }: { jobId: string; part: Part }) {
         }}
         className="flex items-center gap-2"
       >
+        <Select
+          name="lead_time_days"
+          aria-label={`Delivery time for ${part.part_name}`}
+          defaultValue={String(part.lead_time_days ?? 0)}
+          onChange={(e) => e.currentTarget.form?.requestSubmit()}
+          className="h-8 w-28"
+        >
+          <LeadTimeOptions />
+        </Select>
         <span className={cn("rounded-full border px-2 py-0.5 text-[11px]", status.chip)}>{status.label}</span>
         <Select
           name="status"

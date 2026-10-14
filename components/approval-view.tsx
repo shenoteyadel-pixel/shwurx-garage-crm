@@ -40,6 +40,7 @@ type Data = {
       labor: number
       discount: number
       line_total: number
+      lead_time_days?: number | null
     }[]
   }
 }
@@ -154,8 +155,15 @@ export function ApprovalView({ token, data }: { token: string; data: Data }) {
           {(() => {
             const parts = data.quotation!.items.filter((i) => i.kind === "part")
             const labour = data.quotation!.items.filter((i) => i.kind !== "part")
+            const longestLead = Math.max(0, ...parts.map((p) => Number(p.lead_time_days) || 0))
             return (
               <div className="space-y-5">
+                {longestLead > 0 && (
+                  <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-4 text-sm leading-relaxed text-orange-200">
+                    Some parts need to be ordered. Expected delivery: up to{" "}
+                    <strong>{longestLead === 1 ? "1 day" : `${longestLead} days`}</strong> after approval.
+                  </div>
+                )}
                 {parts.length > 0 && (
                   <ItemSection title="Parts">
                     {parts.map((it, i) => (
@@ -287,6 +295,11 @@ function QuoteItem({
             {it.part_number && (
               <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
                 #{it.part_number}
+              </span>
+            )}
+            {isPart && Number(it.lead_time_days) > 0 && (
+              <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-300">
+                {Number(it.lead_time_days) === 1 ? "Delivery 1 day" : `Delivery ${it.lead_time_days} days`}
               </span>
             )}
           </div>

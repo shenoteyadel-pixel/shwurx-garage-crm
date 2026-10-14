@@ -30,6 +30,16 @@ export type Item = {
   discount: number
   category: string
   recommendation: Recommendation
+  /** 0 = in stock; 1–30 = days to order the part. */
+  lead_time_days: number
+}
+
+export const LEAD_TIME_OPTIONS = Array.from({ length: 30 }, (_, i) => i + 1)
+
+export function leadTimeLabel(days: number | null | undefined) {
+  const d = Number(days) || 0
+  if (d <= 0) return null
+  return d === 1 ? "Delivery 1 day" : `Delivery ${d} days`
 }
 
 export const RECOMMENDATIONS: { value: Recommendation; label: string; chip: string }[] = [
@@ -77,6 +87,7 @@ function emptyItem(kind: Item["kind"]): Item {
     discount: 0,
     category: "",
     recommendation: "required",
+    lead_time_days: 0,
   }
 }
 
@@ -304,6 +315,11 @@ function SummaryLine({ it, vat, inclusive }: { it: Item; vat: number; inclusive:
                 {rec.label}
               </span>
             )}
+            {it.kind === "part" && leadTimeLabel(it.lead_time_days) && (
+              <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-300">
+                {leadTimeLabel(it.lead_time_days)}
+              </span>
+            )}
           </div>
           {it.detail && (
             <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{it.detail}</p>
@@ -412,6 +428,7 @@ function QuotationEditor({
             discount: Number(i.discount) || 0,
             category: i.category?.trim() || undefined,
             recommendation: i.recommendation,
+            lead_time_days: i.kind === "part" ? Number(i.lead_time_days) || 0 : 0,
           })),
       })
       onClose()
@@ -794,6 +811,22 @@ function PartRow({
           onChange={(v) => onChange({ unit_price: v })}
         />
         <NumField label="Discount" value={it.discount} step="0.01" onChange={(v) => onChange({ discount: v })} />
+      </div>
+
+      <div className="mt-3">
+        <Label>Availability / delivery time</Label>
+        <select
+          value={it.lead_time_days || 0}
+          onChange={(e) => onChange({ lead_time_days: Number(e.target.value) })}
+          className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+        >
+          <option value={0}>In stock — no ordering needed</option>
+          {LEAD_TIME_OPTIONS.map((d) => (
+            <option key={d} value={d}>
+              {d === 1 ? "Needs order — 1 day" : `Needs order — ${d} days`}
+            </option>
+          ))}
+        </select>
       </div>
 
       <LineFooter vat={vat} lineVat={lineVat} total={total} inclusive={inclusive} />

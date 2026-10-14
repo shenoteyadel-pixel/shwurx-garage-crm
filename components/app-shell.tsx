@@ -47,6 +47,7 @@ import {
   Trophy,
   Target,
   DatabaseBackup,
+  MessageCircle,
 } from "lucide-react"
 
 // Nav is grouped into labeled sections so every area — especially admin tools
@@ -87,6 +88,7 @@ const NAV_GROUPS = [
     label: "Sales & Customers",
     items: [
       { href: "/leads", label: "Leads", icon: Inbox, anyOf: ["leads.view"] },
+      { href: "/whatsapp", label: "WhatsApp Inbox", icon: MessageCircle, anyOf: ["whatsapp.view_own", "whatsapp.view_all"] },
       { href: "/customers", label: "Customers", icon: Users, anyOf: ["customers.view"] },
       { href: "/invoices", label: "Invoices", icon: FileText, anyOf: ["invoices.view"] },
       { href: "/marketing", label: "Website Control Center", icon: Megaphone, anyOf: ["marketing.view", "marketing.manage", "website.manage"] },

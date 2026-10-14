@@ -1,4 +1,17 @@
 import "server-only"
+import { createHmac } from "node:crypto"
+
+/**
+ * Shared secret 360dialog sends back on every webhook call.
+ * Falls back to a value derived from the Supabase service key so no extra env var is required.
+ */
+export function webhookSecret(): string | null {
+  const explicit = process.env.D360_WEBHOOK_SECRET
+  if (explicit) return explicit
+  const base = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY
+  if (!base) return null
+  return createHmac("sha256", base).update("d360-webhook-v1").digest("hex")
+}
 
 const BASE = (process.env.D360_API_BASE_URL || "https://waba-v2.360dialog.io").replace(/\/+$/, "")
 

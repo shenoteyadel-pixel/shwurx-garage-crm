@@ -4,7 +4,7 @@ import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { requireSession, ctxCan, logAction, ForbiddenError } from "@/lib/rbac/context"
 import { createServiceClient } from "@/lib/supabase/server"
-import { d360Configured, d360GetWebhook, d360SetWebhook } from "@/lib/d360"
+import { d360Configured, d360GetWebhook, d360SetWebhook, webhookSecret } from "@/lib/d360"
 
 export interface WebhookStatus {
   apiKey: boolean
@@ -45,7 +45,7 @@ export async function getWebhookStatus(): Promise<WebhookStatus> {
   if (d360Configured()) registeredUrl = await d360GetWebhook().catch(() => null)
   return {
     apiKey: d360Configured(),
-    secret: Boolean(process.env.D360_WEBHOOK_SECRET),
+    secret: Boolean(webhookSecret()),
     targetUrl,
     registeredUrl,
     registeredMatches: Boolean(registeredUrl && registeredUrl.split("?")[0] === targetUrl),
@@ -58,9 +58,9 @@ export async function getWebhookStatus(): Promise<WebhookStatus> {
 
 export async function connectWebhook(): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const ctx = await requireManager()
-  const secret = process.env.D360_WEBHOOK_SECRET
+  const secret = webhookSecret()
   if (!d360Configured()) return { ok: false, error: "D360_API_KEY is not set on this deployment." }
-  if (!secret) return { ok: false, error: "D360_WEBHOOK_SECRET is not set. Add it in project Vars and redeploy." }
+  if (!secret) return { ok: false, error: "Webhook secret could not be generated on this deployment." }
   const url = `${await siteOrigin()}/api/webhooks/360dialog`
   try {
     await d360SetWebhook(url, { "x-wurx-webhook-secret": secret })

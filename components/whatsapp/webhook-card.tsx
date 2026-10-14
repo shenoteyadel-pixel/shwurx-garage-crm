@@ -56,7 +56,7 @@ export function WebhookCard({ status }: { status: WebhookStatus }) {
       </div>
       <ul className="flex flex-col gap-2">
         <Row ok={status.apiKey} label="360dialog API key" detail={status.apiKey ? null : "Set D360_API_KEY in project Vars."} />
-        <Row ok={status.secret} label="Webhook secret" detail={status.secret ? null : "Set D360_WEBHOOK_SECRET in project Vars, then redeploy."} />
+        <Row ok={status.secret} label="Webhook secret" detail={status.secret ? null : "Secret unavailable on this deployment."} />
         <Row
           ok={status.registeredMatches}
           label="Webhook registered on 360dialog"

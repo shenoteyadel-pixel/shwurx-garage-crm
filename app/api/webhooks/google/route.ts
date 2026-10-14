@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
-import { googleWebhookKey, insertAdLead, logAdEvent, normalizePhone, safeEqual } from "@/lib/ad-leads"
+import { googleWebhookKeyCandidates, insertAdLead, logAdEvent, normalizePhone } from "@/lib/ad-leads"
+import { matchWebhookKey } from "@/lib/webhook-keys"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -26,10 +27,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
   }
 
-  const expected = googleWebhookKey()
-  const authorized = Boolean(expected && payload.google_key && safeEqual(payload.google_key, expected))
+  const keySlot = matchWebhookKey(payload.google_key, googleWebhookKeyCandidates())
+  const authorized = keySlot !== null
   const { google_key: _omit, ...loggable } = payload
-  const event = await logAdEvent("google", authorized, loggable)
+  const event = await logAdEvent("google", authorized, { ...loggable, auth_key_slot: keySlot })
   if (!authorized) {
     await event.finish({ processed: false, error: "invalid google_key" })
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })

@@ -1,6 +1,7 @@
 import "server-only"
-import { createHmac, timingSafeEqual } from "node:crypto"
+import { createHmac } from "node:crypto"
 import { createServiceClient } from "@/lib/supabase/server"
+import { rotationCandidates, safeEqual, type WebhookKeyCandidate } from "@/lib/webhook-keys"
 
 export type AdProvider = "meta" | "google"
 
@@ -20,6 +21,11 @@ export function googleWebhookKey(): string | null {
   return process.env.GOOGLE_ADS_WEBHOOK_KEY || derive("google-ads-lead-key-v1")
 }
 
+/** Keys accepted on incoming Google Ads webhooks: the current key plus GOOGLE_ADS_WEBHOOK_KEY_PREVIOUS during rotation. */
+export function googleWebhookKeyCandidates(): WebhookKeyCandidate[] {
+  return rotationCandidates(googleWebhookKey(), process.env.GOOGLE_ADS_WEBHOOK_KEY_PREVIOUS)
+}
+
 export function metaConfigured() {
   return {
     pageToken: Boolean(process.env.META_PAGE_ACCESS_TOKEN),
@@ -27,11 +33,7 @@ export function metaConfigured() {
   }
 }
 
-export function safeEqual(provided: string, expected: string): boolean {
-  const a = Buffer.from(provided)
-  const b = Buffer.from(expected)
-  return a.length === b.length && timingSafeEqual(a, b)
-}
+export { safeEqual }
 
 export interface AdLeadInput {
   externalId: string

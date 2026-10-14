@@ -55,7 +55,7 @@ export function prevStage(stage: Stage): Stage | null {
 
 export const ROLES = [
   { value: "advisor", label: "Service Advisor" },
-  { value: "technician", label: "Technician" },
+  { value: "technician", label: "Technician / Mechanic" },
   { value: "parts", label: "Parts Person" },
   { value: "admin", label: "Admin / Manager" },
 ]

@@ -2,12 +2,13 @@ import { NextResponse, type NextRequest } from "next/server"
 import { timingSafeEqual } from "node:crypto"
 import { createServiceClient } from "@/lib/supabase/server"
 import { processWebhook, webhookSchema } from "@/lib/whatsapp-ingest"
+import { webhookSecret } from "@/lib/d360"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 function secretOk(req: NextRequest): boolean {
-  const expected = process.env.D360_WEBHOOK_SECRET
+  const expected = webhookSecret()
   if (!expected) return false
   const provided = req.headers.get("x-wurx-webhook-secret") ?? req.nextUrl.searchParams.get("secret") ?? ""
   const a = Buffer.from(provided)

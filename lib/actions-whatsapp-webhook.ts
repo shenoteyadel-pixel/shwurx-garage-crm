@@ -27,6 +27,21 @@ async function siteOrigin(): Promise<string> {
   return `${proto}://${host}`
 }
 
+// WhatsApp does not follow redirects on webhook POSTs (e.g. apex -> www), so
+// register the final URL that actually serves the route.
+async function resolveRedirects(url: string): Promise<string> {
+  let current = url
+  for (let i = 0; i < 3; i++) {
+    const res = await fetch(current, { method: "GET", redirect: "manual", cache: "no-store" }).catch(() => null)
+    const location = res && res.status >= 300 && res.status < 400 ? res.headers.get("location") : null
+    if (!location) return current
+    const next = new URL(location, current)
+    if (!next.pathname.startsWith("/api/webhooks/360dialog")) return current
+    current = `${next.origin}${next.pathname}`
+  }
+  return current
+}
+
 async function requireManager() {
   const ctx = await requireSession()
   if (!ctxCan(ctx, "whatsapp.assign")) throw new ForbiddenError("whatsapp.assign")
@@ -61,7 +76,7 @@ export async function connectWebhook(): Promise<{ ok: true; url: string } | { ok
   const secret = webhookSecret()
   if (!d360Configured()) return { ok: false, error: "D360_API_KEY is not set on this deployment." }
   if (!secret) return { ok: false, error: "Webhook secret could not be generated on this deployment." }
-  const url = `${await siteOrigin()}/api/webhooks/360dialog`
+  const url = await resolveRedirects(`${await siteOrigin()}/api/webhooks/360dialog`)
   try {
     await d360SetWebhook(url, { "x-wurx-webhook-secret": secret })
   } catch (err) {

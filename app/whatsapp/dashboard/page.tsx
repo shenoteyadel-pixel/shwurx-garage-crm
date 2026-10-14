@@ -5,6 +5,8 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { AppShell } from "@/components/app-shell"
 import { Card } from "@/components/ui"
 import { WA_SOURCES, WA_STATUSES } from "@/lib/whatsapp-status"
+import { getWebhookStatus } from "@/lib/actions-whatsapp-webhook"
+import { WebhookCard } from "@/components/whatsapp/webhook-card"
 
 export const metadata = { title: "WhatsApp Leads Dashboard · SHWURX Auto Service Center" }
 export const dynamic = "force-dynamic"
@@ -25,10 +27,11 @@ export default async function WhatsAppDashboard({ searchParams }: { searchParams
   const since = new Date(Date.now() - days * 86_400_000).toISOString()
 
   const svc = createServiceClient()
-  const [{ data: convs }, { data: msgs }, { data: staff }] = await Promise.all([
+  const [{ data: convs }, { data: msgs }, { data: staff }, webhook] = await Promise.all([
     svc.from("wa_conversations").select("id, assigned_to, status, lead_source, follow_up_at, created_at").gte("created_at", since),
     svc.from("wa_messages").select("conversation_id, direction, created_at, sent_by").gte("created_at", since).order("created_at"),
     svc.from("profiles").select("id, full_name").eq("is_active", true).neq("role", "customer"),
+    getWebhookStatus(),
   ])
 
   const leads = convs ?? []
@@ -99,6 +102,8 @@ export default async function WhatsAppDashboard({ searchParams }: { searchParams
             ))}
           </nav>
         </div>
+
+        <WebhookCard status={webhook} />
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           {kpis.map((k) => (

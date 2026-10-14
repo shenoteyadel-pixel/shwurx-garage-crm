@@ -76,6 +76,31 @@ export async function d360DownloadMedia(mediaId: string): Promise<{ data: ArrayB
   return { data: await fileRes.arrayBuffer(), mime: meta.mime_type || fileRes.headers.get("content-type") || "application/octet-stream" }
 }
 
+export function d360Configured(): boolean {
+  return Boolean(process.env.D360_API_KEY)
+}
+
+/** Returns the webhook URL currently registered on 360dialog for this number, or null. */
+export async function d360GetWebhook(): Promise<string | null> {
+  const res = await fetch(`${BASE}/v1/configs/webhook`, { headers: { "D360-API-KEY": apiKey() }, cache: "no-store" })
+  if (!res.ok) return null
+  const json = (await res.json().catch(() => ({}))) as { url?: string }
+  return json.url || null
+}
+
+export async function d360SetWebhook(url: string, headers: Record<string, string>): Promise<void> {
+  const res = await fetch(`${BASE}/v1/configs/webhook`, {
+    method: "POST",
+    headers: { "D360-API-KEY": apiKey(), "Content-Type": "application/json" },
+    body: JSON.stringify({ url, headers }),
+    cache: "no-store",
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(`360dialog rejected the webhook (${res.status}) ${text.slice(0, 200)}`)
+  }
+}
+
 export interface WaTemplate {
   name: string
   language: string

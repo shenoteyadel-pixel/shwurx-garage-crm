@@ -556,7 +556,8 @@ function completionLabel(iso?: string | null): { text: string; overdue: boolean 
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return null
   const overdue = d.getTime() < Date.now()
-  const text = d.toLocaleDateString([], { day: "numeric", month: "short" })
+  // Fixed locale + time zone so server (UTC) and browser render the same string.
+  const text = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Dubai" })
   return { text, overdue }
 }
 

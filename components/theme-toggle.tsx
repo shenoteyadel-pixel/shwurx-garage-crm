@@ -11,7 +11,8 @@ export function ThemeToggle() {
   // Avoid a hydration mismatch: the resolved theme is only known on the client.
   React.useEffect(() => setMounted(true), [])
 
-  const isDark = resolvedTheme === "dark"
+  // Until mounted, assume the default (dark) so SSR and first client render match.
+  const isDark = mounted ? resolvedTheme === "dark" : true
 
   return (
     <button

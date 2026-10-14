@@ -51,6 +51,24 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
     svc.from("staff_targets").select("user_id, kind, monthly_target"),
   ])
 
+  const { data: workshopRows } = await svc
+    .from("workshop_targets")
+    .select("month, revenue_target")
+    .lte("month", month)
+    .order("month", { ascending: false })
+    .limit(1)
+  const latest = workshopRows?.[0]
+  const workshopTarget = latest
+    ? { amount: Number(latest.revenue_target) || 0, fromMonth: latest.month as string }
+    : null
+
+  let workshopRevenue = 0
+  let workshopInvoices = 0
+  for (const r of salesRes.data ?? []) {
+    workshopRevenue += Number(r.total) || 0
+    workshopInvoices += 1
+  }
+
   const purchases = new Map<string, Acc>()
   for (const r of purchasesRes.data ?? []) add(purchases, r.created_by, r.total)
 
@@ -102,6 +120,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
     <AppShell user={user}>
       <StaffTargetsClient
         month={month}
+        workshop={{ target: workshopTarget, revenue: workshopRevenue, invoices: workshopInvoices }}
         purchasers={rows("purchase", purchases)}
         advisors={rows("sales", sales)}
         technicians={rows("technician", technicianWork)}

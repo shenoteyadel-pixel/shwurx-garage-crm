@@ -9,6 +9,7 @@ import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/co
 import { notifyActivity } from "@/lib/activity"
 import { issueGatePass } from "@/lib/gate-pass"
 import type { Permission } from "@/lib/rbac/roles"
+import { STOCK_USAGE_TYPES, type StockUsageType } from "@/lib/stock-usage"
 
 async function requireUser() {
   const supabase = await createClient()
@@ -240,15 +241,40 @@ export async function recordStockMovement(formData: FormData) {
   else if (kind === "out") nextQty = Math.max(0, current - qty)
   else nextQty = qty // adjust = set absolute count
 
-  await supabase.from("stock_movements").insert({
+  const note = str(formData.get("note"))?.trim() || null
+  let usageType: string | null = null
+  let jobId: string | null = null
+  let reference = str(formData.get("reference"))
+  if (kind === "out") {
+    if (qty > current) throw new Error(`Only ${current} in stock — cannot take out ${qty}.`)
+    usageType = String(formData.get("usage_type") || "")
+    if (!STOCK_USAGE_TYPES.includes(usageType as StockUsageType)) throw new Error("Choose what the part was used for.")
+    if (!note) throw new Error("Add a comment explaining where the part went.")
+    if (usageType === "car") {
+      jobId = str(formData.get("job_id"))
+      if (!jobId) throw new Error("Choose the car / job card the part was used on.")
+      const { data: job } = await supabase
+        .from("jobs")
+        .select("job_number, deleted_at")
+        .eq("id", jobId)
+        .maybeSingle()
+      if (!job || job.deleted_at) throw new Error("That job card was not found or has been deleted.")
+      reference = reference || job.job_number
+    }
+  }
+
+  const { error: moveErr } = await supabase.from("stock_movements").insert({
     item_id: itemId,
     kind,
     quantity: kind === "adjust" ? nextQty - current : qty,
     unit_cost: num(formData.get("unit_cost"), Number(item.cost_price) || 0),
-    reference: str(formData.get("reference")),
-    note: str(formData.get("note")),
+    reference,
+    note,
+    usage_type: usageType,
+    job_id: jobId,
     created_by: user.id,
   })
+  if (moveErr) throw new Error(moveErr.message)
   await supabase
     .from("inventory_items")
     .update({ quantity: nextQty, updated_at: new Date().toISOString() })

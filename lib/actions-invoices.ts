@@ -853,8 +853,9 @@ export async function assignInvoiceLineToJob(itemId: string, jobId: string): Pro
       return { ok: false, error: "Only confirmed invoices can be reassigned." }
     }
 
-    const { data: job } = await supabase.from("jobs").select("id").eq("id", jobId).maybeSingle()
+    const { data: job } = await supabase.from("jobs").select("id, deleted_at").eq("id", jobId).maybeSingle()
     if (!job) return { ok: false, error: "Job card not found." }
+    if (job.deleted_at) return { ok: false, error: "This job card was deleted. Choose the car's active job card." }
 
     let supplierName = (invoice.supplier_name_raw as string | null) ?? ""
     if (invoice.supplier_id) {
@@ -1177,6 +1178,20 @@ async function applyConfirm(
     .eq("invoice_id", id)
     .order("line_no")
   if (itemsErr) throw new Error(itemsErr.message)
+
+  const lineJobIds = [...new Set((items ?? []).map((it) => it.job_id as string | null).filter(Boolean))] as string[]
+  if (lineJobIds.length) {
+    const { data: deletedJobs } = await supabase
+      .from("jobs")
+      .select("job_number")
+      .in("id", lineJobIds)
+      .not("deleted_at", "is", null)
+    if (deletedJobs?.length) {
+      throw new Error(
+        `Job card ${deletedJobs.map((j) => j.job_number).join(", ")} was deleted. Assign these lines to the car's active job card.`,
+      )
+    }
+  }
 
   const parts: ConfirmSummary["parts"] = []
   const settings = await getSettings()

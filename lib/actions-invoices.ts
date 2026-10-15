@@ -825,10 +825,10 @@ export async function addManualPurchasedPart(
  */
 export async function assignInvoiceLineToJob(itemId: string, jobId: string): Promise<InvoiceActionResult> {
   try {
-    const { supabase, ctx } = await guard()
-    if (!ctx.permissions.has("purchase_orders.manage") && ctx.role !== "owner") {
-      throw new ForbiddenError("purchase_orders.manage")
-    }
+    // Anyone who captures invoices (purchaser / parts staff) may link a stocked
+    // part to a car. Changing a car that's already set still needs the owner.
+    const { ctx } = await guard()
+    const supabase = createServiceClient()
     if (!itemId || !jobId) return { ok: false, error: "Choose a job card." }
 
     const { data: it, error: itErr } = await supabase
@@ -1657,7 +1657,9 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
     throw new Error(`Amount is more than the outstanding balance (AED ${remaining.toFixed(2)}).`)
   }
 
-  const { error: insertError } = await supabase.from("payments").insert({
+  // Insert with the service client: guard() already verified invoice access,
+  // and a user-client insert can be refused by RLS for the parts role.
+  const { error: insertError } = await db.from("payments").insert({
     direction: "out",
     supplier_invoice_id: id,
     amount,
@@ -1686,8 +1688,8 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
     link: `/purchasing/invoices/${id}`,
   })
 
-  revalidatePath(`/purchasing/invoices/${id}`)
-  revalidatePath("/suppliers")
+  // No revalidatePath here (see saveAndConfirmSupplierInvoice): an inline
+  // re-render failure would discard this committed result. The client refreshes.
   return { ok: true }
   } catch (e) {
     return toActionError(e, "Could not record the payment.")
@@ -1700,22 +1702,27 @@ export async function recordSupplierInvoicePayment(id: string, formData: FormDat
  */
 export async function setSupplierInvoiceOnAccount(id: string, onAccount: boolean): Promise<InvoiceActionResult> {
   try {
-  const { supabase } = await guard()
-  const { data: invoice } = await supabase.from("supplier_invoices").select("status, amount_paid, total").eq("id", id).single()
-  if (!invoice || invoice.status !== "confirmed") throw new Error("Invoice is not confirmed")
-  const paid = n(invoice.amount_paid)
-  const total = n(invoice.total)
-  const status = onAccount ? "credit" : paid <= 0 ? "unpaid" : paid + 0.01 >= total ? "paid" : "partial"
-  const { data: updated, error: updErr } = await supabase
+  await guard()
+  const db = createServiceClient()
+  const { data: invoice } = await db
     .from("supplier_invoices")
-    .update({ payment_status: status, updated_at: new Date().toISOString() })
+    .select("status, total, deleted_at")
     .eq("id", id)
-    .select("id")
+    .maybeSingle()
+  if (!invoice || invoice.deleted_at || invoice.status !== "confirmed") throw new Error("Invoice is not confirmed")
+  // Recompute from the real payment rows so the status can never drift.
+  const { data: paidRows } = await db.from("payments").select("amount").eq("supplier_invoice_id", id)
+  const paid = (paidRows ?? []).reduce((t, p) => t + n(p.amount), 0)
+  const total = n(invoice.total)
+  const fullyPaid = paid > 0 && paid + 0.01 >= total
+  if (onAccount && fullyPaid) throw new Error("This invoice is already fully paid.")
+  const status = onAccount ? "credit" : paid <= 0 ? "unpaid" : fullyPaid ? "paid" : "partial"
+  const { error: updErr } = await db
+    .from("supplier_invoices")
+    .update({ payment_status: status, amount_paid: paid, updated_at: new Date().toISOString() })
+    .eq("id", id)
   if (updErr) throw new Error(updErr.message)
-  if (!updated?.length) throw new Error("You don't have permission to change this invoice's payment status.")
   await logCurrent("supplier_invoice.on_account", "supplier_invoice", id, { on_account: onAccount })
-  revalidatePath(`/purchasing/invoices/${id}`)
-  revalidatePath("/suppliers")
   return { ok: true }
   } catch (e) {
     return toActionError(e, "Could not update the invoice.")

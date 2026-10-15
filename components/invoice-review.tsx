@@ -1061,6 +1061,7 @@ function PaymentPanel({
   invoice: InvoiceHeader
   payments: { id: string; amount: number; method: string; reference: string | null; paid_at: string; receipt_path?: string | null }[]
 }) {
+  const router = useRouter()
   const [pending, start] = React.useTransition()
   const [payErr, setPayErr] = React.useState<string | null>(null)
   const [method, setMethod] = React.useState("bank_transfer")
@@ -1083,6 +1084,7 @@ function PaymentPanel({
                 setPayErr(null)
                 const res = await setSupplierInvoiceOnAccount(invoice.id, !onAccount)
                 if (!res.ok) setPayErr(res.error)
+                router.refresh()
               })
             }
             className="text-xs text-sky-300 hover:underline disabled:opacity-50"
@@ -1137,9 +1139,15 @@ function PaymentPanel({
                 setPayErr(`Upload the ${method === "card" ? "card" : "bank transfer"} receipt as proof.`)
                 return
               }
-              const res = await recordSupplierInvoicePayment(invoice.id, fd)
-              if (!res.ok) setPayErr(res.error)
-              else setFormKey((k) => k + 1)
+              try {
+                const res = await recordSupplierInvoicePayment(invoice.id, fd)
+                if (!res.ok) setPayErr(res.error)
+                else setFormKey((k) => k + 1)
+              } catch {
+                setPayErr("Connection problem. The payment may have saved, so check the list below before trying again.")
+              }
+              // Always re-sync: the payment may have been saved even if the reply was lost.
+              router.refresh()
             })
           }
           key={formKey}

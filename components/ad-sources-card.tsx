@@ -1,5 +1,6 @@
 import { Card, Badge } from "@/components/ui"
 import { CopyValue } from "@/components/copy-value"
+import { MetaImportButton } from "@/components/meta-import-button"
 
 export interface AdSourceStatus {
   provider: "meta" | "google"
@@ -50,6 +51,7 @@ export function AdSourcesCard({ sources }: { sources: AdSourceStatus[] }) {
                 <li key={step}>{step}</li>
               ))}
             </ol>
+            {s.provider === "meta" ? <MetaImportButton disabled={!s.ready} /> : null}
             <div className="flex flex-col gap-1 border-t border-border pt-3 text-xs text-muted-foreground">
               <span>
                 {s.events} call{s.events === 1 ? "" : "s"} received · last {formatWhen(s.lastAt)}

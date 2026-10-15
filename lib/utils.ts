@@ -26,7 +26,17 @@ export function formatDate(d: string | Date | null | undefined) {
   })
 }
 
-export function relativeHours(from: string | Date, to: string | Date = new Date()) {
+  export function formatDay(d: string | Date | null | undefined) {
+  if (!d) return "—"
+  return new Date(d).toLocaleDateString("en-GB", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  timeZone: "Asia/Dubai",
+  })
+  }
+
+  export function relativeHours(from: string | Date, to: string | Date = new Date()) {
   const ms = new Date(to).getTime() - new Date(from).getTime()
   return ms / 36e5
 }

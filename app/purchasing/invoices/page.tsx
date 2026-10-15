@@ -9,13 +9,14 @@ import { Card, Badge } from "@/components/ui"
 import { InvoiceUpload } from "@/components/invoice-upload"
 import { DeleteInvoiceButton } from "@/components/delete-invoice-button"
 import { NewBlankInvoiceButton } from "@/components/invoice-owner-actions"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { formatCurrency, formatDay } from "@/lib/utils"
 import { ScanLine } from "lucide-react"
 
 export const metadata = { title: "Invoice Capture · SHWURX Auto Service Center" }
 
 const STATUS: Record<string, string> = {
   draft: "border-amber-500/30 bg-amber-500/15 text-amber-300",
+  quoted: "border-sky-500/30 bg-sky-500/15 text-sky-300",
   confirmed: "border-emerald-500/30 bg-emerald-500/15 text-emerald-300",
   void: "border-red-500/30 bg-red-500/15 text-red-300",
 }
@@ -97,7 +98,7 @@ export default async function InvoiceCapturePage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[960px] text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
                 <thead className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-semibold">Ref</th>
@@ -124,7 +125,7 @@ export default async function InvoiceCapturePage() {
                       <td className="px-4 py-3">{(r as any).suppliers?.name ?? r.supplier_name_raw ?? "—"}</td>
                       <td className="px-4 py-3 text-muted-foreground">{r.invoice_number ?? "—"}</td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {r.invoice_date ? formatDate(r.invoice_date) : "—"}
+                        {r.invoice_date ? formatDay(r.invoice_date) : "—"}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">

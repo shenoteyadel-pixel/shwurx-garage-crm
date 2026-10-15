@@ -5,6 +5,7 @@ import { getShellUser } from "@/lib/shell-user"
 import { requirePageAccess } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
 import { Card } from "@/components/ui"
+import { ComebackSearch, type ComebackSearchResult } from "@/components/comeback-search"
 import { blamesAdvisor, blamesTechnician, comebackResponsibilityLabel } from "@/lib/comeback"
 import { formatDate } from "@/lib/utils"
 
@@ -70,10 +71,69 @@ function TallyCard({ title, rows }: { title: string; rows: Tally[] }) {
   )
 }
 
-export default async function ComebacksPage() {
-  await requirePageAccess(["jobs.view_all"], "Comebacks")
+const SEARCH_COLUMNS =
+  "id, job_number, created_at, stage, customer_name, customer_mobile, vehicle_make, vehicle_model, plate_code, plate_number, comeback_of"
+
+type SearchJob = Omit<ComebackSearchResult, "invoiceNumbers" | "isComeback"> & { comeback_of: string | null }
+
+async function searchJobs(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  raw: string,
+): Promise<ComebackSearchResult[]> {
+  // Strip characters that have meaning inside a PostgREST or() filter.
+  const q = raw.replace(/[,()%*\\:]/g, " ").trim()
+  if (q.length < 2) return []
+  const like = `%${q}%`
+  const digits = q.replace(/\D/g, "")
+
+  const jobFilters = [`job_number.ilike.${like}`, `plate_number.ilike.${like}`, `customer_name.ilike.${like}`]
+  jobFilters.push(`customer_mobile.ilike.%${digits.length >= 3 ? digits.slice(-9) : q}%`)
+
+  const [{ data: jobs }, { data: invoiceHits }] = await Promise.all([
+    supabase
+      .from("jobs")
+      .select(SEARCH_COLUMNS)
+      .or(jobFilters.join(","))
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase.from("invoices").select("job_id").ilike("invoice_number", like).not("job_id", "is", null).limit(20),
+  ])
+
+  const found = new Map<string, SearchJob>(((jobs ?? []) as SearchJob[]).map((j) => [j.id, j]))
+  const extraIds = [...new Set((invoiceHits ?? []).map((i) => i.job_id as string))].filter((id) => !found.has(id))
+  if (extraIds.length) {
+    const { data: more } = await supabase.from("jobs").select(SEARCH_COLUMNS).in("id", extraIds).is("deleted_at", null)
+    for (const j of (more ?? []) as SearchJob[]) found.set(j.id, j)
+  }
+  if (found.size === 0) return []
+
+  const { data: invoices } = await supabase
+    .from("invoices")
+    .select("job_id, invoice_number")
+    .in("job_id", [...found.keys()])
+  const invoicesByJob = new Map<string, string[]>()
+  for (const inv of invoices ?? []) {
+    const list = invoicesByJob.get(inv.job_id as string) ?? []
+    list.push(inv.invoice_number as string)
+    invoicesByJob.set(inv.job_id as string, list)
+  }
+
+  return [...found.values()]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .map(({ comeback_of, ...j }) => ({
+      ...j,
+      invoiceNumbers: invoicesByJob.get(j.id) ?? [],
+      isComeback: Boolean(comeback_of),
+    }))
+}
+
+export default async function ComebacksPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const ctx = await requirePageAccess(["jobs.view_all"], "Comebacks")
   const user = await getShellUser()
   const supabase = await createClient()
+  const query = String((await searchParams).q ?? "").trim()
+  const searchResults = query ? await searchJobs(supabase, query) : null
 
   const { data } = await supabase
     .from("jobs")
@@ -112,6 +172,13 @@ export default async function ComebacksPage() {
           </p>
         </div>
       </div>
+
+      <ComebackSearch
+        query={query}
+        results={searchResults}
+        canCreate={ctx.permissions.has("jobs.create")}
+        isOwner={ctx.role === "owner"}
+      />
 
       <div className="mb-6 grid gap-4 md:grid-cols-2">
         <TallyCard title="Service advisors" rows={tally(rows, "comeback_advisor_id", names)} />

@@ -98,11 +98,53 @@ export interface MetaImportResult {
   errors: string[]
 }
 
-/** Pulls every lead already submitted on the token's Page lead forms. */
-export async function importAllMetaLeads(token: string): Promise<MetaImportResult> {
-  const page = await graph<{ id: string; name?: string }>("me?fields=id,name", token)
-  const result: MetaImportResult = { pageName: page.name ?? null, forms: 0, found: 0, created: 0, errors: [] }
+interface PageTarget {
+  id: string
+  name?: string
+  token: string
+}
 
+/**
+ * Accepts either a Page token or a user token. A user token is expanded into
+ * the Pages it manages, each with its own Page token (lead forms require one).
+ */
+async function resolvePages(token: string): Promise<PageTarget[]> {
+  try {
+    const accounts = await graph<Paged<{ id: string; name?: string; access_token?: string }>>(
+      "me/accounts?fields=id,name,access_token&limit=100",
+      token,
+    )
+    const managed = (accounts.data ?? []).filter((p) => p.access_token)
+    if (managed.length) return managed.map((p) => ({ id: p.id, name: p.name, token: p.access_token! }))
+  } catch {
+    // Page tokens cannot list me/accounts; fall through and treat the token as a Page token.
+  }
+  const me = await graph<{ id: string; name?: string }>("me?fields=id,name", token)
+  return [{ id: me.id, name: me.name, token }]
+}
+
+/** Pulls every lead already submitted on the lead forms of the token's Page(s). */
+export async function importAllMetaLeads(token: string): Promise<MetaImportResult> {
+  const targets = await resolvePages(token)
+  const result: MetaImportResult = {
+    pageName: targets.map((t) => t.name ?? t.id).join(", ") || null,
+    forms: 0,
+    found: 0,
+    created: 0,
+    errors: [],
+  }
+  for (const target of targets) {
+    try {
+      await importPageLeads(target, result)
+    } catch (err) {
+      result.errors.push(`page ${target.name ?? target.id}: ${(err as Error).message}`)
+    }
+  }
+  return result
+}
+
+async function importPageLeads({ id: pageId, token }: PageTarget, result: MetaImportResult) {
+  const page = { id: pageId }
   for await (const forms of pages<{ id: string; name?: string }>(`${page.id}/leadgen_forms?fields=id,name&limit=100`, token)) {
     for (const form of forms) {
       result.forms++

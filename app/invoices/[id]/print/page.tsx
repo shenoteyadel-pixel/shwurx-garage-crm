@@ -5,6 +5,7 @@ import { loadInvoiceComments } from "@/lib/invoice-comments"
 import { DocHeader, DocFooter, DocWatermark, DocBrandStrip } from "@/components/doc-header"
 import { PrintButton } from "@/components/print-button"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { FREE_BADGE, isFree, warrantyLabel } from "@/lib/invoice-line"
 
 export default async function InvoicePrintPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -88,11 +89,26 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
           <tbody>
             {items.map((it) => (
               <tr key={it.id} className="border-b border-neutral-200">
-                <td className="py-3 pr-2 font-medium">{it.description}</td>
+                <td className="py-3 pr-2">
+                  <div className="font-medium">{it.description}</div>
+                  {isFree(it.billing_type) && (
+                    <div className="mt-0.5 text-xs text-neutral-600">
+                      {FREE_BADGE[it.billing_type as "satisfaction" | "warranty"]}
+                      {it.free_reason ? ` · ${it.free_reason}` : ""}
+                    </div>
+                  )}
+                  {warrantyLabel(it.warranty_value, it.warranty_unit) && (
+                    <div className="mt-0.5 text-xs text-neutral-600">
+                      {warrantyLabel(it.warranty_value, it.warranty_unit)}
+                    </div>
+                  )}
+                </td>
                 <td className="py-3 px-2 capitalize text-neutral-500">{it.kind}</td>
                 <td className="py-3 px-2 text-right tabular-nums">{Number(it.quantity)}</td>
                 <td className="py-3 px-2 text-right tabular-nums">{formatCurrency(it.unit_price)}</td>
-                <td className="py-3 pl-2 text-right font-medium tabular-nums">{formatCurrency(it.line_total)}</td>
+                <td className="py-3 pl-2 text-right font-medium tabular-nums">
+                  {isFree(it.billing_type) ? "FREE" : formatCurrency(it.line_total)}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -420,11 +420,23 @@ export async function payPurchaseOrder(
 }
 
 /* ============================ Invoices ============================ */
-type InvLine = { kind: "part" | "labour" | "fee"; description: string; quantity: number; unit_price: number }
+type InvLine = {
+  kind: "part" | "labour" | "fee"
+  description: string
+  quantity: number
+  unit_price: number
+  billing_type?: "normal" | "satisfaction" | "warranty"
+  free_reason?: string | null
+  warranty_value?: number | null
+  warranty_unit?: "days" | "months" | null
+}
+
+const chargeable = (i: InvLine) => !i.billing_type || i.billing_type === "normal"
 
 function computeInvoice(items: InvLine[], discount: number, vatRate: number) {
-  const partsTotal = items.filter((i) => i.kind === "part").reduce((s, i) => s + i.quantity * i.unit_price, 0)
-  const labourTotal = items
+  const billed = items.filter(chargeable)
+  const partsTotal = billed.filter((i) => i.kind === "part").reduce((s, i) => s + i.quantity * i.unit_price, 0)
+  const labourTotal = billed
     .filter((i) => i.kind !== "part")
     .reduce((s, i) => s + i.quantity * i.unit_price, 0)
   const gross = partsTotal + labourTotal
@@ -473,7 +485,26 @@ export async function createInvoice(payload: {
   }
 
   const vatRate = Number.isFinite(payload.vatRate) ? payload.vatRate : 5
-  const lines = payload.items.filter((l) => l.description.trim())
+  const lines: InvLine[] = []
+  for (const raw of payload.items.filter((l) => l.description.trim())) {
+    const billing = raw.billing_type === "satisfaction" || raw.billing_type === "warranty" ? raw.billing_type : "normal"
+    const reason = (raw.free_reason ?? "").trim()
+    if (billing !== "normal" && !reason) {
+      return { error: `Add a reason for the free item "${raw.description.trim()}".` }
+    }
+    const wValue = Math.floor(Number(raw.warranty_value) || 0)
+    const wUnit = raw.warranty_unit === "days" || raw.warranty_unit === "months" ? raw.warranty_unit : null
+    if (wUnit && wValue <= 0) {
+      return { error: `Enter how many ${wUnit} of warranty for "${raw.description.trim()}".` }
+    }
+    lines.push({
+      ...raw,
+      billing_type: billing,
+      free_reason: billing === "normal" ? null : reason.slice(0, 300),
+      warranty_value: wUnit ? wValue : null,
+      warranty_unit: wUnit,
+    })
+  }
   const t = computeInvoice(lines, payload.discount || 0, vatRate)
 
   const { data: invNum } = await supabase.rpc("next_doc_number", { p_type: "invoice", p_prefix: "INV" })
@@ -512,8 +543,12 @@ export async function createInvoice(payload: {
         description: l.description,
         quantity: l.quantity,
         unit_price: l.unit_price,
-        line_total: l.quantity * l.unit_price,
+        line_total: chargeable(l) ? l.quantity * l.unit_price : 0,
         sort_order: idx,
+        billing_type: l.billing_type ?? "normal",
+        free_reason: l.free_reason ?? null,
+        warranty_value: l.warranty_value ?? null,
+        warranty_unit: l.warranty_unit ?? null,
       })),
     )
   }

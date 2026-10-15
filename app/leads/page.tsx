@@ -53,7 +53,7 @@ async function loadAdSources(): Promise<AdSourceStatus[]> {
         "In developers.facebook.com open your app, add Webhooks, choose Page, and paste the URL and verify token.",
         "Subscribe to the leadgen field and connect your Facebook Page to the app.",
         "Add a Page access token with leads_retrieval permission as META_PAGE_ACCESS_TOKEN (and the app secret as META_APP_SECRET).",
-        "Test with Meta's Lead Ads Testing Tool.",
+        "Test with Meta's Lead Ads Testing Tool, then use Import existing Meta leads to pull leads submitted before setup.",
       ],
     },
     {

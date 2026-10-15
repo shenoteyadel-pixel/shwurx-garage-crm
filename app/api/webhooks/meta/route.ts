@@ -1,11 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createHmac } from "node:crypto"
-import { insertAdLead, logAdEvent, metaVerifyToken, normalizePhone, safeEqual } from "@/lib/ad-leads"
+import { logAdEvent, metaVerifyToken, safeEqual } from "@/lib/ad-leads"
+import { fetchMetaLead, saveMetaLead } from "@/lib/meta-leads"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-
-const GRAPH = "https://graph.facebook.com/v21.0"
 
 /** Meta subscription handshake: echo hub.challenge when the verify token matches. */
 export function GET(req: NextRequest) {
@@ -22,56 +21,12 @@ interface LeadgenChange {
   value?: { leadgen_id?: string; page_id?: string; form_id?: string; ad_id?: string; adgroup_id?: string; created_time?: number }
 }
 
-interface GraphLead {
-  id: string
-  created_time?: string
-  field_data?: { name: string; values?: string[] }[]
-  ad_name?: string
-  adset_name?: string
-  campaign_name?: string
-  form_id?: string
-  platform?: string
-  is_organic?: boolean
-}
-
 function signatureOk(req: NextRequest, raw: string): boolean | null {
   const secret = process.env.META_APP_SECRET
   if (!secret) return null
   const header = req.headers.get("x-hub-signature-256") ?? ""
   const expected = `sha256=${createHmac("sha256", secret).update(raw).digest("hex")}`
   return safeEqual(header, expected)
-}
-
-async function fetchLead(leadgenId: string, token: string): Promise<GraphLead> {
-  const fields = "created_time,field_data,ad_name,adset_name,campaign_name,form_id,platform,is_organic"
-  const res = await fetch(`${GRAPH}/${encodeURIComponent(leadgenId)}?fields=${fields}&access_token=${encodeURIComponent(token)}`, {
-    cache: "no-store",
-  })
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(body?.error?.message ?? `Graph API ${res.status}`)
-  return body as GraphLead
-}
-
-function mapFields(lead: GraphLead) {
-  const fields: Record<string, string> = {}
-  for (const f of lead.field_data ?? []) fields[f.name.toLowerCase()] = (f.values ?? []).join(", ")
-  const take = (...keys: string[]) => {
-    for (const k of keys) {
-      const v = fields[k]
-      if (v) {
-        delete fields[k]
-        return v
-      }
-    }
-    return null
-  }
-  const full = take("full_name", "name")
-  const first = take("first_name")
-  const last = take("last_name")
-  const name = full || [first, last].filter(Boolean).join(" ") || null
-  const phone = normalizePhone(take("phone_number", "phone", "mobile_number", "whatsapp_number"))
-  const email = take("email", "work_email")
-  return { name, phone, email, extra: fields }
 }
 
 export async function POST(req: NextRequest) {
@@ -107,26 +62,8 @@ export async function POST(req: NextRequest) {
   for (const v of ids) {
     try {
       // Fetching from the Graph API with our page token also proves the lead is genuine.
-      const lead = await fetchLead(v.leadgen_id!, token)
-      const mapped = mapFields(lead)
-      const isInstagram = lead.platform === "ig" || lead.platform === "instagram"
-      const inserted = await insertAdLead({
-        externalId: `meta:${lead.id}`,
-        source: isInstagram ? "instagram" : "facebook",
-        ...mapped,
-        metadata: {
-          provider: "meta",
-          platform: lead.platform ?? null,
-          campaign: lead.campaign_name ?? null,
-          adset: lead.adset_name ?? null,
-          ad: lead.ad_name ?? null,
-          form_id: lead.form_id ?? v.form_id ?? null,
-          page_id: v.page_id ?? null,
-          ad_id: v.ad_id ?? null,
-          organic: lead.is_organic ?? false,
-          submitted_at: lead.created_time ?? null,
-        },
-      })
+      const lead = await fetchMetaLead(v.leadgen_id!, token)
+      const inserted = await saveMetaLead(lead, { pageId: v.page_id, formId: v.form_id, adId: v.ad_id })
       if (inserted) created++
     } catch (err) {
       errors.push(`${v.leadgen_id}: ${(err as Error).message}`)

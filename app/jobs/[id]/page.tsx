@@ -29,6 +29,7 @@ import { DiagnosticsPanel, type DiagnosticTest } from "@/components/diagnostics-
 import { InspectionPanel } from "@/components/inspection/inspection-panel"
 import { FullInspectionPanel, type FullInspectionData } from "@/components/inspection/full-inspection-panel"
 import { JobTypeSwitch } from "@/components/job-type-switch"
+import { ComebackBanner, CreateComebackButton, type ComebackInfo } from "@/components/comeback-panel"
 import { normalizeChecklist, type JobType } from "@/lib/full-inspection-config"
 import { TechnicianJobCard } from "@/components/technician-job-card"
 import { TechPartsRequest } from "@/components/tech-parts-request"
@@ -210,7 +211,35 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const canManageExpenses = sessionCtx?.permissions.has("purchase_orders.manage") ?? false
   const canEditVehicle = sessionCtx?.permissions.has("jobs.update_status") ?? false
   const isOwner = sessionCtx?.role === "owner"
+  const canCreateComeback = sessionCtx?.permissions.has("jobs.create") ?? false
   const financialSettings = await getSettings()
+
+  let comebackInfo: ComebackInfo | null = null
+  if (job.comeback_of) {
+    const staffIds = [job.comeback_advisor_id, job.comeback_technician_id].filter(Boolean) as string[]
+    const [{ data: originalJob }, { data: comebackStaff }] = await Promise.all([
+      supabase.from("jobs").select("id, job_number").eq("id", job.comeback_of).maybeSingle(),
+      staffIds.length
+        ? supabase.from("profiles").select("id, full_name").in("id", staffIds)
+        : Promise.resolve({ data: [] as { id: string; full_name: string | null }[] }),
+    ])
+    const nameOf = (uid: string | null) => (comebackStaff ?? []).find((p) => p.id === uid)?.full_name ?? null
+    comebackInfo = {
+      originalId: job.comeback_of,
+      originalNumber: originalJob?.job_number ?? null,
+      reason: job.comeback_reason,
+      responsibility: job.comeback_responsibility,
+      note: job.comeback_note,
+      advisorName: nameOf(job.comeback_advisor_id),
+      technicianName: nameOf(job.comeback_technician_id),
+    }
+  }
+  const { data: laterComebacks } = await supabase
+    .from("jobs")
+    .select("id, job_number, created_at")
+    .eq("comeback_of", id)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
 
   // AI Diagnostic Assistant: session + technician-verified test workflow.
   const { data: diagnosticSession } = await supabase
@@ -464,7 +493,27 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           value={(isInspectionOnly ? "inspection_only" : "repair") as JobType}
           canEdit={canSetJobType}
         />
+        {canCreateComeback && !comebackInfo && (
+          <div className="ml-auto">
+            <CreateComebackButton jobId={job.id} isOwner={isOwner} />
+          </div>
+        )}
       </div>
+
+      {comebackInfo && <ComebackBanner jobId={job.id} info={comebackInfo} isOwner={isOwner} />}
+      {(laterComebacks?.length ?? 0) > 0 && (
+        <p className="mb-4 text-sm text-amber-500">
+          This car came back after this job:{" "}
+          {laterComebacks!.map((c, i) => (
+            <span key={c.id}>
+              {i > 0 && ", "}
+              <Link href={`/jobs/${c.id}`} className="font-mono underline-offset-2 hover:underline">
+                {c.job_number}
+              </Link>
+            </span>
+          ))}
+        </p>
+      )}
 
       <Card className="mb-6 p-4">
         <StageStepper jobId={job.id} stage={job.stage as Stage} />

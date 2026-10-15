@@ -36,6 +36,7 @@ import {
   Inbox,
   Trash2,
   History,
+  RotateCcw,
   Bot,
   ScanLine,
   Sparkles,
@@ -82,6 +83,7 @@ const NAV_GROUPS = [
       { href: "/jobs", label: "Job Cards", icon: Car, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
       { href: "/appointments", label: "Appointments", icon: CalendarClock, anyOf: ["appointments.view"] },
       { href: "/history", label: "History", icon: History, anyOf: ["jobs.view_all"] },
+      { href: "/comebacks", label: "Comebacks", icon: RotateCcw, anyOf: ["jobs.view_all"] },
     ],
   },
   {

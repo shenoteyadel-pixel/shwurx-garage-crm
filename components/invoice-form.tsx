@@ -6,6 +6,7 @@ import { Card, Button, Input, Label, Select, Textarea } from "@/components/ui"
 import { createInvoice } from "@/lib/actions-crm"
 import { formatCurrency } from "@/lib/utils"
 import { Plus, Trash2 } from "lucide-react"
+import { BILLING_LABELS, isFree, type BillingType } from "@/lib/invoice-line"
 
 type Job = {
   id: string
@@ -19,7 +20,17 @@ type Job = {
   plate_code: string | null
   plate_number: string | null
 }
-type Line = { key: string; kind: "part" | "labour" | "fee"; description: string; quantity: number; unit_price: number }
+type Line = {
+  key: string
+  kind: "part" | "labour" | "fee"
+  description: string
+  quantity: number
+  unit_price: number
+  billing_type: BillingType
+  free_reason: string
+  warranty_value: number
+  warranty_unit: "" | "days" | "months"
+}
 type Prefill = {
   jobId: string
   customerName: string
@@ -38,7 +49,13 @@ const line = (p?: Partial<Line>): Line => ({
   description: p?.description ?? "",
   quantity: p?.quantity ?? 1,
   unit_price: p?.unit_price ?? 0,
+  billing_type: p?.billing_type ?? "normal",
+  free_reason: p?.free_reason ?? "",
+  warranty_value: p?.warranty_value ?? 0,
+  warranty_unit: p?.warranty_unit ?? "",
 })
+
+const lineValue = (l: Line) => (Number(l.quantity) || 0) * (Number(l.unit_price) || 0)
 
 export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefill: Prefill | null; defaultVat: number }) {
   const router = useRouter()
@@ -66,7 +83,10 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
   const update = (key: string, patch: Partial<Line>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
 
-  const gross = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_price) || 0), 0)
+  const gross = lines.reduce((s, l) => s + (isFree(l.billing_type) ? 0 : lineValue(l)), 0)
+  const freeValue = lines.reduce((s, l) => s + (isFree(l.billing_type) ? lineValue(l) : 0), 0)
+  const missingReason = lines.some((l) => l.description.trim() && isFree(l.billing_type) && !l.free_reason.trim())
+  const missingWarranty = lines.some((l) => l.description.trim() && l.warranty_unit && !(Number(l.warranty_value) > 0))
   const subtotal = Math.max(0, gross - (Number(discount) || 0))
   const vat = (subtotal * vatRate) / 100
   const total = subtotal + vat
@@ -101,6 +121,10 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
           description: l.description,
           quantity: Number(l.quantity) || 0,
           unit_price: Number(l.unit_price) || 0,
+          billing_type: l.billing_type,
+          free_reason: isFree(l.billing_type) ? l.free_reason.trim() : null,
+          warranty_value: l.warranty_unit ? Number(l.warranty_value) || 0 : null,
+          warranty_unit: l.warranty_unit || null,
         })),
       })
       if (res?.error) setFormError(res)
@@ -148,7 +172,8 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
         </div>
         <div className="space-y-3">
           {lines.map((l) => (
-            <div key={l.key} className="grid grid-cols-12 items-end gap-2">
+            <div key={l.key} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+            <div className="grid grid-cols-12 items-end gap-2">
               <div className="col-span-6 sm:col-span-2">
                 <Label htmlFor={`k${l.key}`}>Type</Label>
                 <Select id={`k${l.key}`} value={l.kind} onChange={(e) => update(l.key, { kind: e.target.value as Line["kind"] })}>
@@ -171,8 +196,15 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
               </div>
               <div className="col-span-3 sm:col-span-1">
                 <Label>Total</Label>
-                <div className="flex h-10 items-center text-xs tabular-nums text-muted-foreground">
-                  {formatCurrency((Number(l.quantity) || 0) * (Number(l.unit_price) || 0))}
+                <div className="flex h-10 flex-col justify-center text-xs tabular-nums text-muted-foreground">
+                  {isFree(l.billing_type) ? (
+                    <>
+                      <span className="line-through">{formatCurrency(lineValue(l))}</span>
+                      <span className="font-semibold text-primary">FREE</span>
+                    </>
+                  ) : (
+                    formatCurrency(lineValue(l))
+                  )}
                 </div>
               </div>
               <div className="col-span-1 flex justify-end">
@@ -184,6 +216,61 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
+            </div>
+            <div className="grid grid-cols-12 items-end gap-2">
+              <div className="col-span-12 sm:col-span-4">
+                <Label htmlFor={`b${l.key}`}>Billing</Label>
+                <Select
+                  id={`b${l.key}`}
+                  value={l.billing_type}
+                  onChange={(e) => update(l.key, { billing_type: e.target.value as BillingType })}
+                >
+                  {(Object.keys(BILLING_LABELS) as BillingType[]).map((b) => (
+                    <option key={b} value={b}>
+                      {BILLING_LABELS[b]}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              {isFree(l.billing_type) && (
+                <div className="col-span-12 sm:col-span-4">
+                  <Label htmlFor={`r${l.key}`}>Reason (shown on invoice)</Label>
+                  <Input
+                    id={`r${l.key}`}
+                    value={l.free_reason}
+                    maxLength={300}
+                    placeholder={l.billing_type === "warranty" ? "e.g. Covered by warranty from INV-0123" : "e.g. Goodwill for delay"}
+                    onChange={(e) => update(l.key, { free_reason: e.target.value })}
+                    aria-invalid={!!l.description.trim() && !l.free_reason.trim()}
+                  />
+                </div>
+              )}
+              <div className={isFree(l.billing_type) ? "col-span-12 sm:col-span-4" : "col-span-12 sm:col-span-8"}>
+                <Label htmlFor={`wu${l.key}`}>Warranty we give</Label>
+                <div className="flex gap-2">
+                  <Select
+                    id={`wu${l.key}`}
+                    value={l.warranty_unit}
+                    onChange={(e) => update(l.key, { warranty_unit: e.target.value as Line["warranty_unit"] })}
+                    className="flex-1"
+                  >
+                    <option value="">No warranty</option>
+                    <option value="days">Days</option>
+                    <option value="months">Months</option>
+                  </Select>
+                  {l.warranty_unit && (
+                    <Input
+                      type="number"
+                      min={1}
+                      aria-label={`Warranty ${l.warranty_unit}`}
+                      value={l.warranty_value || ""}
+                      onChange={(e) => update(l.key, { warranty_value: Number(e.target.value) })}
+                      className="w-24"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
             </div>
           ))}
         </div>
@@ -200,6 +287,7 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
             <Input id="vat" type="number" value={vatRate} onChange={(e) => setVatRate(Number(e.target.value))} className="w-20" />
           </div>
           <div className="w-full max-w-xs space-y-1.5 text-sm">
+            {freeValue > 0 && <Row label="Free items (not charged)" value={formatCurrency(freeValue)} />}
             <Row label="Subtotal" value={formatCurrency(subtotal)} />
             <Row label={`VAT (${vatRate}%)`} value={formatCurrency(vat)} />
             <div className="flex items-center justify-between border-t border-border pt-2 text-base font-bold">
@@ -232,7 +320,7 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
         <Button variant="outline" onClick={() => router.back()}>
           Cancel
         </Button>
-        <Button onClick={submit} disabled={pending || !customerName.trim()}>
+        <Button onClick={submit} disabled={pending || !customerName.trim() || missingReason || missingWarranty}>
           {pending ? "Creating…" : "Create Invoice"}
         </Button>
       </div>

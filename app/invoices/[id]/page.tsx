@@ -5,6 +5,7 @@ import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { Card, Badge } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { FREE_BADGE, isFree, warrantyLabel } from "@/lib/invoice-line"
 import { InvoiceActions } from "@/components/invoice-actions"
 import { InvoiceComments } from "@/components/invoice-comments"
 import { loadInvoiceComments } from "@/lib/invoice-comments"
@@ -81,11 +82,30 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
             <tbody>
               {items.map((it) => (
                 <tr key={it.id} className="border-b border-border/60 last:border-0">
-                  <td className="px-4 py-3">{it.description}</td>
+                  <td className="px-4 py-3">
+                    <div>{it.description}</div>
+                    {isFree(it.billing_type) && (
+                      <div className="mt-1 text-xs text-primary">
+                        {FREE_BADGE[it.billing_type as "satisfaction" | "warranty"]}
+                        {it.free_reason ? ` · ${it.free_reason}` : ""}
+                      </div>
+                    )}
+                    {warrantyLabel(it.warranty_value, it.warranty_unit) && (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {warrantyLabel(it.warranty_value, it.warranty_unit)}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 capitalize text-muted-foreground">{it.kind}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{Number(it.quantity)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(it.unit_price)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(it.line_total)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {isFree(it.billing_type) ? (
+                      <span className="font-semibold text-primary">FREE</span>
+                    ) : (
+                      formatCurrency(it.line_total)
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

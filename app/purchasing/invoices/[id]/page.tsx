@@ -44,6 +44,7 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
       serviceDb
         .from("jobs")
         .select("id, job_number, vehicle_make, vehicle_model, plate_number, customer_name")
+        .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(200),
       getSettings(),

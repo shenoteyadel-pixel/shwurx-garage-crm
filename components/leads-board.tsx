@@ -20,7 +20,9 @@ import {
   Car,
   ExternalLink,
   Sparkles,
+  Download,
 } from "lucide-react"
+import { SOURCE_FILTERS, leadSourceKey, leadsToCsv, type LeadSourceKey } from "@/lib/lead-source"
 import { leadOrigin, ORIGIN_FILTERS, type LeadOriginKind } from "@/lib/lead-origin"
 import {
   setLeadStatus,
@@ -63,6 +65,16 @@ export function LeadsBoard({
 }) {
   const [filter, setFilter] = useState<"all" | LeadStatus>("all")
   const [origin, setOrigin] = useState<"all" | LeadOriginKind>("all")
+  const [source, setSource] = useState<LeadSourceKey>("all")
+
+  const sourceCounts = useMemo(() => {
+    const c: Record<string, number> = { all: leads.length }
+    for (const l of leads) {
+      const k = leadSourceKey(l.source)
+      c[k] = (c[k] ?? 0) + 1
+    }
+    return c
+  }, [leads])
 
   const origins = useMemo(() => new Map(leads.map((l) => [l.id, leadOrigin(l.metadata)])), [leads])
 
@@ -86,16 +98,42 @@ export function LeadsBoard({
     () =>
       leads.filter((l) => {
         if (filter !== "all" && l.status !== filter) return false
+        if (source !== "all" && leadSourceKey(l.source) !== source) return false
         if (origin === "all") return true
         const kind = origins.get(l.id)?.kind
         return origin === "other" ? kind === "other" || kind === "appointment" : kind === origin
       }),
-    [leads, filter, origin, origins],
+    [leads, filter, origin, origins, source],
   )
+
+  function downloadCsv() {
+    const blob = new Blob([leadsToCsv(visible)], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `leads-${source === "all" ? "all" : source}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
+        <label htmlFor="lead-source-filter" className="text-xs font-medium text-muted-foreground">
+          Source
+        </label>
+        <select
+          id="lead-source-filter"
+          value={source}
+          onChange={(e) => setSource(e.target.value as LeadSourceKey)}
+          className="h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          {SOURCE_FILTERS.map((s) => (
+            <option key={s.key} value={s.key}>
+              {s.label} ({sourceCounts[s.key] ?? 0})
+            </option>
+          ))}
+        </select>
         <label htmlFor="lead-origin-filter" className="text-xs font-medium text-muted-foreground">
           Origin
         </label>
@@ -111,6 +149,17 @@ export function LeadsBoard({
             </option>
           ))}
         </select>
+        {canManage ? (
+          <button
+            type="button"
+            onClick={downloadCsv}
+            disabled={visible.length === 0}
+            className="ms-auto inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            Download CSV ({visible.length})
+          </button>
+        ) : null}
       </div>
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((f) => {

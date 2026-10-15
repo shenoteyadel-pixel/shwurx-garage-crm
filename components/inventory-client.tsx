@@ -5,7 +5,8 @@ import { Card, Button, Input, Label, Select, Textarea, Badge } from "@/component
 import { Modal } from "@/components/modal"
 import { saveInventoryItem, deleteInventoryItem, recordStockMovement } from "@/lib/actions-crm"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import { Plus, Search, Pencil, Trash2, PackagePlus, PackageMinus, SlidersHorizontal, AlertTriangle, Boxes, History } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, PackagePlus, PackageMinus, SlidersHorizontal, AlertTriangle, Boxes, History, Clock } from "lucide-react"
+import { STOCK_USAGE_LABEL, STOCK_USAGE_TYPES, STUCK_STOCK_DAYS, type StockUsageType } from "@/lib/stock-usage"
 
 type Item = {
   id: string
@@ -34,24 +35,42 @@ type Movement = {
   unit_cost: number
   reference: string | null
   note: string | null
+  usage_type: StockUsageType | null
+  job_id: string | null
   created_at: string
   inventory_items: { name: string } | null
+  jobs: { job_number: string; plate_number: string | null; vehicle_make: string | null; vehicle_model: string | null } | null
+}
+type JobOption = {
+  id: string
+  job_number: string
+  vehicle_make: string | null
+  vehicle_model: string | null
+  plate_number: string | null
+  customer_name: string | null
 }
 
 export function InventoryClient({
   items,
   suppliers,
   movements,
+  jobs = [],
+  stuckDays = {},
   canViewCosts = true,
   canViewSuppliers = true,
 }: {
   items: Item[]
   suppliers: Supplier[]
   movements: Movement[]
+  jobs?: JobOption[]
+  stuckDays?: Record<string, number>
   canViewCosts?: boolean
   canViewSuppliers?: boolean
 }) {
   const [q, setQ] = useState("")
+  const [stuckOnly, setStuckOnly] = useState(false)
+  const [usageFilter, setUsageFilter] = useState<"" | StockUsageType>("")
+  const stuckCount = Object.keys(stuckDays).length
   const [tab, setTab] = useState<"stock" | "history">("stock")
   const [editing, setEditing] = useState<Item | null>(null)
   const [formOpen, setFormOpen] = useState(false)
@@ -62,10 +81,11 @@ export function InventoryClient({
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
-    if (!s) return items
+    const base = stuckOnly ? items.filter((x) => stuckDays[x.id] != null) : items
+    if (!s) return base
     // Search spans every identifier the spec requires: CRM Part ID, OEM number,
     // supplier part number, name, brand, category, location and supplier name.
-    return items.filter((x) =>
+    return base.filter((x) =>
       [
         x.name,
         x.sku,
@@ -80,7 +100,9 @@ export function InventoryClient({
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(s)),
     )
-  }, [q, items, supplierName])
+  }, [q, items, supplierName, stuckOnly, stuckDays])
+
+  const visibleMoves = usageFilter ? movements.filter((m) => m.usage_type === usageFilter) : movements
 
   const stockValue = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.cost_price) || 0), 0)
   const lowStock = items.filter((i) => Number(i.reorder_level) > 0 && Number(i.quantity) <= Number(i.reorder_level))
@@ -128,6 +150,25 @@ export function InventoryClient({
         </Card>
       )}
 
+      {stuckCount > 0 && (
+        <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 border-sky-500/30 bg-sky-500/10 p-3 text-sm text-sky-200">
+          <span className="flex items-center gap-3">
+            <Clock className="h-4 w-4 shrink-0" />
+            {stuckCount} {stuckCount === 1 ? "item has" : "items have"} been stuck in stock for {STUCK_STOCK_DAYS}+ days
+            with no stock out.
+          </span>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setTab("stock")
+              setStuckOnly((v) => !v)
+            }}
+          >
+            {stuckOnly ? "Show all items" : "Show stuck items"}
+          </Button>
+        </Card>
+      )}
+
       <div className="mb-4 flex gap-1 border-b border-border">
         <TabBtn active={tab === "stock"} onClick={() => setTab("stock")}>
           Stock List
@@ -162,7 +203,14 @@ export function InventoryClient({
                     return (
                       <tr key={i.id} className="border-b border-border/60 last:border-0">
                         <td className="px-4 py-3">
-                          <div className="font-medium">{i.name}</div>
+                          <div className="flex flex-wrap items-center gap-2 font-medium">
+                            {i.name}
+                            {stuckDays[i.id] != null && (
+                              <Badge className="border-sky-500/30 bg-sky-500/15 text-sky-300">
+                                Stuck {stuckDays[i.id]}d
+                              </Badge>
+                            )}
+                          </div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                             {i.crm_part_id && <span className="font-mono text-foreground/70">{i.crm_part_id}</span>}
                             {i.oem_part_number && <span className="font-mono">OEM {i.oem_part_number}</span>}
@@ -217,7 +265,25 @@ export function InventoryClient({
         )
       ) : (
         <Card className="overflow-hidden">
-          {movements.length === 0 ? (
+          <div className="flex flex-wrap items-center gap-3 border-b border-border p-3">
+            <Label htmlFor="usage_filter" className="mb-0">
+              Used for
+            </Label>
+            <Select
+              id="usage_filter"
+              value={usageFilter}
+              onChange={(e) => setUsageFilter(e.target.value as "" | StockUsageType)}
+              className="w-56"
+            >
+              <option value="">All movements</option>
+              {STOCK_USAGE_TYPES.map((u) => (
+                <option key={u} value={u}>
+                  {STOCK_USAGE_LABEL[u]}
+                </option>
+              ))}
+            </Select>
+          </div>
+          {visibleMoves.length === 0 ? (
             <div className="p-10 text-center text-sm text-muted-foreground">No stock movements yet.</div>
           ) : (
             <div className="overflow-x-auto">
@@ -228,11 +294,12 @@ export function InventoryClient({
                     <th className="px-4 py-3 font-semibold">Item</th>
                     <th className="px-4 py-3 font-semibold">Type</th>
                     <th className="px-4 py-3 text-right font-semibold">Qty</th>
-                    <th className="px-4 py-3 font-semibold">Reference</th>
+                    <th className="px-4 py-3 font-semibold">Where it went</th>
+                    <th className="px-4 py-3 font-semibold">Comment</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {movements.map((m) => (
+                  {visibleMoves.map((m) => (
                     <tr key={m.id} className="border-b border-border/60 last:border-0">
                       <td className="px-4 py-3 text-muted-foreground">{formatDate(m.created_at)}</td>
                       <td className="px-4 py-3 font-medium">{m.inventory_items?.name ?? "—"}</td>
@@ -243,7 +310,25 @@ export function InventoryClient({
                         {m.kind === "out" ? "−" : m.kind === "in" ? "+" : ""}
                         {Math.abs(Number(m.quantity))}
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{m.reference || m.note || "—"}</td>
+                      <td className="px-4 py-3">
+                        {m.usage_type ? (
+                          <div>
+                            <div className="font-medium">{STOCK_USAGE_LABEL[m.usage_type]}</div>
+                            {m.job_id && m.jobs ? (
+                              <a href={`/jobs/${m.job_id}`} className="text-xs text-primary hover:underline">
+                                {m.jobs.job_number}
+                                {m.jobs.plate_number ? ` · ${m.jobs.plate_number}` : ""}
+                                {m.jobs.vehicle_make ? ` · ${m.jobs.vehicle_make} ${m.jobs.vehicle_model ?? ""}` : ""}
+                              </a>
+                            ) : (
+                              m.reference && <div className="text-xs text-muted-foreground">{m.reference}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">{m.reference || "—"}</span>
+                        )}
+                      </td>
+                      <td className="max-w-xs px-4 py-3 text-muted-foreground">{m.note || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -274,7 +359,7 @@ export function InventoryClient({
         }
       >
         {moveItem && (
-          <MovementForm move={moveItem} canViewCosts={canViewCosts} onDone={() => setMoveItem(null)} />
+          <MovementForm move={moveItem} jobs={jobs} canViewCosts={canViewCosts} onDone={() => setMoveItem(null)} />
         )}
       </Modal>
 
@@ -444,21 +529,45 @@ function ItemForm({
 
 function MovementForm({
   move,
+  jobs,
   canViewCosts,
   onDone,
 }: {
   move: { item: Item; kind: "in" | "out" | "adjust" }
+  jobs: JobOption[]
   canViewCosts: boolean
   onDone: () => void
 }) {
   const [pending, start] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+  const [usage, setUsage] = useState<StockUsageType>("car")
+  const [jobQuery, setJobQuery] = useState("")
   const { item, kind } = move
+  const isOut = kind === "out"
+
+  const jobMatches = useMemo(() => {
+    const s = jobQuery.trim().toLowerCase()
+    if (!s) return jobs.slice(0, 50)
+    return jobs
+      .filter((j) =>
+        [j.job_number, j.plate_number, j.vehicle_make, j.vehicle_model, j.customer_name]
+          .filter(Boolean)
+          .some((v) => v!.toLowerCase().includes(s)),
+      )
+      .slice(0, 50)
+  }, [jobs, jobQuery])
+
   return (
     <form
       action={(fd) =>
         start(async () => {
-          await recordStockMovement(fd)
-          onDone()
+          setError(null)
+          try {
+            await recordStockMovement(fd)
+            onDone()
+          } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not record the movement.")
+          }
         })
       }
       className="space-y-4"
@@ -478,11 +587,70 @@ function MovementForm({
       {kind === "in" && canViewCosts && (
         <F label="Unit cost (AED)" name="unit_cost" type="number" defaultValue={item.cost_price ?? undefined} />
       )}
-      <F label="Reference" name="reference" placeholder={kind === "out" ? "Job / issued to" : "Supplier invoice / reason"} />
+      {isOut && (
+        <div>
+          <Label htmlFor="usage_type">Used for</Label>
+          <Select
+            id="usage_type"
+            name="usage_type"
+            value={usage}
+            onChange={(e) => setUsage(e.target.value as StockUsageType)}
+            required
+          >
+            {STOCK_USAGE_TYPES.map((u) => (
+              <option key={u} value={u}>
+                {STOCK_USAGE_LABEL[u]}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+      {isOut && usage === "car" && (
+        <div>
+          <Label htmlFor="job_search">Car / job card</Label>
+          <Input
+            id="job_search"
+            value={jobQuery}
+            onChange={(e) => setJobQuery(e.target.value)}
+            placeholder="Search job no., plate, car, customer…"
+            className="mb-2"
+          />
+          <Select id="job_id" name="job_id" required defaultValue="" aria-label="Job card">
+            <option value="" disabled>
+              {jobMatches.length ? "Choose the car…" : "No matching job cards"}
+            </option>
+            {jobMatches.map((j) => (
+              <option key={j.id} value={j.id}>
+                {j.job_number} · {[j.vehicle_make, j.vehicle_model].filter(Boolean).join(" ") || "Car"}
+                {j.plate_number ? ` · ${j.plate_number}` : ""}
+                {j.customer_name ? ` · ${j.customer_name}` : ""}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+      {(!isOut || usage !== "car") && (
+        <F
+          label="Reference"
+          name="reference"
+          placeholder={isOut ? "Issued to / supplier return no." : "Supplier invoice / reason"}
+        />
+      )}
       <div>
-        <Label htmlFor="note">Note</Label>
-        <Textarea id="note" name="note" className="min-h-14" />
+        <Label htmlFor="note">{isOut ? "Comment (required)" : "Note"}</Label>
+        <Textarea
+          id="note"
+          name="note"
+          required={isOut}
+          className="min-h-14"
+          placeholder={isOut ? "Who took it and why — so nothing goes missing from stock" : undefined}
+        />
       </div>
+      {error && (
+        <p role="alert" className="text-sm text-red-400">
+          {error}
+        </p>
+      )}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" onClick={onDone}>
           Cancel

@@ -22,6 +22,7 @@ export function formatDate(d: string | Date | null | undefined) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Asia/Dubai",
   })
 }
 

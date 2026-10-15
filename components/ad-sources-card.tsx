@@ -41,8 +41,8 @@ export function AdSourcesCard({ sources }: { sources: AdSourceStatus[] }) {
                 {s.ready ? "Ready" : "Setup needed"}
               </Badge>
             </div>
-            <CopyValue label="Webhook URL" value={s.url} />
-            {s.secret ? <CopyValue label={s.secretLabel} value={s.secret} /> : null}
+            <CopyValue label="Webhook URL" value={s.url} masked />
+            {s.secret ? <CopyValue label={s.secretLabel} value={s.secret} masked /> : null}
             {s.missing.length ? (
               <p className="text-sm text-destructive">Missing: {s.missing.join(", ")}</p>
             ) : null}

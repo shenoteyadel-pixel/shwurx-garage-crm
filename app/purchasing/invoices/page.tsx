@@ -125,7 +125,7 @@ export default async function InvoiceCapturePage() {
                       <td className="px-4 py-3">{(r as any).suppliers?.name ?? r.supplier_name_raw ?? "—"}</td>
                       <td className="px-4 py-3 text-muted-foreground">{r.invoice_number ?? "—"}</td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {r.invoice_date ? formatDay(r.invoice_date) : "—"}
+                        {formatDay(r.invoice_date ?? r.created_at)}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">

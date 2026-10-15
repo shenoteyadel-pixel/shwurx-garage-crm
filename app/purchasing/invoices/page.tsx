@@ -10,7 +10,7 @@ import { InvoiceUpload } from "@/components/invoice-upload"
 import { DeleteInvoiceButton } from "@/components/delete-invoice-button"
 import { NewBlankInvoiceButton } from "@/components/invoice-owner-actions"
 import { formatCurrency, formatDay } from "@/lib/utils"
-import { ScanLine } from "lucide-react"
+import { FileText, ScanLine } from "lucide-react"
 
 export const metadata = { title: "Invoice Capture · SHWURX Auto Service Center" }
 
@@ -38,6 +38,9 @@ export default async function InvoiceCapturePage() {
     .limit(200)
 
   const rows = invoices ?? []
+  type Row = (typeof rows)[number]
+  const invoiceRows = rows.filter((r) => r.status !== "quoted")
+  const quoteRows = rows.filter((r) => r.status === "quoted")
   const canDeleteDuplicates = user.permissions.includes("purchase_orders.manage")
   const duplicates = findDuplicateGroups(rows)
   const names = await loadProfileNames(createServiceClient(), rows.map((r) => r.created_by))
@@ -50,6 +53,70 @@ export default async function InvoiceCapturePage() {
     .filter((r) => r.status === "confirmed")
     .reduce((t, r) => t + Math.max(0, (Number(r.total) || 0) - (Number(r.amount_paid) || 0)), 0)
   const drafts = rows.filter((r) => r.status === "draft").length
+
+  const renderTable = (list: Row[], kind: "invoice" | "quote") => (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[960px] text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+        <thead className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <tr>
+            <th className="px-4 py-3 font-semibold">Ref</th>
+            <th className="px-4 py-3 font-semibold">Supplier</th>
+            <th className="px-4 py-3 font-semibold">{kind === "quote" ? "Supplier ref" : "Invoice #"}</th>
+            <th className="px-4 py-3 font-semibold">Date</th>
+            <th className="px-4 py-3 font-semibold">Status</th>
+            <th className="px-4 py-3 font-semibold">Captured by</th>
+            <th className="px-4 py-3 text-right font-semibold">VAT</th>
+            <th className="px-4 py-3 text-right font-semibold">Total</th>
+            <th className="px-4 py-3">
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((r) => (
+            <tr key={r.id} className="border-b border-border/60 last:border-0 hover:bg-accent/40">
+              <td className="px-4 py-3">
+                <Link href={`/purchasing/invoices/${r.id}`} className="font-mono font-medium text-primary hover:underline">
+                  {r.doc_number || "draft"}
+                </Link>
+              </td>
+              <td className="px-4 py-3">{(r as any).suppliers?.name ?? r.supplier_name_raw ?? "—"}</td>
+              <td className="px-4 py-3 text-muted-foreground">{r.invoice_number ?? "—"}</td>
+              <td className="px-4 py-3 text-muted-foreground">{formatDay(r.invoice_date ?? r.created_at)}</td>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-1.5">
+                  <Badge className={STATUS[r.status] ?? STATUS.draft}>{r.status}</Badge>
+                  {r.status === "confirmed" && r.payment_status !== "paid" && (
+                    <span className="text-xs text-amber-400">{r.payment_status}</span>
+                  )}
+                  {duplicates.has(r.id) && (
+                    <Badge
+                      className="border-red-500/40 bg-red-500/15 text-red-400"
+                      title={`Same invoice as ${duplicates.get(r.id)!.map((d) => d.label).join(", ")}`}
+                    >
+                      Duplicate
+                    </Badge>
+                  )}
+                </div>
+              </td>
+              <td className="px-4 py-3 text-muted-foreground">{(r.created_by && names.get(r.created_by)) || "—"}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(r.vat_amount)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(r.total)}</td>
+              <td className="px-4 py-2 text-right">
+                {r.status === "draft" ? (
+                  <DeleteInvoiceButton id={r.id} label={r.invoice_number || "draft"} kind="draft" compact />
+                ) : user.role === "owner" && (r.status === "confirmed" || r.status === "quoted") ? (
+                  <DeleteInvoiceButton id={r.id} label={r.doc_number || r.invoice_number || "invoice"} kind="confirmed" compact />
+                ) : duplicates.has(r.id) && canDeleteDuplicates ? (
+                  <DeleteInvoiceButton id={r.id} label={r.doc_number || r.invoice_number || "invoice"} kind="duplicate" compact />
+                ) : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 
   return (
     <AppShell user={user}>
@@ -89,79 +156,36 @@ export default async function InvoiceCapturePage() {
 
         <Card className="overflow-hidden">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Captured invoices</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Supplier invoices <span className="font-normal normal-case">({invoiceRows.length})</span>
+            </h2>
           </div>
-          {rows.length === 0 ? (
+          {invoiceRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
               <ScanLine className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">No invoices captured yet.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[960px] text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
-                <thead className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">Ref</th>
-                    <th className="px-4 py-3 font-semibold">Supplier</th>
-                    <th className="px-4 py-3 font-semibold">Invoice #</th>
-                    <th className="px-4 py-3 font-semibold">Date</th>
-                    <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Captured by</th>
-                    <th className="px-4 py-3 text-right font-semibold">VAT</th>
-                    <th className="px-4 py-3 text-right font-semibold">Total</th>
-                    <th className="px-4 py-3">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.id} className="border-b border-border/60 last:border-0 hover:bg-accent/40">
-                      <td className="px-4 py-3">
-                        <Link href={`/purchasing/invoices/${r.id}`} className="font-mono font-medium text-primary hover:underline">
-                          {r.doc_number || "draft"}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">{(r as any).suppliers?.name ?? r.supplier_name_raw ?? "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{r.invoice_number ?? "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {formatDay(r.invoice_date ?? r.created_at)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <Badge className={STATUS[r.status] ?? STATUS.draft}>{r.status}</Badge>
-                          {r.status === "confirmed" && r.payment_status !== "paid" && (
-                            <span className="text-xs text-amber-400">{r.payment_status}</span>
-                          )}
-                          {duplicates.has(r.id) && (
-                            <Badge
-                              className="border-red-500/40 bg-red-500/15 text-red-400"
-                              title={`Same invoice as ${duplicates.get(r.id)!.map((d) => d.label).join(", ")}`}
-                            >
-                              Duplicate
-                            </Badge>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {(r.created_by && names.get(r.created_by)) || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(r.vat_amount)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(r.total)}</td>
-                      <td className="px-4 py-2 text-right">
-                        {r.status === "draft" ? (
-                          <DeleteInvoiceButton id={r.id} label={r.invoice_number || "draft"} kind="draft" compact />
-                        ) : user.role === "owner" && (r.status === "confirmed" || r.status === "quoted") ? (
-                          <DeleteInvoiceButton id={r.id} label={r.doc_number || r.invoice_number || "invoice"} kind="confirmed" compact />
-                        ) : duplicates.has(r.id) && canDeleteDuplicates ? (
-                          <DeleteInvoiceButton id={r.id} label={r.doc_number || r.invoice_number || "invoice"} kind="duplicate" compact />
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            renderTable(invoiceRows, "invoice")
+          )}
+        </Card>
+
+        <Card className="overflow-hidden">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Supplier quotations <span className="font-normal normal-case">({quoteRows.length})</span>
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Price quotes only — not bills. They don&apos;t count towards VAT or the payable amount.
+            </p>
+          </div>
+          {quoteRows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
+              <FileText className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">No supplier quotations.</p>
             </div>
+          ) : (
+            renderTable(quoteRows, "quote")
           )}
         </Card>
       </div>

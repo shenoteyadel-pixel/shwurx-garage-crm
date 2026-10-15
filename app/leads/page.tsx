@@ -7,6 +7,10 @@ import { Inbox } from "lucide-react"
 import { LeadsBoard } from "@/components/leads-board"
 import type { LeadRow } from "@/lib/actions-leads"
 import { headers } from "next/headers"
+import { after } from "next/server"
+import { syncMetaLeads } from "@/lib/meta-leads"
+
+const META_SYNC_WAIT_MS = 4000
 import { createServiceClient } from "@/lib/supabase/server"
 import { googleWebhookKey, metaConfigured, metaVerifyToken } from "@/lib/ad-leads"
 import { AdSourcesCard, type AdSourceStatus } from "@/components/ad-sources-card"
@@ -79,6 +83,9 @@ export const dynamic = "force-dynamic"
 
 export default async function LeadsPage() {
   await requirePageAccess(["leads.view"], "Leads")
+  const sync = syncMetaLeads()
+  after(() => sync)
+  await Promise.race([sync, new Promise((resolve) => setTimeout(resolve, META_SYNC_WAIT_MS))])
   const user = await getShellUser()
   const supabase = await createClient()
 

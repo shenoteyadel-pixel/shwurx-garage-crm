@@ -123,9 +123,63 @@ async function resolvePages(token: string): Promise<PageTarget[]> {
   return [{ id: me.id, name: me.name, token }]
 }
 
-/** Pulls every lead already submitted on the lead forms of the token's Page(s). */
-export async function importAllMetaLeads(token: string): Promise<MetaImportResult> {
+const SYNC_INTERVAL_MS = 60_000
+const SYNC_OVERLAP_S = 15 * 60
+let lastSync: { at: number; sinceUnix: number } | null = null
+let inflight: Promise<MetaImportResult | null> | null = null
+const subscribedPages = new Set<string>()
+
+/**
+ * Keeps CRM Leads in step with Meta without a manual import. The first run on a
+ * server instance pulls every lead; later runs only ask Meta for leads created
+ * since the previous run (with an overlap window), throttled to once a minute.
+ */
+export function syncMetaLeads(): Promise<MetaImportResult | null> {
+  const token = process.env.META_PAGE_ACCESS_TOKEN
+  if (!token) return Promise.resolve(null)
+  if (inflight) return inflight
+  if (lastSync && Date.now() - lastSync.at < SYNC_INTERVAL_MS) return Promise.resolve(null)
+
+  const startedUnix = Math.floor(Date.now() / 1000)
+  const since = lastSync ? lastSync.sinceUnix - SYNC_OVERLAP_S : undefined
+  inflight = importAllMetaLeads(token, { since, subscribe: true })
+    .then((r) => {
+      lastSync = { at: Date.now(), sinceUnix: startedUnix }
+      if (r.errors.length) console.error("Meta lead sync errors:", r.errors.slice(0, 5))
+      return r
+    })
+    .catch((err) => {
+      lastSync = { at: Date.now(), sinceUnix: lastSync?.sinceUnix ?? 0 }
+      console.error("Meta lead sync failed:", (err as Error).message)
+      return null
+    })
+    .finally(() => {
+      inflight = null
+    })
+  return inflight
+}
+
+/** Makes sure the Page delivers leadgen webhooks to this app (needs pages_manage_metadata; best effort). */
+async function ensureLeadgenSubscription(target: PageTarget) {
+  if (subscribedPages.has(target.id)) return
+  try {
+    const res = await fetch(
+      `${GRAPH}/${encodeURIComponent(target.id)}/subscribed_apps?subscribed_fields=leadgen&access_token=${encodeURIComponent(target.token)}`,
+      { method: "POST", cache: "no-store" },
+    )
+    if (res.ok) subscribedPages.add(target.id)
+  } catch {
+    // Polling sync still covers the page if the subscription cannot be created.
+  }
+}
+
+/** Pulls leads submitted on the lead forms of the token's Page(s); all of them unless `since` is given. */
+export async function importAllMetaLeads(
+  token: string,
+  options: { since?: number; subscribe?: boolean } = {},
+): Promise<MetaImportResult> {
   const targets = await resolvePages(token)
+  if (options.subscribe) await Promise.all(targets.map(ensureLeadgenSubscription))
   const result: MetaImportResult = {
     pageName: targets.map((t) => t.name ?? t.id).join(", ") || null,
     forms: 0,
@@ -135,7 +189,7 @@ export async function importAllMetaLeads(token: string): Promise<MetaImportResul
   }
   for (const target of targets) {
     try {
-      await importPageLeads(target, result)
+      await importPageLeads(target, result, options.since)
     } catch (err) {
       result.errors.push(`page ${target.name ?? target.id}: ${(err as Error).message}`)
     }
@@ -143,13 +197,16 @@ export async function importAllMetaLeads(token: string): Promise<MetaImportResul
   return result
 }
 
-async function importPageLeads({ id: pageId, token }: PageTarget, result: MetaImportResult) {
+async function importPageLeads({ id: pageId, token }: PageTarget, result: MetaImportResult, since?: number) {
   const page = { id: pageId }
+  const filter = since
+    ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "time_created", operator: "GREATER_THAN", value: since }]))}`
+    : ""
   for await (const forms of pages<{ id: string; name?: string }>(`${page.id}/leadgen_forms?fields=id,name&limit=100`, token)) {
     for (const form of forms) {
       result.forms++
       try {
-        for await (const leads of pages<GraphLead>(`${form.id}/leads?fields=${LEAD_FIELDS}&limit=100`, token)) {
+        for await (const leads of pages<GraphLead>(`${form.id}/leads?fields=${LEAD_FIELDS}&limit=100${filter}`, token)) {
           for (const lead of leads) {
             result.found++
             try {

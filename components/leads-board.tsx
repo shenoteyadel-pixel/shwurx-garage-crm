@@ -21,6 +21,7 @@ import {
   ExternalLink,
   Sparkles,
   Download,
+  Trash2,
 } from "lucide-react"
 import { SOURCE_FILTERS, leadSourceKey, leadsToCsv, type LeadSourceKey } from "@/lib/lead-source"
 import { leadOrigin, ORIGIN_FILTERS, type LeadOriginKind } from "@/lib/lead-origin"
@@ -28,6 +29,7 @@ import {
   setLeadStatus,
   assignLead,
   addLeadNote,
+  deleteLead,
   convertLeadToCustomer,
   findCustomerForLead,
   type LeadRow,
@@ -58,10 +60,12 @@ export function LeadsBoard({
   leads,
   staff,
   canManage,
+  canDelete = false,
 }: {
   leads: LeadRow[]
   staff: StaffOption[]
   canManage: boolean
+  canDelete?: boolean
 }) {
   const [filter, setFilter] = useState<"all" | LeadStatus>("all")
   const [origin, setOrigin] = useState<"all" | LeadOriginKind>("all")
@@ -190,7 +194,7 @@ export function LeadsBoard({
       ) : (
         <div className="grid gap-3">
           {visible.map((lead) => (
-            <LeadCard key={lead.id} lead={lead} staff={staff} canManage={canManage} />
+            <LeadCard key={lead.id} lead={lead} staff={staff} canManage={canManage} canDelete={canDelete} />
           ))}
         </div>
       )}
@@ -198,10 +202,21 @@ export function LeadsBoard({
   )
 }
 
-function LeadCard({ lead, staff, canManage }: { lead: LeadRow; staff: StaffOption[]; canManage: boolean }) {
+function LeadCard({
+  lead,
+  staff,
+  canManage,
+  canDelete,
+}: {
+  lead: LeadRow
+  staff: StaffOption[]
+  canManage: boolean
+  canDelete: boolean
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [convertOpen, setConvertOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)
   const [noteText, setNoteText] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -374,7 +389,48 @@ function LeadCard({ lead, staff, canManage }: { lead: LeadRow; staff: StaffOptio
               <UserPlus className="h-3.5 w-3.5" /> Convert to customer
             </Button>
           ) : null}
+
+          {canDelete ? (
+            <Button
+              size="sm"
+              variant="danger"
+              className="ml-auto"
+              disabled={pending}
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </Button>
+          ) : null}
         </div>
+      ) : null}
+
+      {canDelete ? (
+        <Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} size="sm" title="Delete lead?">
+          <div className="space-y-4">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {lead.name || "This lead"} will be removed from the Leads list. Meta and Google Ads won&apos;t
+              re-import it.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" disabled={pending} onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                disabled={pending}
+                onClick={() =>
+                  run(async () => {
+                    await deleteLead(lead.id)
+                    setDeleteOpen(false)
+                  })
+                }
+              >
+                <Trash2 className="h-3.5 w-3.5" /> {pending ? "Deleting…" : "Delete lead"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       ) : null}
 
       <NoteModal

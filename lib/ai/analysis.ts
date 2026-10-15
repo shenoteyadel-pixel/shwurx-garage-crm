@@ -128,7 +128,7 @@ export async function runAnalysis(): Promise<Analysis> {
     db.from("stock_movements").select("item_id, created_at").gte("created_at", daysAgo(90)),
     db.from("quotations").select("id, job_id, total, created_at"),
     db.from("approval_requests").select("id, job_id, kind, status, total, sent_at, expires_at, created_at").eq("kind", "quotation"),
-    db.from("leads").select("id, name, status, source, created_at"),
+    db.from("leads").select("id, name, status, source, created_at").is("metadata->>deleted_at", null),
     db.from("appointments").select("id, name, status, preferred_date, created_at"),
     db.from("customers").select("id, full_name, mobile"),
   ])

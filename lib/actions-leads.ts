@@ -75,6 +75,29 @@ export async function setLeadStatus(id: string, status: LeadStatus) {
   revalidatePath("/leads")
 }
 
+/* ---------------- Delete (owner only) ---------------- */
+
+/**
+ * Soft-deletes by stamping metadata.deleted_at. The row is kept so the unique
+ * external_id stops the Meta/Google auto-sync from re-importing the lead.
+ */
+export async function deleteLead(id: string) {
+  const { supabase, ctx } = await guard("leads.manage")
+  if (ctx.role !== "owner") throw new Error("Only the owner can delete leads")
+  const lead = await readLead(supabase, id)
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from("leads")
+    .update({
+      metadata: { ...(lead.metadata ?? {}), deleted_at: now, deleted_by: ctx.userId },
+      updated_at: now,
+    })
+    .eq("id", id)
+  if (error) throw new Error(error.message)
+  await logAction(ctx, "lead.delete", "lead", id, { name: lead.name, source: lead.source })
+  revalidatePath("/leads")
+}
+
 /* ---------------- Assignment ---------------- */
 
 export async function assignLead(id: string, userId: string | null) {

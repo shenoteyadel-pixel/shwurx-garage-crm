@@ -95,6 +95,7 @@ export default async function LeadsPage() {
       .select(
         "id, name, phone, email, message, service_interest, source, status, customer_id, metadata, created_at, updated_at",
       )
+      .is("metadata->>deleted_at", null)
       .order("created_at", { ascending: false }),
     supabase
       .from("profiles")
@@ -139,7 +140,7 @@ export default async function LeadsPage() {
             </div>
           </Card>
         ) : (
-          <LeadsBoard leads={leads} staff={staff} canManage={canManage} />
+          <LeadsBoard leads={leads} staff={staff} canManage={canManage} canDelete={canManage && user.role === "owner"} />
         )}
       </div>
     </AppShell>

@@ -58,8 +58,14 @@ export async function POST(req: NextRequest) {
     .map((c) => c.value!)
 
   let created = 0
+  let testPings = 0
   const errors: string[] = []
   for (const v of ids) {
+    // The "Test" button in Meta's webhook dashboard sends this placeholder ID, which never exists in the Graph API.
+    if (v.leadgen_id === META_SAMPLE_LEADGEN_ID) {
+      testPings++
+      continue
+    }
     try {
       // Fetching from the Graph API with our page token also proves the lead is genuine.
       const lead = await fetchMetaLead(v.leadgen_id!, token)
@@ -71,5 +77,7 @@ export async function POST(req: NextRequest) {
   }
 
   await event.finish({ processed: errors.length === 0, leads: created, error: errors.join("; ") || null })
-  return NextResponse.json({ ok: true, created })
+  return NextResponse.json({ ok: true, created, testPings })
 }
+
+const META_SAMPLE_LEADGEN_ID = "444444444444"

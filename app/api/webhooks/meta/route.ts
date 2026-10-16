@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createHmac } from "node:crypto"
 import { logAdEvent, metaVerifyToken, safeEqual } from "@/lib/ad-leads"
-import { fetchMetaLead, saveMetaLead } from "@/lib/meta-leads"
+import { fetchMetaLead, pageTokenFor, saveMetaLead } from "@/lib/meta-leads"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     }
     try {
       // Fetching from the Graph API with our page token also proves the lead is genuine.
-      const lead = await fetchMetaLead(v.leadgen_id!, token)
+      const lead = await fetchMetaLead(v.leadgen_id!, await pageTokenFor(v.page_id, token))
       const inserted = await saveMetaLead(lead, { pageId: v.page_id, formId: v.form_id, adId: v.ad_id })
       if (inserted) created++
     } catch (err) {

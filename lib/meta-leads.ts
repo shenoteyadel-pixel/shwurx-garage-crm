@@ -117,10 +117,63 @@ async function resolvePages(token: string): Promise<PageTarget[]> {
     const managed = (accounts.data ?? []).filter((p) => p.access_token)
     if (managed.length) return managed.map((p) => ({ id: p.id, name: p.name, token: p.access_token! }))
   } catch {
-    // Page tokens cannot list me/accounts; fall through and treat the token as a Page token.
+    // Page tokens cannot list me/accounts; fall through.
   }
+
+  // Pages managed through Business Manager are missing from me/accounts, but the
+  // token's granular scopes still name them, and each can issue its own Page token.
+  const scoped = await scopedPageIds(token)
+  if (scoped.length) {
+    const found: PageTarget[] = []
+    for (const id of scoped) {
+      try {
+        const page = await graph<{ id: string; name?: string; access_token?: string }>(
+          `${encodeURIComponent(id)}?fields=id,name,access_token`,
+          token,
+        )
+        if (page.access_token) found.push({ id: page.id, name: page.name, token: page.access_token })
+      } catch {
+        // Not a Page, or no access; skip it.
+      }
+    }
+    if (found.length) return found
+  }
+
   const me = await graph<{ id: string; name?: string }>("me?fields=id,name", token)
   return [{ id: me.id, name: me.name, token }]
+}
+
+async function scopedPageIds(token: string): Promise<string[]> {
+  try {
+    const res = await graph<{ data?: { granular_scopes?: { scope: string; target_ids?: string[] }[] } }>(
+      `debug_token?input_token=${encodeURIComponent(token)}`,
+      token,
+    )
+    const scopes = res.data?.granular_scopes ?? []
+    const pageScopes = new Set(["pages_show_list", "leads_retrieval", "pages_read_engagement", "pages_manage_metadata", "pages_manage_ads"])
+    return [...new Set(scopes.filter((s) => pageScopes.has(s.scope)).flatMap((s) => s.target_ids ?? []))]
+  } catch {
+    return []
+  }
+}
+
+const pageTokenCache = new Map<string, string>()
+
+/** Returns a Page token for the given Page when the configured token can issue one; otherwise the token itself. */
+export async function pageTokenFor(pageId: string | null | undefined, token: string): Promise<string> {
+  if (!pageId) return token
+  const cached = pageTokenCache.get(pageId)
+  if (cached) return cached
+  try {
+    const page = await graph<{ access_token?: string }>(`${encodeURIComponent(pageId)}?fields=access_token`, token)
+    if (page.access_token) {
+      pageTokenCache.set(pageId, page.access_token)
+      return page.access_token
+    }
+  } catch {
+    // Already a Page token (or no access); use it as-is.
+  }
+  return token
 }
 
 const SYNC_INTERVAL_MS = 60_000

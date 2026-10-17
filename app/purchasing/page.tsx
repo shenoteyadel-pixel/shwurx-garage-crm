@@ -16,6 +16,14 @@ const STATUS: Record<string, string> = {
   cancelled: "border-red-500/30 bg-red-500/15 text-red-300",
 }
 
+const INV_STATUS: Record<string, string> = {
+  paid: "border-emerald-500/30 bg-emerald-500/15 text-emerald-300",
+  partial: "border-amber-500/30 bg-amber-500/15 text-amber-300",
+  unpaid: "border-red-500/30 bg-red-500/15 text-red-300",
+  credit: "border-sky-500/30 bg-sky-500/15 text-sky-300",
+  quote: "border-sky-500/30 bg-sky-500/15 text-sky-300",
+}
+
 export default async function PurchasingPage({
   searchParams,
 }: {
@@ -30,12 +38,81 @@ export default async function PurchasingPage({
     .select("*, suppliers(name)")
     .order("created_at", { ascending: false })
   if (supplier) query = query.eq("supplier_id", supplier)
-  const { data: pos } = await query
+  let invQuery = supabase
+    .from("supplier_invoices")
+    .select("id, doc_number, invoice_number, doc_type, status, payment_status, invoice_date, created_at, total, amount_paid, supplier_name_raw, suppliers(name)")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+  if (supplier) invQuery = invQuery.eq("supplier_id", supplier)
+  const [{ data: pos }, { data: invoices }] = await Promise.all([query, invQuery])
 
-  const totalOutstanding = (pos ?? []).reduce(
-    (s, p) => s + (p.status === "cancelled" ? 0 : (Number(p.total) || 0) - (Number(p.amount_paid) || 0)),
-    0,
-  )
+  type Row = {
+    key: string
+    href: string
+    number: string
+    kind: "PO" | "Invoice" | "Quote"
+    supplier: string
+    date: string | null
+    statusLabel: string
+    statusClass: string
+    total: number
+    balance: number | null
+    sortAt: string
+  }
+
+  const poRows: Row[] = (pos ?? []).map((p) => {
+    const bal = p.status === "cancelled" ? 0 : (Number(p.total) || 0) - (Number(p.amount_paid) || 0)
+    return {
+      key: `po-${p.id}`,
+      href: `/purchasing/${p.id}`,
+      number: p.po_number,
+      kind: "PO",
+      supplier: (p as any).suppliers?.name ?? "—",
+      date: p.order_date,
+      statusLabel: p.status,
+      statusClass: STATUS[p.status] ?? STATUS.draft,
+      total: Number(p.total) || 0,
+      balance: bal,
+      sortAt: p.created_at,
+    }
+  })
+
+  const invRows: Row[] = (invoices ?? []).map((i: any) => {
+    const isQuote = i.doc_type === "quote"
+    const confirmed = i.status === "confirmed"
+    const total = Number(i.total) || 0
+    const bal = !isQuote && confirmed ? Math.max(0, total - (Number(i.amount_paid) || 0)) : null
+    const statusLabel = isQuote
+      ? "quote only"
+      : !confirmed
+        ? i.status
+        : i.payment_status === "credit"
+          ? "on account"
+          : i.payment_status
+    const statusClass = isQuote
+      ? INV_STATUS.quote
+      : !confirmed
+        ? STATUS.draft
+        : (INV_STATUS[i.payment_status] ?? INV_STATUS.unpaid)
+    return {
+      key: `inv-${i.id}`,
+      href: `/purchasing/invoices/${i.id}`,
+      number: i.invoice_number || i.doc_number || "—",
+      kind: isQuote ? "Quote" : "Invoice",
+      supplier: i.suppliers?.name ?? i.supplier_name_raw ?? "—",
+      date: i.invoice_date ?? i.created_at,
+      statusLabel,
+      statusClass,
+      total,
+      balance: bal,
+      sortAt: i.created_at,
+    }
+  })
+
+  const rows = [...poRows, ...invRows].sort((a, b) => (b.sortAt ?? "").localeCompare(a.sortAt ?? ""))
+  const totalOutstanding = rows.reduce((s, r) => s + (r.balance ?? 0), 0)
+  const invoiceCount = invRows.filter((r) => r.kind === "Invoice").length
+  const quoteCount = invRows.length - invoiceCount
 
   return (
     <AppShell user={user}>
@@ -44,7 +121,8 @@ export default async function PurchasingPage({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Purchasing</h1>
           <p className="text-sm text-muted-foreground">
-            {(pos ?? []).length} purchase orders · {formatCurrency(totalOutstanding)} payable
+            {poRows.length} purchase orders · {invoiceCount} supplier invoices · {quoteCount} quotes ·{" "}
+            {formatCurrency(totalOutstanding)} payable
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -63,7 +141,7 @@ export default async function PurchasingPage({
 
       <PurchasingTabs perms={user.permissions} />
 
-      {(pos ?? []).length === 0 ? (
+      {rows.length === 0 ? (
         <Card className="flex flex-col items-center justify-center gap-2 p-16 text-center">
           <ShoppingCart className="h-8 w-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">No purchase orders yet.</p>
@@ -79,7 +157,8 @@ export default async function PurchasingPage({
             <table className="w-full text-sm">
               <thead className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">PO Number</th>
+                  <th className="px-4 py-3 font-semibold">Number</th>
+                  <th className="px-4 py-3 font-semibold">Type</th>
                   <th className="px-4 py-3 font-semibold">Supplier</th>
                   <th className="px-4 py-3 font-semibold">Date</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
@@ -88,29 +167,31 @@ export default async function PurchasingPage({
                 </tr>
               </thead>
               <tbody>
-                {(pos ?? []).map((p) => {
-                  const bal = (Number(p.total) || 0) - (Number(p.amount_paid) || 0)
-                  return (
-                    <tr key={p.id} className="border-b border-border/60 last:border-0 hover:bg-accent/40">
-                      <td className="px-4 py-3">
-                        <Link href={`/purchasing/${p.id}`} className="font-mono font-medium text-primary hover:underline">
-                          {p.po_number}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">{(p as any).suppliers?.name ?? "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDate(p.order_date)}</td>
-                      <td className="px-4 py-3">
-                        <Badge className={STATUS[p.status] ?? STATUS.draft}>{p.status}</Badge>
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.total)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        <span className={bal > 0.01 && p.status !== "cancelled" ? "text-amber-400" : "text-emerald-400"}>
-                          {formatCurrency(p.status === "cancelled" ? 0 : bal)}
+                {rows.map((r) => (
+                  <tr key={r.key} className="border-b border-border/60 last:border-0 hover:bg-accent/40">
+                    <td className="px-4 py-3">
+                      <Link href={r.href} className="font-mono font-medium text-primary hover:underline">
+                        {r.number}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{r.kind}</td>
+                    <td className="px-4 py-3">{r.supplier}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{r.date ? formatDate(r.date) : "—"}</td>
+                    <td className="px-4 py-3">
+                      <Badge className={r.statusClass}>{r.statusLabel}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(r.total)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {r.balance === null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <span className={r.balance > 0.01 ? "text-amber-400" : "text-emerald-400"}>
+                          {formatCurrency(r.balance)}
                         </span>
-                      </td>
-                    </tr>
-                  )
-                })}
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

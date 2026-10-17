@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createHmac } from "node:crypto"
 import { logAdEvent, metaVerifyToken, safeEqual } from "@/lib/ad-leads"
-import { fetchMetaLead, pageTokenFor, saveMetaLead } from "@/lib/meta-leads"
+import { explainMetaError, fetchMetaLead, pageTokenFor, saveMetaLead } from "@/lib/meta-leads"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       const inserted = await saveMetaLead(lead, { pageId: v.page_id, formId: v.form_id, adId: v.ad_id })
       if (inserted) created++
     } catch (err) {
-      errors.push(`${v.leadgen_id}: ${(err as Error).message}`)
+      errors.push(`${v.leadgen_id}: ${explainMetaError((err as Error).message)}`)
     }
   }
 

@@ -197,7 +197,14 @@ export function lastMetaSyncStatus(): MetaSyncStatus | null {
 }
 
 /** Turns Graph permission errors into an instruction the owner can act on. */
+export function isMetaTokenExpired(message: string | null | undefined): boolean {
+  return !!message && /session has expired|access token has expired|error validating access token/i.test(message)
+}
+
 export function explainMetaError(message: string): string {
+  if (isMetaTokenExpired(message)) {
+    return "Meta token has expired, so no new leads are coming in. Create a token that does not expire (Business Settings → System users → Generate token, with leads_retrieval, pages_manage_ads, pages_show_list, pages_read_engagement and pages_manage_metadata) and update META_PAGE_ACCESS_TOKEN."
+  }
   if (/pages_manage_ads/.test(message)) {
     return "Meta token is missing the pages_manage_ads permission, so lead forms cannot be read. Generate a new token with pages_manage_ads, leads_retrieval, pages_show_list, pages_read_engagement and pages_manage_metadata, then update META_PAGE_ACCESS_TOKEN."
   }

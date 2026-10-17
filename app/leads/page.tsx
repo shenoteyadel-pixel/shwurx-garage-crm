@@ -8,7 +8,7 @@ import { LeadsBoard } from "@/components/leads-board"
 import type { LeadRow } from "@/lib/actions-leads"
 import { headers } from "next/headers"
 import { after } from "next/server"
-import { syncMetaLeads, lastMetaSyncStatus, explainMetaError } from "@/lib/meta-leads"
+import { syncMetaLeads, lastMetaSyncStatus, explainMetaError, isMetaTokenExpired } from "@/lib/meta-leads"
 
 const META_SYNC_WAIT_MS = 4000
 import { createServiceClient } from "@/lib/supabase/server"
@@ -42,9 +42,14 @@ async function loadAdSources(): Promise<AdSourceStatus[]> {
   }
   const [rawMetaStats, googleStats] = await Promise.all([stats("meta"), stats("google")])
   const sync = lastMetaSyncStatus()
-  const metaStats = sync?.error ? { ...rawMetaStats, lastError: explainMetaError(sync.error) } : rawMetaStats
+  const rawError = sync?.error ?? rawMetaStats.lastError
+  const metaStats = rawError ? { ...rawMetaStats, lastError: explainMetaError(rawError) } : rawMetaStats
   const meta = metaConfigured()
-  const metaMissing = meta.pageToken ? [] : ["META_PAGE_ACCESS_TOKEN"]
+  const metaMissing = !meta.pageToken
+    ? ["META_PAGE_ACCESS_TOKEN"]
+    : isMetaTokenExpired(rawError)
+      ? ["META_PAGE_ACCESS_TOKEN (expired)"]
+      : []
   return [
     {
       provider: "meta",

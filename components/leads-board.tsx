@@ -380,6 +380,31 @@ function LeadCard({
             ))}
           </Select>
 
+          {lead.phone ? (
+            <>
+              <a
+                href={`tel:${lead.phone}`}
+                onClick={() => {
+                  if (lead.status === "new") run(() => setLeadStatus(lead.id, "contacted"))
+                }}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
+              >
+                <Phone className="h-3.5 w-3.5" /> Call
+              </a>
+              <a
+                href={`https://wa.me/${lead.phone.replace(/[^\d]/g, "")}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => {
+                  if (lead.status === "new") run(() => setLeadStatus(lead.id, "contacted"))
+                }}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
+              >
+                <MessageSquare className="h-3.5 w-3.5" /> WhatsApp
+              </a>
+            </>
+          ) : null}
+
           <Button size="sm" variant="outline" disabled={pending} onClick={() => setNoteOpen(true)}>
             <StickyNote className="h-3.5 w-3.5" /> Note
           </Button>

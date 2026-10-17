@@ -196,7 +196,10 @@ function PaymentForm({ invoice, onDone }: { invoice: AccountInvoice; onDone: () 
             id="method"
             name="method"
             value={method}
-            onChange={(e) => setMethod(e.target.value)}
+            onChange={(e) => {
+              setMethod(e.target.value)
+              setError(null)
+            }}
             className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="bank">Bank transfer</option>

@@ -100,7 +100,15 @@ export function POActions({
           </div>
           <div>
             <Label htmlFor="method">Method</Label>
-            <Select id="method" name="method" value={method} onChange={(e) => setMethod(e.target.value)}>
+            <Select
+              id="method"
+              name="method"
+              value={method}
+              onChange={(e) => {
+                setMethod(e.target.value)
+                setPayError(null)
+              }}
+            >
               <option value="cash">Cash</option>
               <option value="card">Card</option>
               <option value="bank">Bank transfer</option>

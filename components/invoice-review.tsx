@@ -337,7 +337,10 @@ export function InvoiceReview({
                 {invoice.doc_number || (isQuote ? "Supplier Quote" : "Supplier Invoice")}
               </h1>
               <StatusBadge status={invoice.status} />
-              {readOnly && <PayBadge status={invoice.payment_status} />}
+              {readOnly && invoice.status !== "quoted" && !isQuote && <PayBadge status={invoice.payment_status} />}
+              {(isQuote || invoice.status === "quoted") && (
+                <Badge className="border-sky-500/30 bg-sky-500/15 text-sky-300">Quote only · no payment</Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">
               {invoice.supplier_name_raw ? `Scanned as “${invoice.supplier_name_raw}”` : "Review the extracted details"}
@@ -1064,9 +1067,15 @@ function PaymentPanel({
   const router = useRouter()
   const [pending, start] = React.useTransition()
   const [payErr, setPayErr] = React.useState<string | null>(null)
-  const [method, setMethod] = React.useState("bank_transfer")
+  const [method, setMethod] = React.useState("cash")
   const [uploading, setUploading] = React.useState(false)
   const [formKey, setFormKey] = React.useState(0)
+  const methodHint: Record<string, string> = {
+    cash: "Cash: no receipt needed. Enter the amount and record.",
+    bank_transfer: "Bank transfer: upload the transfer receipt, then record.",
+    card: "Card: upload the card slip, then record.",
+    cheque: "Cheque: enter the cheque number in Reference. Receipt optional.",
+  }
   const balance = invoice.total - invoice.amount_paid
   const paid = invoice.payment_status === "paid"
   const onAccount = invoice.payment_status === "credit"
@@ -1160,7 +1169,15 @@ function PaymentPanel({
             </div>
             <div>
               <Label htmlFor="method">Method</Label>
-              <Select id="method" name="method" value={method} onChange={(e) => setMethod(e.target.value)}>
+              <Select
+                id="method"
+                name="method"
+                value={method}
+                onChange={(e) => {
+                  setMethod(e.target.value)
+                  setPayErr(null)
+                }}
+              >
                 <option value="cash">Cash</option>
                 <option value="bank_transfer">Bank transfer</option>
                 <option value="cheque">Cheque</option>
@@ -1168,6 +1185,7 @@ function PaymentPanel({
               </Select>
             </div>
           </div>
+          <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{methodHint[method]}</p>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label htmlFor="paid_at">Date</Label>

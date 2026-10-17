@@ -182,6 +182,31 @@ let lastSync: { at: number; sinceUnix: number } | null = null
 let inflight: Promise<MetaImportResult | null> | null = null
 const subscribedPages = new Set<string>()
 
+export interface MetaSyncStatus {
+  at: string
+  forms: number
+  found: number
+  created: number
+  error: string | null
+}
+let lastStatus: MetaSyncStatus | null = null
+
+/** Result of the most recent automatic sync on this server instance. */
+export function lastMetaSyncStatus(): MetaSyncStatus | null {
+  return lastStatus
+}
+
+/** Turns Graph permission errors into an instruction the owner can act on. */
+export function explainMetaError(message: string): string {
+  if (/pages_manage_ads/.test(message)) {
+    return "Meta token is missing the pages_manage_ads permission, so lead forms cannot be read. Generate a new token with pages_manage_ads, leads_retrieval, pages_show_list, pages_read_engagement and pages_manage_metadata, then update META_PAGE_ACCESS_TOKEN."
+  }
+  if (/leads_retrieval/.test(message)) {
+    return "Meta token is missing leads_retrieval. Regenerate the token with that permission and update META_PAGE_ACCESS_TOKEN."
+  }
+  return message
+}
+
 /**
  * Keeps CRM Leads in step with Meta without a manual import. The first run on a
  * server instance pulls every lead; later runs only ask Meta for leads created
@@ -198,11 +223,13 @@ export function syncMetaLeads(): Promise<MetaImportResult | null> {
   inflight = importAllMetaLeads(token, { since, subscribe: true })
     .then((r) => {
       lastSync = { at: Date.now(), sinceUnix: startedUnix }
+      lastStatus = { at: new Date().toISOString(), forms: r.forms, found: r.found, created: r.created, error: r.errors[0] ?? null }
       if (r.errors.length) console.error("Meta lead sync errors:", r.errors.slice(0, 5))
       return r
     })
     .catch((err) => {
       lastSync = { at: Date.now(), sinceUnix: lastSync?.sinceUnix ?? 0 }
+      lastStatus = { at: new Date().toISOString(), forms: 0, found: 0, created: 0, error: (err as Error).message }
       console.error("Meta lead sync failed:", (err as Error).message)
       return null
     })

@@ -18,6 +18,7 @@ import {
 } from "@/lib/actions-invoices"
 import Link from "next/link"
 import { PaymentReceiptField, methodNeedsProof } from "@/components/payment-receipt-field"
+import { ReopenInvoiceButton } from "@/components/invoice-owner-actions"
 import { Loader2, Save, CheckCircle2, Trash2, AlertTriangle, Plus, FileText, RefreshCw } from "lucide-react"
 
 type SupplierOpt = { id: string; name: string }
@@ -93,7 +94,9 @@ export function InvoiceReview({
   jobs,
   pricing,
   payments,
+  canReopen = false,
 }: {
+  canReopen?: boolean
   invoice: InvoiceHeader
   items: InvoiceItemRow[]
   suppliers: SupplierOpt[]
@@ -104,6 +107,8 @@ export function InvoiceReview({
 }) {
   const router = useRouter()
   const readOnly = invoice.status !== "draft"
+  const emptyConfirmed =
+    invoice.status === "confirmed" && invoice.doc_type !== "quote" && Number(invoice.total) <= 0 && Number(invoice.amount_paid) <= 0
 
   const [supplierId, setSupplierId] = React.useState(invoice.supplier_id ?? "")
   const [invoiceNumber, setInvoiceNumber] = React.useState(invoice.invoice_number ?? "")
@@ -337,7 +342,12 @@ export function InvoiceReview({
                 {invoice.doc_number || (isQuote ? "Supplier Quote" : "Supplier Invoice")}
               </h1>
               <StatusBadge status={invoice.status} />
-              {readOnly && invoice.status !== "quoted" && !isQuote && <PayBadge status={invoice.payment_status} />}
+              {readOnly && invoice.status !== "quoted" && !isQuote && !emptyConfirmed && (
+                <PayBadge status={invoice.payment_status} />
+              )}
+              {emptyConfirmed && (
+                <Badge className="border-amber-500/30 bg-amber-500/15 text-amber-300">No amount entered</Badge>
+              )}
               {(isQuote || invoice.status === "quoted") && (
                 <Badge className="border-sky-500/30 bg-sky-500/15 text-sky-300">Quote only · no payment</Badge>
               )}
@@ -575,6 +585,19 @@ export function InvoiceReview({
             <p className="mt-4 rounded-lg bg-muted/50 px-3 py-2 text-center text-xs text-muted-foreground">
               Quote {invoice.doc_number ? `${invoice.doc_number} ` : ""}sent to the job quotation. Upload the final supplier invoice when the parts arrive.
             </p>
+          ) : emptyConfirmed ? (
+            <div className="mt-4 flex flex-col gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs leading-relaxed text-amber-200">
+              <p className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>
+                  This invoice was confirmed with no lines, so its total is 0 and no payment can be matched to it.
+                  {canReopen
+                    ? " Tap Edit invoice, add the amount from the receipt (or Re-read document), then confirm again."
+                    : " Ask the owner to reopen it and add the amount."}
+                </span>
+              </p>
+              {canReopen && <ReopenInvoiceButton id={invoice.id} />}
+            </div>
           ) : (
             <p className="mt-4 rounded-lg bg-muted/50 px-3 py-2 text-center text-xs text-muted-foreground">
               Confirmed {invoice.doc_number ? `as ${invoice.doc_number}` : ""} — stock and ledger updated.
@@ -582,7 +605,7 @@ export function InvoiceReview({
           )}
         </Card>
 
-        {readOnly && invoice.status === "confirmed" && (
+        {readOnly && invoice.status === "confirmed" && !emptyConfirmed && (
           <PaymentPanel invoice={invoice} payments={payments} />
         )}
 

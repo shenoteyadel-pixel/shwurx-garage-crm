@@ -19,16 +19,28 @@ export default async function SupplierPaymentsPage() {
   const supabase = await createClient()
 
   // Money leaving the business to suppliers, newest first, linked to the bill it settled.
-  const { data: payments } = await supabase
+  // payments.supplier_invoice_id has no FK, so PostgREST can't embed the invoice; fetch it separately.
+  const { data: payments, error: paymentsError } = await supabase
     .from("payments")
-    .select(
-      "id, amount, method, reference, receipt_path, paid_at, note, created_at, supplier_invoice_id, supplier_invoices(doc_number, invoice_number, supplier_name_raw, suppliers(name))",
-    )
+    .select("id, amount, method, reference, receipt_path, paid_at, note, created_at, supplier_invoice_id")
     .eq("direction", "out")
     .order("paid_at", { ascending: false })
     .limit(300)
+  if (paymentsError) console.error("Supplier payments query failed:", paymentsError.message)
 
-  const rows = (payments ?? []) as any[]
+  const invoiceIds = [...new Set((payments ?? []).map((p) => p.supplier_invoice_id).filter(Boolean))] as string[]
+  const { data: invoices } = invoiceIds.length
+    ? await supabase
+        .from("supplier_invoices")
+        .select("id, doc_number, invoice_number, supplier_name_raw, suppliers(name)")
+        .in("id", invoiceIds)
+    : { data: [] as any[] }
+  const invoiceById = new Map((invoices ?? []).map((i: any) => [i.id, i]))
+
+  const rows = (payments ?? []).map((p) => ({
+    ...p,
+    supplier_invoices: p.supplier_invoice_id ? invoiceById.get(p.supplier_invoice_id) ?? null : null,
+  })) as any[]
   const from = monthStart()
   const paidThisMonth = rows
     .filter((r) => (r.paid_at ?? r.created_at?.slice(0, 10) ?? "") >= from)

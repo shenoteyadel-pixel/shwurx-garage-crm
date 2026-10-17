@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { createHmac } from "node:crypto"
 import { logAdEvent, metaVerifyToken, safeEqual } from "@/lib/ad-leads"
 import { explainMetaError, fetchMetaLead, pageTokenFor, saveMetaLead } from "@/lib/meta-leads"
+import { getMetaToken } from "@/lib/meta-token"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const token = process.env.META_PAGE_ACCESS_TOKEN
+  const token = await getMetaToken()
   if (!token) {
     await event.finish({ processed: false, error: "META_PAGE_ACCESS_TOKEN is not configured" })
     // 200 so Meta keeps the subscription alive; leads can be re-pulled from Ads Manager.

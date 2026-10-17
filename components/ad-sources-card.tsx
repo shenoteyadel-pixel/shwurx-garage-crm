@@ -1,6 +1,7 @@
 import { Card, Badge } from "@/components/ui"
 import { CopyValue } from "@/components/copy-value"
 import { MetaImportButton } from "@/components/meta-import-button"
+import { MetaConnectForm } from "@/components/meta-connect-form"
 
 export interface AdSourceStatus {
   provider: "meta" | "google"
@@ -10,6 +11,8 @@ export interface AdSourceStatus {
   secret: string | null
   ready: boolean
   missing: string[]
+  connectNeeded?: boolean
+  connectedNote?: string | null
   events: number
   lastAt: string | null
   lastError: string | null
@@ -51,7 +54,13 @@ export function AdSourcesCard({ sources }: { sources: AdSourceStatus[] }) {
                 <li key={step}>{step}</li>
               ))}
             </ol>
-            {s.provider === "meta" ? <MetaImportButton disabled={!s.ready} /> : null}
+            {s.provider === "meta" ? (
+              <>
+                {s.connectedNote ? <p className="text-sm text-primary">{s.connectedNote}</p> : null}
+                <MetaConnectForm needed={!!s.connectNeeded} />
+                <MetaImportButton disabled={!s.ready} />
+              </>
+            ) : null}
             <div className="flex flex-col gap-1 border-t border-border pt-3 text-xs text-muted-foreground">
               <span>
                 {s.events} call{s.events === 1 ? "" : "s"} received · last {formatWhen(s.lastAt)}

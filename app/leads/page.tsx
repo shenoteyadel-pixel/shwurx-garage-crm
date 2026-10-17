@@ -8,7 +8,7 @@ import { LeadsBoard } from "@/components/leads-board"
 import type { LeadRow } from "@/lib/actions-leads"
 import { headers } from "next/headers"
 import { after } from "next/server"
-import { syncMetaLeads } from "@/lib/meta-leads"
+import { syncMetaLeads, lastMetaSyncStatus, explainMetaError } from "@/lib/meta-leads"
 
 const META_SYNC_WAIT_MS = 4000
 import { createServiceClient } from "@/lib/supabase/server"
@@ -40,7 +40,9 @@ async function loadAdSources(): Promise<AdSourceStatus[]> {
     ])
     return { events: count ?? 0, lastAt: (last?.received_at as string) ?? null, lastError: (last?.error as string) ?? null }
   }
-  const [metaStats, googleStats] = await Promise.all([stats("meta"), stats("google")])
+  const [rawMetaStats, googleStats] = await Promise.all([stats("meta"), stats("google")])
+  const sync = lastMetaSyncStatus()
+  const metaStats = sync?.error ? { ...rawMetaStats, lastError: explainMetaError(sync.error) } : rawMetaStats
   const meta = metaConfigured()
   const metaMissing = meta.pageToken ? [] : ["META_PAGE_ACCESS_TOKEN"]
   return [
@@ -56,7 +58,7 @@ async function loadAdSources(): Promise<AdSourceStatus[]> {
       steps: [
         "In developers.facebook.com open your app, add Webhooks, choose Page, and paste the URL and verify token.",
         "Subscribe to the leadgen field and connect your Facebook Page to the app.",
-        "Add a Page access token with leads_retrieval permission as META_PAGE_ACCESS_TOKEN (and the app secret as META_APP_SECRET).",
+        "Add a token with leads_retrieval, pages_manage_ads, pages_show_list, pages_read_engagement and pages_manage_metadata as META_PAGE_ACCESS_TOKEN (and the app secret as META_APP_SECRET).",
         "Test with Meta's Lead Ads Testing Tool, then use Import existing Meta leads to pull leads submitted before setup.",
       ],
     },

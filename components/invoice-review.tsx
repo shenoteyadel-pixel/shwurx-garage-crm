@@ -108,7 +108,7 @@ export function InvoiceReview({
   const router = useRouter()
   const readOnly = invoice.status !== "draft"
   const emptyConfirmed =
-    invoice.status === "confirmed" && invoice.doc_type !== "quote" && Number(invoice.total) <= 0 && Number(invoice.amount_paid) <= 0
+    invoice.status === "confirmed" && invoice.doc_type !== "quote" && Number(invoice.total) <= 0
 
   const [supplierId, setSupplierId] = React.useState(invoice.supplier_id ?? "")
   const [invoiceNumber, setInvoiceNumber] = React.useState(invoice.invoice_number ?? "")
@@ -605,7 +605,7 @@ export function InvoiceReview({
           )}
         </Card>
 
-        {readOnly && invoice.status === "confirmed" && !emptyConfirmed && (
+        {readOnly && invoice.status === "confirmed" && (!emptyConfirmed || Number(invoice.amount_paid) > 0) && (
           <PaymentPanel invoice={invoice} payments={payments} />
         )}
 

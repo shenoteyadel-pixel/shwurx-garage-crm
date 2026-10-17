@@ -122,7 +122,6 @@ export default async function PrivacyPolicyPage() {
             items={[
               <><strong className="text-foreground">Website and application hosting</strong> (Vercel), including secure storage of vehicle photos and documents.</>,
               <><strong className="text-foreground">Database and account services</strong> (Supabase), where our CRM records are stored.</>,
-              <><strong className="text-foreground">WhatsApp messaging</strong> through Meta&apos;s WhatsApp Business Platform, provided via our business solution provider 360dialog.</>,
               <><strong className="text-foreground">Advertising platforms</strong> (Google and Meta), which deliver our adverts, provide lead form submissions to us and, where you allow it, measure advert performance.</>,
               <><strong className="text-foreground">Email delivery</strong> (Resend), used to send quotations, invoices and service notifications.</>,
               <><strong className="text-foreground">Online card payments</strong> (Stripe). Card details are entered directly with Stripe and are not stored by us.</>,

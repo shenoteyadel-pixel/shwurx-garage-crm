@@ -1,5 +1,6 @@
 import "server-only"
 import { insertAdLead, normalizePhone } from "@/lib/ad-leads"
+import { getMetaToken } from "@/lib/meta-token"
 
 const GRAPH = "https://graph.facebook.com/v21.0"
 const LEAD_FIELDS = "created_time,field_data,ad_id,ad_name,adset_name,campaign_name,form_id,platform,is_organic"
@@ -197,7 +198,14 @@ export function lastMetaSyncStatus(): MetaSyncStatus | null {
 }
 
 /** Turns Graph permission errors into an instruction the owner can act on. */
+export function isMetaTokenExpired(message: string | null | undefined): boolean {
+  return !!message && /session has expired|access token has expired|error validating access token/i.test(message)
+}
+
 export function explainMetaError(message: string): string {
+  if (isMetaTokenExpired(message)) {
+    return "Meta token has expired, so no new leads are coming in. Paste a fresh token in Reconnect Meta below once; the CRM turns it into a permanent Page token and keeps it."
+  }
   if (/pages_manage_ads/.test(message)) {
     return "Meta token is missing the pages_manage_ads permission, so lead forms cannot be read. Generate a new token with pages_manage_ads, leads_retrieval, pages_show_list, pages_read_engagement and pages_manage_metadata, then update META_PAGE_ACCESS_TOKEN."
   }
@@ -213,14 +221,16 @@ export function explainMetaError(message: string): string {
  * since the previous run (with an overlap window), throttled to once a minute.
  */
 export function syncMetaLeads(): Promise<MetaImportResult | null> {
-  const token = process.env.META_PAGE_ACCESS_TOKEN
-  if (!token) return Promise.resolve(null)
   if (inflight) return inflight
   if (lastSync && Date.now() - lastSync.at < SYNC_INTERVAL_MS) return Promise.resolve(null)
 
   const startedUnix = Math.floor(Date.now() / 1000)
   const since = lastSync ? lastSync.sinceUnix - SYNC_OVERLAP_S : undefined
-  inflight = importAllMetaLeads(token, { since, subscribe: true })
+  inflight = getMetaToken()
+    .then((token) => {
+      if (!token) throw new Error("META_PAGE_ACCESS_TOKEN is not configured")
+      return importAllMetaLeads(token, { since, subscribe: true })
+    })
     .then((r) => {
       lastSync = { at: Date.now(), sinceUnix: startedUnix }
       lastStatus = { at: new Date().toISOString(), forms: r.forms, found: r.found, created: r.created, error: r.errors[0] ?? null }

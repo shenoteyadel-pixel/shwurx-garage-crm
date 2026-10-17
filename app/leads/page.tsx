@@ -8,7 +8,8 @@ import { LeadsBoard } from "@/components/leads-board"
 import type { LeadRow } from "@/lib/actions-leads"
 import { headers } from "next/headers"
 import { after } from "next/server"
-import { syncMetaLeads, lastMetaSyncStatus, explainMetaError } from "@/lib/meta-leads"
+import { syncMetaLeads, lastMetaSyncStatus, explainMetaError, isMetaTokenExpired } from "@/lib/meta-leads"
+import { metaTokenInfo } from "@/lib/meta-token"
 
 const META_SYNC_WAIT_MS = 4000
 import { createServiceClient } from "@/lib/supabase/server"
@@ -42,9 +43,17 @@ async function loadAdSources(): Promise<AdSourceStatus[]> {
   }
   const [rawMetaStats, googleStats] = await Promise.all([stats("meta"), stats("google")])
   const sync = lastMetaSyncStatus()
-  const metaStats = sync?.error ? { ...rawMetaStats, lastError: explainMetaError(sync.error) } : rawMetaStats
+  const rawError = sync?.error ?? rawMetaStats.lastError
+  const metaStats = rawError ? { ...rawMetaStats, lastError: explainMetaError(rawError) } : rawMetaStats
   const meta = metaConfigured()
-  const metaMissing = meta.pageToken ? [] : ["META_PAGE_ACCESS_TOKEN"]
+  const tokenInfo = await metaTokenInfo()
+  const syncedOk = sync ? !sync.error : false
+  const metaMissing =
+    tokenInfo.source === "none" && !meta.pageToken
+      ? ["Meta token"]
+      : !syncedOk && isMetaTokenExpired(rawError)
+        ? ["Meta token (expired)"]
+        : []
   return [
     {
       provider: "meta",
@@ -54,12 +63,16 @@ async function loadAdSources(): Promise<AdSourceStatus[]> {
       secret: metaVerifyToken(),
       ready: metaMissing.length === 0,
       missing: metaMissing,
-      ...metaStats,
+      connectNeeded: metaMissing.length > 0,
+      connectedNote:
+        tokenInfo.source === "stored"
+          ? `Connected to ${tokenInfo.pages.join(", ") || "your Page"}${tokenInfo.expiresAt === 0 ? " · token never expires" : ""}. New leads sync automatically.`
+          : null,
+      ...(metaMissing.length === 0 && syncedOk ? { ...metaStats, lastError: null } : metaStats),
       steps: [
         "In developers.facebook.com open your app, add Webhooks, choose Page, and paste the URL and verify token.",
         "Subscribe to the leadgen field and connect your Facebook Page to the app.",
-        "Add a token with leads_retrieval, pages_manage_ads, pages_show_list, pages_read_engagement and pages_manage_metadata as META_PAGE_ACCESS_TOKEN (and the app secret as META_APP_SECRET).",
-        "Test with Meta's Lead Ads Testing Tool, then use Import existing Meta leads to pull leads submitted before setup.",
+        "Paste a token once in Reconnect Meta. The CRM turns it into a permanent Page token, so it does not expire.",
       ],
     },
     {

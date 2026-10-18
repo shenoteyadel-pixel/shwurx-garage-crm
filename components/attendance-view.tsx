@@ -510,6 +510,12 @@ function MonthlyReport({ month, today, summaries, records, staff, settings, comp
       <div className="flex flex-wrap items-center justify-between gap-3">
         <MonthPicker month={month} today={today} />
         <div className="flex gap-2">
+          <a
+            href="/attendance/report"
+            className="inline-flex h-8 items-center gap-2 rounded-lg border border-border px-3 text-sm font-medium hover:bg-muted"
+          >
+            Daily report
+          </a>
           <GhostButton type="button" onClick={() => downloadAttendanceCsv(month, records, staff, settings)}>
             <FileSpreadsheet className="h-4 w-4" />
             CSV

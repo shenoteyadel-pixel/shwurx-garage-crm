@@ -6,6 +6,8 @@ import { ctxCan, ctxCanAny, logAction, requireStaff } from "@/lib/rbac/context"
 import {
   RECORD_COLUMNS,
   distanceMeters,
+  formatDuration,
+  formatTime,
   lateMinutesFor,
   loadAttendanceSettings,
   localDate,
@@ -14,6 +16,7 @@ import {
 } from "@/lib/attendance"
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server"
 import { verifyFaceIdForAttendance } from "@/lib/faceid"
+import { notifyAttendanceManagers } from "@/lib/attendance-notify"
 
 type Result = { ok: true; message?: string } | { ok: false; error: string }
 type Coords = { lat: number; lng: number; accuracy?: number | null } | null
@@ -95,6 +98,15 @@ export async function checkIn(coords: Coords, note?: string, faceId?: Authentica
   if (error) return { ok: false, error: error.message }
 
   await logAction(ctx, "attendance.check_in", "attendance", data.id, { late_minutes: late, distance_m: distance })
+  await notifyAttendanceManagers(
+    {
+      title: late > 0 ? `${ctx.name} checked in ${late} min late` : `${ctx.name} checked in`,
+      body: `Checked in at ${formatTime(iso)} · ${distance} m from the workshop`,
+      type: late > 0 ? "warning" : "info",
+      link: `/attendance/report?date=${today}`,
+    },
+    ctx.userId,
+  )
   revalidatePath("/attendance")
   return { ok: true, message: late > 0 ? `Checked in — ${late} min late` : "Checked in on time" }
 }
@@ -140,6 +152,15 @@ export async function checkOut(coords: Coords, note?: string, faceId?: Authentic
 
   const mins = Math.round((now.getTime() - new Date(open.check_in_at).getTime()) / 60000)
   await logAction(ctx, "attendance.check_out", "attendance", open.id, { worked_minutes: mins, distance_m: distance })
+  await notifyAttendanceManagers(
+    {
+      title: `${ctx.name} checked out`,
+      body: `Checked out at ${formatTime(iso)} · worked ${formatDuration(mins)}`,
+      type: "info",
+      link: `/attendance/report?date=${localDate(new Date(open.check_in_at))}`,
+    },
+    ctx.userId,
+  )
   revalidatePath("/attendance")
   return { ok: true, message: "Checked out" }
 }

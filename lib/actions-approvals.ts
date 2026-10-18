@@ -7,6 +7,7 @@ import { appBaseUrl } from "@/lib/account-links"
 import { sendEmail, approvalRequestEmail } from "@/lib/email"
 import { notifyByPermission } from "@/lib/actions-notifications"
 import { notifyActivity } from "@/lib/activity"
+import { getJobApprovals as loadSignedApprovals } from "@/lib/quote-invoice"
 import { buildApprovalMessage, waMeLink } from "@/lib/whatsapp"
 import { revalidatePath } from "next/cache"
 
@@ -667,7 +668,8 @@ export async function notifyApprovalDecision(jobId: string, status: string) {
     const { data: settings } = await svc.from("settings").select("parts_release_mode").eq("id", 1).maybeSingle()
     const mode = settings?.parts_release_mode === "advisor" ? "advisor" : "auto"
     if (mode === "auto") {
-      await releaseJobParts(jobId, jobNo, null)
+      const released = await releaseJobParts(jobId, jobNo, null, false)
+      await notifyPurchasersOfApproval(jobId, jobNo, status, released)
     } else {
       await notifyByPermission("quotations.edit", {
         title: "Parts ready to send to purchaser",
@@ -681,8 +683,36 @@ export async function notifyApprovalDecision(jobId: string, status: string) {
   revalidatePath("/parts")
 }
 
-/** Marks every not-yet-released part on the job as released and alerts purchasing. */
-async function releaseJobParts(jobId: string, jobNo: string, userId: string | null): Promise<number> {
+/**
+ * Alerts purchasing with exactly the parts the customer approved in the signed
+ * quotation (declined lines excluded), linking straight to Approved to Order.
+ */
+async function notifyPurchasersOfApproval(jobId: string, jobNo: string, status: string, releasedCount: number) {
+  const svc = createServiceClient()
+  const approval = (await loadSignedApprovals(svc, [jobId])).get(jobId)
+  const approved = approval?.approved ?? []
+  const declined = approval?.declined.length ?? 0
+  const count = Math.max(approved.length, releasedCount)
+  if (count === 0) return
+
+  const preview = approved
+    .slice(0, 3)
+    .map((p) => (p.quantity > 1 ? `${p.name} x${p.quantity}` : p.name))
+    .join(", ")
+  const more = approved.length > 3 ? ` +${approved.length - 3} more` : ""
+  const partialNote = status === "partial" && declined > 0 ? ` (${declined} declined, not to order)` : ""
+
+  await notifyByPermission("purchase_orders.manage", {
+    title: "Customer approved parts - ready to order",
+    body: `Job ${jobNo}: ${count} approved part${count === 1 ? "" : "s"} to order${partialNote}.${preview ? ` ${preview}${more}` : ""}`,
+    type: "parts",
+    link: "/purchasing/approved",
+  })
+  revalidatePath("/purchasing/approved")
+}
+
+/** Marks every not-yet-released part on the job as released and optionally alerts purchasing. */
+async function releaseJobParts(jobId: string, jobNo: string, userId: string | null, notify = true): Promise<number> {
   const svc = createServiceClient()
   const { data } = await svc
     .from("parts_requests")
@@ -693,12 +723,12 @@ async function releaseJobParts(jobId: string, jobNo: string, userId: string | nu
     .eq("status", "required")
     .select("id")
   const count = data?.length ?? 0
-  if (count > 0) {
+  if (notify && count > 0) {
     await notifyByPermission("purchase_orders.manage", {
       title: "Approved parts to order",
       body: `Job ${jobNo}: ${count} approved part${count === 1 ? "" : "s"} ready to purchase.`,
       type: "parts",
-      link: `/jobs/${jobId}`,
+      link: "/purchasing/approved",
     })
   }
   return count

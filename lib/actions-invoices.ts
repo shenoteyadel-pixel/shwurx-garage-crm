@@ -15,7 +15,7 @@ import { notifyActivity } from "@/lib/activity"
 import { extractInvoice } from "@/lib/invoice-ocr"
 import { suggestSalePrice } from "@/lib/pricing"
 import { isInvoiceLinked } from "@/lib/quote-duplicates"
-import { linkInvoiceToOpenQuote } from "@/lib/quote-invoice"
+import { linkInvoiceToOpenQuote, getJobApprovals, samePart } from "@/lib/quote-invoice"
 import { reconcileJobParts } from "@/lib/job-parts-reconcile"
 import { reconcilePartsRequests } from "@/lib/parts-requests-reconcile"
 
@@ -249,6 +249,7 @@ export type UploadedInvoiceInput = {
   pathname: string
   contentType?: string | null
   fileName?: string | null
+  docType?: "invoice" | "quote"
 }
 
 export async function extractAndCreateInvoice(input: UploadedInvoiceInput): Promise<ExtractResult> {
@@ -510,6 +511,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
       currency: extracted?.currency || "AED",
       ...totals,
       status: "draft",
+      doc_type: input.docType === "quote" ? "quote" : "invoice",
       blob_pathname: blobPathname,
       file_hash: fileHash,
       file_type: contentType || null,
@@ -537,10 +539,12 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
   try {
     await insertExtractedLines(supabase, inv.id, extracted?.line_items ?? [], settings)
 
-    try {
-      await linkInvoiceToOpenQuote(createServiceClient(), inv.id, supplierId, extracted?.supplier_name ?? null)
-    } catch (e) {
-      console.error("[v0] linking invoice to supplier quote failed:", e)
+    if (input.docType !== "quote") {
+      try {
+        await linkInvoiceToOpenQuote(createServiceClient(), inv.id, supplierId, extracted?.supplier_name ?? null)
+      } catch (e) {
+        console.error("[v0] linking invoice to supplier quote failed:", e)
+      }
     }
 
     await logAction(ctx, "supplier_invoice_captured", "supplier_invoice", inv.id)
@@ -551,6 +555,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
   }
 
   revalidatePath("/purchasing/invoices")
+  revalidatePath("/purchasing/quotes")
   return { ok: true, id: inv.id }
 }
 
@@ -1553,6 +1558,34 @@ async function applyConfirm(
       }
     } catch (err) {
       console.error("[parts] notification failed", jobId, err)
+    }
+  }
+
+  // Invoice brought parts the customer never approved (extra parts, or no
+  // approval yet): they are already on the job card, so the advisor must get
+  // the customer's approval for them.
+  if (!isQuote && byJob.size) {
+    try {
+      const approvals = await getJobApprovals(createServiceClient(), [...byJob.keys()])
+      for (const jobId of byJob.keys()) {
+        const approved = approvals.get(jobId)?.approved ?? []
+        const unapproved = parts.filter(
+          (p) =>
+            p.jobId === jobId &&
+            !approved.some((a) => samePart(a, { description: p.name, oem_part_number: p.oemNumber })),
+        )
+        if (!unapproved.length) continue
+        const names = unapproved.map((p) => `${p.name} × ${p.quantity}`)
+        const list = names.length > 3 ? `${names.slice(0, 3).join(", ")} +${names.length - 3} more` : names.join(", ")
+        await notifyJobAdvisor(jobId, (job) => ({
+          title: "Customer approval needed",
+          body: `Supplier invoice added parts to job ${job} without customer approval: ${list}. Send them to the customer for approval.`,
+          type: "approval",
+          link: `/jobs/${jobId}`,
+        }))
+      }
+    } catch (err) {
+      console.error("[parts] approval-needed notification failed", err)
     }
   }
 

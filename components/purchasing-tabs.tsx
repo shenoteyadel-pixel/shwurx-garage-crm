@@ -13,6 +13,7 @@ const TABS: Tab[] = [
   { href: "/parts", label: "Requests", anyOf: ["parts.view"] },
   { href: "/purchasing/approved", label: "Approved to Order", anyOf: ["purchase_orders.manage", "parts.view"] },
   { href: "/purchasing", label: "Orders", anyOf: ["purchase_orders.manage"] },
+  { href: "/purchasing/quotes", label: "Supplier Quotes", anyOf: ["purchase_orders.manage", "parts.view"] },
   { href: "/purchasing/invoices", label: "Supplier Invoices", anyOf: ["purchase_orders.manage", "parts.view"] },
   { href: "/purchasing/payments", label: "Payments", anyOf: ["purchase_orders.manage"] },
   { href: "/purchasing/expenses", label: "Car Expenses", anyOf: ["purchase_orders.manage", "costs.view"] },

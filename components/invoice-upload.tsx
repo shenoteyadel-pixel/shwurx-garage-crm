@@ -12,7 +12,8 @@ import { UploadCloud, Camera, Loader2, FileWarning } from "lucide-react"
 // explicit HEIC/HEIF types covers iPhone photos; PDF covers emailed invoices.
 const UPLOAD_ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,image/*,application/pdf,.heic,.heif,.pdf"
 
-export function InvoiceUpload() {
+export function InvoiceUpload({ docType = "invoice" }: { docType?: "invoice" | "quote" }) {
+  const isQuote = docType === "quote"
   const router = useRouter()
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -46,6 +47,7 @@ export function InvoiceUpload() {
         pathname: blob.pathname,
         contentType: file.type || null,
         fileName: file.name,
+        docType,
       })
       if (res.ok) router.push(`/purchasing/invoices/${res.id}`)
       else {
@@ -64,7 +66,7 @@ export function InvoiceUpload() {
       <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 p-12 text-center">
         <Loader2 className="h-9 w-9 animate-spin text-primary" />
         <div>
-          <p className="text-base font-semibold">Reading the invoice…</p>
+          <p className="text-base font-semibold">{isQuote ? "Reading the quote…" : "Reading the invoice…"}</p>
           <p className="text-sm text-muted-foreground">
             Extracting supplier, TRN, parts, VAT and totals — this can take a few seconds.
           </p>
@@ -91,9 +93,11 @@ export function InvoiceUpload() {
         }`}
       >
         <div className="mb-4 text-center">
-          <p className="text-base font-semibold">New purchase invoice</p>
+          <p className="text-base font-semibold">{isQuote ? "New supplier quote" : "New purchase invoice"}</p>
           <p className="text-sm text-muted-foreground">
-            Take a photo or upload the supplier invoice — we read it automatically.
+            {isQuote
+              ? "Take a photo or upload the supplier quote — prices go to the job quotation, no payment."
+              : "Take a photo or upload the supplier invoice — we read it automatically."}
           </p>
         </div>
 
@@ -116,7 +120,7 @@ export function InvoiceUpload() {
             className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border bg-secondary px-4 py-6 text-foreground transition hover:bg-accent active:scale-[0.99]"
           >
             <UploadCloud className="h-8 w-8" />
-            <span className="text-sm font-semibold">Upload Invoice</span>
+            <span className="text-sm font-semibold">{isQuote ? "Upload Quote" : "Upload Invoice"}</span>
             <span className="text-xs text-muted-foreground">JPG · PNG · HEIC · PDF</span>
           </button>
         </div>

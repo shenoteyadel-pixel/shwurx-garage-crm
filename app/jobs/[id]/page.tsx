@@ -226,6 +226,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const canManageExpenses = sessionCtx?.permissions.has("purchase_orders.manage") ?? false
   const canEditVehicle = sessionCtx?.permissions.has("jobs.update_status") ?? false
   const isOwner = sessionCtx?.role === "owner"
+  // Purchasers see the job card but never the customer quotation.
+  const canSeeQuotation =
+    isOwner ||
+    (sessionCtx?.permissions.has("quotations.view") ?? false) ||
+    (sessionCtx?.permissions.has("quotations.edit") ?? false)
   const canCreateComeback = sessionCtx?.permissions.has("jobs.create") ?? false
   const financialSettings = await getSettings()
 
@@ -567,7 +572,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               )}
               <JobSectionTabs
                 sections={[
-                  {
+                  ...(canSeeQuotation ? [{
                     id: "quotation",
                     label: "Quotation",
                     hint: "What the customer is quoted and approves. No purchasing or payments here.",
@@ -598,7 +603,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                         <AddonServices jobId={job.id} addons={addons} locked={locked} />
                       </>
                     ),
-                  },
+                  }] : []),
                   ...(!isInspectionOnly
                     ? [
                         {
@@ -825,12 +830,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 >
                   <FolderOpen className="h-4 w-4 text-muted-foreground" /> Document Center
                 </Link>
-                <Link
-                  href={`/jobs/${job.id}/quotation/print`}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
-                >
-                  <FileText className="h-4 w-4 text-muted-foreground" /> Quotation PDF
-                </Link>
+                {canSeeQuotation && (
+                  <Link
+                    href={`/jobs/${job.id}/quotation/print`}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
+                  >
+                    <FileText className="h-4 w-4 text-muted-foreground" /> Quotation PDF
+                  </Link>
+                )}
               </div>
             </Card>
           )}

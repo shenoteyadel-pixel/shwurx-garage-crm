@@ -29,10 +29,11 @@ const text = (v: FormDataEntryValue | null, max = 300) => String(v ?? "").trim()
 function revalidateFinance() {
   revalidatePath("/finance")
   revalidatePath("/finance/expenses")
+  revalidatePath("/purchasing/general-expenses")
 }
 
 export async function addBusinessExpense(formData: FormData): Promise<Result> {
-  const ctx = await requirePermission("expenses.manage")
+  const ctx = await requireAnyPermission(["expenses.manage", "purchase_orders.manage"])
   const supabase = await createClient()
 
   const category = String(formData.get("category") || "")
@@ -112,7 +113,7 @@ export async function deleteBusinessExpense(id: string): Promise<Result> {
 }
 
 export async function getFinanceReceiptUrl(path: string): Promise<{ url: string } | { error: string }> {
-  await requireAnyPermission(["expenses.manage", "reports.financial"])
+  await requireAnyPermission(["expenses.manage", "reports.financial", "purchase_orders.manage"])
   if (!/^\d{4}-\d{2}\/[0-9a-f-]{36}\.[a-z]+$/.test(path)) return { error: "Invalid receipt." }
   const supabase = await createClient()
   const { data, error } = await supabase.storage.from(RECEIPT_BUCKET).createSignedUrl(path, 120)

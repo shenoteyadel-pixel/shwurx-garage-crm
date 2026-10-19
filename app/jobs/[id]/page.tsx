@@ -39,6 +39,8 @@ import { STAGE_MAP, QC_STATUSES, canViewPrices, type Stage } from "@/lib/constan
 import { formatDate } from "@/lib/utils"
 import { findJobDuplicateParts } from "@/lib/part-costs"
 import { DuplicatePartsDialog } from "@/components/duplicate-parts-dialog"
+import { JobSectionTabs } from "@/components/job-section-tabs"
+import { JobBillingPanel, type JobInvoice, type JobPayment } from "@/components/job-billing-panel"
 import {
   ArrowLeft,
   Phone,
@@ -49,7 +51,6 @@ import {
   Car,
   CalendarClock,
   FileText,
-  ReceiptText,
   ShoppingCart,
   FolderOpen,
 } from "lucide-react"
@@ -204,6 +205,20 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .select("id, category, description, amount, vendor, has_invoice, reference, receipt_url, expense_date")
     .eq("job_id", id)
     .order("expense_date", { ascending: false })
+  const { data: jobInvoices } = await supabase
+    .from("invoices")
+    .select("id, invoice_number, status, issue_date, total, amount_paid")
+    .eq("job_id", id)
+    .order("issue_date", { ascending: false })
+  const invoiceIds = (jobInvoices ?? []).map((i) => i.id)
+  const { data: jobPayments } = invoiceIds.length
+    ? await supabase
+        .from("payments")
+        .select("id, invoice_id, amount, method, reference, paid_at, created_at")
+        .eq("direction", "in")
+        .in("invoice_id", invoiceIds)
+        .order("created_at", { ascending: false })
+    : { data: [] as JobPayment[] }
   const sessionCtx = await getSessionContext()
   const duplicateGroups = sessionCtx?.permissions.has("quotations.edit")
     ? await findJobDuplicateParts(supabase, id, quotation?.quotation_items as any[])
@@ -550,48 +565,103 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                   complaint={job.complaint}
                 />
               )}
-              <QuotationBuilder
-                jobId={job.id}
-                initialItems={quoteItems}
-                initialVat={Number(quotation?.vat_rate ?? 5)}
-                initialVatInclusive={Boolean(quotation?.vat_inclusive)}
-                initialDescription={quotation?.description ?? ""}
-                initialInternalNotes={quotation?.internal_notes ?? ""}
-                hasQuotation={!!quotation}
-              printHref={`/jobs/${job.id}/quotation/print`}
-              locked={locked}
-              canEditLocked={isOwner}
-              partCatalog={partCatalog}
-            />
-              {(sessionCtx?.permissions.has("quotations.edit") ?? false) && <SmartMergeParts jobId={job.id} />}
-              {duplicateGroups.length > 0 && (
-                <DuplicatePartsDialog
-                  key={duplicateGroups.map((g) => g.key).join(",")}
-                  jobId={job.id}
-                  groups={duplicateGroups}
-                  showCosts={sessionCtx?.permissions.has("costs.view") ?? false}
-                />
-              )}
-              <AddonServices jobId={job.id} addons={addons} locked={locked} />
-              {locked && !isInspectionOnly && (
-                <SendPartsToPurchaser
-                  jobId={job.id}
-                  pendingCount={(parts ?? []).filter((p: any) => !p.released_at && p.status === "required").length}
-                  releasedCount={(parts ?? []).filter((p: any) => p.released_at).length}
-                  canSend={sessionCtx?.permissions.has("quotations.edit") ?? false}
-                />
-              )}
-              {!isInspectionOnly && (
-                <PartsManager
-                  jobId={job.id}
-                  parts={
-                    (sessionCtx?.permissions.has("costs.view")
-                      ? groupedParts
-                      : groupedParts.map((p) => ({ ...p, cost: null }))) as any
-                  }
-                  locked={locked}
-                />
-              )}
+              <JobSectionTabs
+                sections={[
+                  {
+                    id: "quotation",
+                    label: "Quotation",
+                    hint: "What the customer is quoted and approves. No purchasing or payments here.",
+                    content: (
+                      <>
+                        <QuotationBuilder
+                          jobId={job.id}
+                          initialItems={quoteItems}
+                          initialVat={Number(quotation?.vat_rate ?? 5)}
+                          initialVatInclusive={Boolean(quotation?.vat_inclusive)}
+                          initialDescription={quotation?.description ?? ""}
+                          initialInternalNotes={quotation?.internal_notes ?? ""}
+                          hasQuotation={!!quotation}
+                          printHref={`/jobs/${job.id}/quotation/print`}
+                          locked={locked}
+                          canEditLocked={isOwner}
+                          partCatalog={partCatalog}
+                        />
+                        {(sessionCtx?.permissions.has("quotations.edit") ?? false) && <SmartMergeParts jobId={job.id} />}
+                        {duplicateGroups.length > 0 && (
+                          <DuplicatePartsDialog
+                            key={duplicateGroups.map((g) => g.key).join(",")}
+                            jobId={job.id}
+                            groups={duplicateGroups}
+                            showCosts={sessionCtx?.permissions.has("costs.view") ?? false}
+                          />
+                        )}
+                        <AddonServices jobId={job.id} addons={addons} locked={locked} />
+                      </>
+                    ),
+                  },
+                  ...(!isInspectionOnly
+                    ? [
+                        {
+                          id: "purchasing",
+                          label: "Purchasing",
+                          badge: (parts ?? []).filter((p: any) => !p.released_at && p.status === "required").length,
+                          hint: "Parts sent to the purchaser, ordered, received and car costs.",
+                          content: (
+                            <>
+                              {locked && (
+                                <SendPartsToPurchaser
+                                  jobId={job.id}
+                                  pendingCount={(parts ?? []).filter((p: any) => !p.released_at && p.status === "required").length}
+                                  releasedCount={(parts ?? []).filter((p: any) => p.released_at).length}
+                                  canSend={sessionCtx?.permissions.has("quotations.edit") ?? false}
+                                />
+                              )}
+                              <PartsManager
+                                jobId={job.id}
+                                parts={
+                                  (sessionCtx?.permissions.has("costs.view")
+                                    ? groupedParts
+                                    : groupedParts.map((p) => ({ ...p, cost: null }))) as any
+                                }
+                                locked={locked}
+                              />
+                              {(canManageExpenses || isOwner) && (
+                                <ManualPurchasePart
+                                  jobId={job.id}
+                                  defaultMarkup={Number(financialSettings.default_markup_pct ?? 0)}
+                                />
+                              )}
+                              <CarExpensesManager
+                                jobId={job.id}
+                                expenses={(carExpenses ?? []) as CarExpense[]}
+                                canManage={canManageExpenses}
+                              />
+                              <Link
+                                href={`/purchasing/new?job=${job.id}`}
+                                className="inline-flex items-center gap-2 self-start rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
+                              >
+                                <ShoppingCart className="h-4 w-4 text-muted-foreground" /> Raise Purchase Order
+                              </Link>
+                            </>
+                          ),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: "billing",
+                    label: "Invoice & Payments",
+                    badge: (jobInvoices ?? []).length,
+                    hint: "Customer invoices for this job and the money received against them.",
+                    content: (
+                      <JobBillingPanel
+                        jobId={job.id}
+                        invoices={(jobInvoices ?? []) as JobInvoice[]}
+                        payments={(jobPayments ?? []) as JobPayment[]}
+                      />
+                    ),
+                  },
+                ]}
+              />
             </>
           ) : (
             <>
@@ -724,16 +794,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             canChangeAdvisor={isOwner}
           />
 
-          {(canManageExpenses || isOwner) && (
+          {!showPrices && (canManageExpenses || isOwner) && (
             <ManualPurchasePart jobId={job.id} defaultMarkup={Number(financialSettings.default_markup_pct ?? 0)} />
-          )}
-
-          {showPrices && (
-            <CarExpensesManager
-              jobId={job.id}
-              expenses={(carExpenses ?? []) as CarExpense[]}
-              canManage={canManageExpenses}
-            />
           )}
 
           {job.customer_id && (
@@ -768,18 +830,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                   className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
                 >
                   <FileText className="h-4 w-4 text-muted-foreground" /> Quotation PDF
-                </Link>
-                <Link
-                  href={`/invoices/new?job=${job.id}`}
-                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-                >
-                  <ReceiptText className="h-4 w-4" /> Create Invoice
-                </Link>
-                <Link
-                  href={`/purchasing/new?job=${job.id}`}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
-                >
-                  <ShoppingCart className="h-4 w-4 text-muted-foreground" /> Raise Purchase Order
                 </Link>
               </div>
             </Card>

@@ -487,6 +487,11 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
     supplierId = match?.id ?? null
   }
 
+  if (input.docType !== "quote" && !extracted?.invoice_number?.trim()) {
+    await discardUpload()
+    return { ok: false, error: MISSING_INVOICE_NUMBER }
+  }
+
   // Same invoice photographed/scanned again (different file, same document).
   const sameInvoice = await findDuplicateInvoice(supabase, {
     invoiceNumber: extracted?.invoice_number,
@@ -964,6 +969,9 @@ export type DraftLine = {
   markup_pct: number
 }
 
+const MISSING_INVOICE_NUMBER =
+  "No invoice number found, so this was not saved. If this is a supplier quote, upload it under Supplier Quotes. If it is an invoice, make sure the invoice number is visible and upload it again."
+
 export type SaveDraftPayload = {
   id: string
   supplierId: string | null
@@ -990,6 +998,13 @@ async function applyDraft(
   const vat = clean.reduce((t, l) => t + (n(l.quantity) * n(l.unit_cost) * n(l.vat_rate)) / 100, 0)
   const discount = n(payload.discountAmount)
   const total = subtotal - discount + vat
+
+  let docType = payload.docType
+  if (!docType) {
+    const { data: current } = await supabase.from("supplier_invoices").select("doc_type").eq("id", payload.id).single()
+    docType = current?.doc_type === "quote" ? "quote" : "invoice"
+  }
+  if (docType !== "quote" && !payload.invoiceNumber?.trim()) throw new Error(MISSING_INVOICE_NUMBER)
 
   const dup = await findDuplicateInvoice(supabase, {
     excludeId: payload.id,
@@ -1099,6 +1114,7 @@ async function applyConfirm(
   // A supplier QUOTE only prices the parts for the customer quotation: no stock,
   // no payables, no VAT. The final supplier invoice is uploaded later.
   const isQuote = invoice.doc_type === "quote"
+  if (!isQuote && !String(invoice.invoice_number ?? "").trim()) throw new Error(MISSING_INVOICE_NUMBER)
 
   // Final guard: the number may have been typed/edited during review, so
   // re-check against invoices already posted to stock and the supplier ledger.

@@ -10,7 +10,21 @@ export type OrderLine = ApprovedPart & {
   quoteLabel: string | null
 }
 
-export type OpenQuote = { id: string; label: string; supplier: string | null; invoiceId: string | null; invoiceLabel: string | null }
+export type OpenQuote = {
+  id: string
+  label: string
+  supplier: string | null
+  invoiceId: string | null
+  invoiceLabel: string | null
+  quotedById: string | null
+  quotedByName: string | null
+  total: number
+  coveredParts: number
+  createdAt: string | null
+}
+
+/** The purchaser responsible for ordering this car's approved parts. */
+export type Orderer = { userId: string; name: string; quoteId: string; quoteLabel: string; supplier: string | null }
 
 export type ApprovedJob = {
   jobId: string
@@ -23,6 +37,27 @@ export type ApprovedJob = {
   lines: OrderLine[]
   declined: ApprovedPart[]
   quotes: OpenQuote[]
+  orderer: Orderer | null
+  /** More than one purchaser sent a quote for this car. */
+  multipleQuoters: boolean
+}
+
+/**
+ * When several purchasers quoted the same car, the one whose quote covers the
+ * most approved parts orders; ties go to the cheaper quote, then the earlier one.
+ */
+function chooseOrderer(quotes: OpenQuote[]): Orderer | null {
+  const ranked = quotes
+    .filter((q) => q.quotedById && q.coveredParts > 0)
+    .sort(
+      (a, b) =>
+        b.coveredParts - a.coveredParts ||
+        a.total - b.total ||
+        String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")),
+    )
+  const q = ranked[0]
+  if (!q) return null
+  return { userId: q.quotedById!, name: q.quotedByName ?? "Purchaser", quoteId: q.id, quoteLabel: q.label, supplier: q.supplier }
 }
 
 type DocRow = {
@@ -34,6 +69,9 @@ type DocRow = {
   supplier_name_raw: string | null
   source_quote_id: string | null
   deleted_at: string | null
+  created_by: string | null
+  created_at: string | null
+  total: number | string | null
   suppliers: { name: string | null } | { name: string | null }[] | null
 }
 
@@ -54,14 +92,14 @@ const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? (v[0] ?? nu
  * needs a supplier quote, quoted and waiting for the invoice, invoice in draft,
  * or received.
  */
-export async function loadApprovedToOrder(): Promise<ApprovedJob[]> {
+export async function loadApprovedToOrder(onlyJobIds?: string[]): Promise<ApprovedJob[]> {
   const db = createServiceClient()
-  const { data: jobs } = await db
+  let jobQuery = db
     .from("jobs")
     .select("id, job_number, vehicle_make, vehicle_model, plate_number, customer_name, stage")
     .neq("stage", "delivered")
-    .order("created_at", { ascending: false })
-    .limit(300)
+  if (onlyJobIds?.length) jobQuery = jobQuery.in("id", onlyJobIds)
+  const { data: jobs } = await jobQuery.order("created_at", { ascending: false }).limit(300)
   const jobList = jobs ?? []
   const approvals = await getJobApprovals(
     db,
@@ -73,7 +111,7 @@ export async function loadApprovedToOrder(): Promise<ApprovedJob[]> {
   const { data: itemRows } = await db
     .from("supplier_invoice_items")
     .select(
-      "job_id, description, oem_part_number, supplier_part_number, match_status, supplier_invoices!inner(id, doc_type, status, doc_number, invoice_number, supplier_name_raw, source_quote_id, deleted_at, suppliers(name))",
+      "job_id, description, oem_part_number, supplier_part_number, match_status, supplier_invoices!inner(id, doc_type, status, doc_number, invoice_number, supplier_name_raw, source_quote_id, deleted_at, created_by, created_at, total, suppliers(name))",
     )
     .in(
       "job_id",
@@ -103,6 +141,17 @@ export async function loadApprovedToOrder(): Promise<ApprovedJob[]> {
     }
   }
 
+  const quoterIds = [
+    ...new Set(items.filter((i) => i.doc!.doc_type === "quote" && i.doc!.created_by).map((i) => i.doc!.created_by!)),
+  ]
+  const nameOf = new Map<string, string>()
+  if (quoterIds.length) {
+    const { data: people } = await db.from("profiles").select("id, full_name, email").in("id", quoterIds)
+    for (const p of people ?? []) {
+      nameOf.set(p.id as string, (p.full_name as string | null) || (p.email as string | null) || "Purchaser")
+    }
+  }
+
   return approvedJobs.map((j) => {
     const a = approvals.get(j.id as string)!
     const jobItems = items.filter((i) => i.job_id === j.id)
@@ -127,8 +176,21 @@ export async function loadApprovedToOrder(): Promise<ApprovedJob[]> {
       if (d.doc_type !== "quote" || d.status !== "quoted" || seen.has(d.id)) continue
       seen.add(d.id)
       const inv = invoiceForQuote.get(d.id)
-      quotes.push({ id: d.id, label: labelOf(d), supplier: supplierOf(d), invoiceId: inv?.id ?? null, invoiceLabel: inv?.label ?? null })
+      const quoteItems = jobItems.filter((x) => x.doc!.id === d.id)
+      quotes.push({
+        id: d.id,
+        label: labelOf(d),
+        supplier: supplierOf(d),
+        invoiceId: inv?.id ?? null,
+        invoiceLabel: inv?.label ?? null,
+        quotedById: d.created_by,
+        quotedByName: d.created_by ? (nameOf.get(d.created_by) ?? null) : null,
+        total: Number(d.total ?? 0),
+        coveredParts: a.approved.filter((p) => quoteItems.some((x) => samePart(p, x))).length,
+        createdAt: d.created_at,
+      })
     }
+    const multipleQuoters = new Set(quotes.map((q) => q.quotedById).filter(Boolean)).size > 1
 
     return {
       jobId: j.id as string,
@@ -141,6 +203,8 @@ export async function loadApprovedToOrder(): Promise<ApprovedJob[]> {
       lines,
       declined: a.declined,
       quotes,
+      orderer: chooseOrderer(quotes),
+      multipleQuoters,
     }
   })
 }

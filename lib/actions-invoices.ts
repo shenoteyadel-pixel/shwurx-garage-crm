@@ -975,6 +975,8 @@ const MISSING_INVOICE_NUMBER =
 export type SaveDraftPayload = {
   id: string
   supplierId: string | null
+  /** Supplier name as printed on the document; used to create the supplier on confirm when none is picked. */
+  supplierName?: string | null
   invoiceNumber: string | null
   invoiceDate: string | null
   discountAmount: number
@@ -1025,6 +1027,7 @@ async function applyDraft(
       // An unselected <select> sends "" — Postgres rejects "" for a uuid column
       // ("invalid input syntax for type uuid"), which silently blocked confirms.
       supplier_id: uuidOrNull(payload.supplierId),
+      ...(payload.supplierName !== undefined ? { supplier_name_raw: payload.supplierName?.trim() || null } : {}),
       invoice_number: payload.invoiceNumber,
       invoice_date: payload.invoiceDate || null,
       discount_amount: discount,

@@ -111,6 +111,7 @@ export function InvoiceReview({
     invoice.status === "confirmed" && invoice.doc_type !== "quote" && Number(invoice.total) <= 0
 
   const [supplierId, setSupplierId] = React.useState(invoice.supplier_id ?? "")
+  const [supplierName, setSupplierName] = React.useState(invoice.supplier_name_raw ?? "")
   const [invoiceNumber, setInvoiceNumber] = React.useState(invoice.invoice_number ?? "")
   const [invoiceDate, setInvoiceDate] = React.useState(invoice.invoice_date ?? "")
   const [discountAmount, setDiscountAmount] = React.useState(invoice.discount_amount ?? 0)
@@ -248,6 +249,7 @@ export function InvoiceReview({
         const res = await saveInvoiceDraft({
           id: invoice.id,
           supplierId: supplierId || null,
+          supplierName: supplierName.trim() || null,
           invoiceNumber: invoiceNumber || null,
           invoiceDate: invoiceDate || null,
           discountAmount: Number(discountAmount || 0),
@@ -270,8 +272,8 @@ export function InvoiceReview({
   }
 
   function confirm() {
-    if (!supplierId && !invoice.supplier_name_raw) {
-      setErr("Select a supplier before confirming (none was detected on the scan)")
+    if (!supplierId && !supplierName.trim()) {
+      setErr("Pick a supplier from the list or type the supplier name before confirming")
       return
     }
     setErr(null)
@@ -287,6 +289,7 @@ export function InvoiceReview({
         const confirmed = await saveAndConfirmSupplierInvoice({
           id: invoice.id,
           supplierId: supplierId || null,
+          supplierName: supplierName.trim() || null,
           invoiceNumber: invoiceNumber || null,
           invoiceDate: invoiceDate || null,
           discountAmount: Number(discountAmount || 0),
@@ -411,7 +414,9 @@ export function InvoiceReview({
             <div>
               <Label htmlFor="supplier">Supplier</Label>
               <Select id="supplier" value={supplierId} disabled={readOnly} onChange={(e) => setSupplierId(e.target.value)}>
-                <option value="">— Select supplier —</option>
+                <option value="">
+                  {supplierName.trim() ? `New supplier: ${supplierName.trim()}` : "— Select supplier —"}
+                </option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -419,6 +424,23 @@ export function InvoiceReview({
                 ))}
               </Select>
             </div>
+            {!supplierId && (
+              <div className="sm:col-span-2">
+                <Label htmlFor="supplier-name">Supplier name (as on the invoice)</Label>
+                <Input
+                  id="supplier-name"
+                  value={supplierName}
+                  disabled={readOnly}
+                  placeholder="Type the supplier name"
+                  onChange={(e) => setSupplierName(e.target.value)}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {supplierName.trim()
+                    ? "Fix the name if the scan read it wrong. A new supplier with this name is created when you confirm."
+                    : "The scan could not read the supplier. Type the name, or pick an existing supplier above."}
+                </p>
+              </div>
+            )}
             <div>
               <Label htmlFor="inv-no">Supplier invoice #</Label>
               <Input id="inv-no" value={invoiceNumber} disabled={readOnly} onChange={(e) => setInvoiceNumber(e.target.value)} />

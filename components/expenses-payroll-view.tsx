@@ -60,6 +60,9 @@ const TEXT = {
   en: {
     title: "Expenses & Salaries",
     subtitle: "Record every bill and running cost with its receipt, and pay salaries month by month. Everything here flows into Finance & Audit.",
+    generalTitle: "General Expenses",
+    generalSubtitle: "Garage running costs not linked to a car: DEWA, rent, fuel, recovery, tools, consumables and fees. Attach the bill for every entry.",
+    entries: "Entries this month",
     backToFinance: "Finance & Audit",
     month: "Month",
     totalSpend: "Running costs",
@@ -116,6 +119,9 @@ const TEXT = {
   },
   ar: {
     title: "المصروفات والرواتب",
+    generalTitle: "المصروفات العامة",
+    generalSubtitle: "مصروفات تشغيل الورشة غير المرتبطة بسيارة: ديوا، الإيجار، الوقود، الريكفري، العدد، المستهلكات والرسوم. أرفق الفاتورة لكل مصروف.",
+    entries: "عدد المصروفات هذا الشهر",
     subtitle: "سجّل كل فاتورة ومصروف تشغيلي مع إيصاله، وادفع الرواتب شهريًا. كل ما هنا يظهر في المالية والتدقيق.",
     backToFinance: "المالية والتدقيق",
     month: "الشهر",
@@ -188,12 +194,18 @@ export function ExpensesPayrollView({
   staff,
   canExpenses,
   canPayroll,
+  expensesOnly = false,
+  basePath = "/finance/expenses",
+  tabs,
 }: {
   month: string
   expenses: BizExpense[]
   staff: StaffPay[]
   canExpenses: boolean
   canPayroll: boolean
+  expensesOnly?: boolean
+  basePath?: string
+  tabs?: React.ReactNode
 }) {
   const { lang } = useI18n()
   const L = lang === "ar" ? "ar" : "en"
@@ -212,17 +224,23 @@ export function ExpensesPayrollView({
     year: "numeric",
   })
 
-  const goMonth = (m: string) => router.push(`/finance/expenses?m=${m}`)
+  const goMonth = (m: string) => router.push(`${basePath}?m=${m}`)
 
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="flex flex-col gap-1">
-          <Link href="/finance" className="text-xs text-muted-foreground hover:text-foreground">
-            {t.backToFinance}
-          </Link>
-          <h1 className="text-balance text-2xl font-semibold text-foreground">{t.title}</h1>
-          <p className="max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground">{t.subtitle}</p>
+          {expensesOnly ? null : (
+            <Link href="/finance" className="text-xs text-muted-foreground hover:text-foreground">
+              {t.backToFinance}
+            </Link>
+          )}
+          <h1 className="text-balance text-2xl font-semibold text-foreground">
+            {expensesOnly ? t.generalTitle : t.title}
+          </h1>
+          <p className="max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground">
+            {expensesOnly ? t.generalSubtitle : t.subtitle}
+          </p>
         </div>
         <div className="flex items-center gap-2" aria-label={t.month}>
           <Button variant="ghost" size="sm" onClick={() => goMonth(shiftMonth(month, -1))} aria-label="Previous month">
@@ -241,6 +259,19 @@ export function ExpensesPayrollView({
         </div>
       </header>
 
+      {tabs}
+
+      {expensesOnly ? (
+        <>
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-3" aria-label={monthLabel}>
+            <Stat label={t.totalSpend} value={aed(spend, L)} strong />
+            <Stat label={t.vatPaid} value={aed(vat, L)} />
+            <Stat label={t.entries} value={String(inMonth.length)} />
+          </section>
+          <ExpensesTab month={month} expenses={expenses} inMonth={inMonth} canEdit={canExpenses} t={t} L={L} />
+        </>
+      ) : (
+        <>
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4" aria-label={monthLabel}>
         <Stat label={t.totalSpend} value={aed(spend, L)} />
         <Stat label={t.vatPaid} value={aed(vat, L)} />
@@ -268,6 +299,8 @@ export function ExpensesPayrollView({
         <ExpensesTab month={month} expenses={expenses} inMonth={inMonth} canEdit={canExpenses} t={t} L={L} />
       ) : (
         <SalariesTab month={month} staff={staff} canEdit={canPayroll} t={t} L={L} />
+      )}
+        </>
       )}
     </div>
   )

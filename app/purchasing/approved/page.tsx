@@ -94,8 +94,24 @@ function JobCard({ job }: { job: ApprovedJob }) {
             {job.customer ? <span className="text-muted-foreground"> · {job.customer}</span> : null}
           </p>
         </div>
-        {job.decidedAt && <p className="text-xs text-muted-foreground">Approved {formatDate(job.decidedAt)}</p>}
+        <div className="flex flex-col items-end gap-1 text-right">
+          {job.decidedAt && <p className="text-xs text-muted-foreground">Approved {formatDate(job.decidedAt)}</p>}
+          {job.orderer ? (
+            <p className="rounded-full border border-primary/40 bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
+              Ordering: {job.orderer.name}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">No purchaser assigned yet</p>
+          )}
+        </div>
       </div>
+
+      {job.orderer && job.multipleQuoters && (
+        <p className="border-b border-border bg-amber-500/10 px-4 py-2 text-xs leading-relaxed text-amber-300">
+          More than one purchaser quoted this car. {job.orderer.name}&apos;s quote ({job.orderer.quoteLabel}) covers the
+          most approved parts at the best price, so they order. Others should not order.
+        </p>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -143,6 +159,12 @@ function JobCard({ job }: { job: ApprovedJob }) {
                   {q.label}
                 </Link>
                 {q.supplier ? <span className="text-muted-foreground"> · {q.supplier}</span> : null}
+                {q.quotedByName ? <span className="text-muted-foreground"> · Quoted by {q.quotedByName}</span> : null}
+                {job.orderer?.quoteId === q.id && (
+                  <span className="ml-2 rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
+                    Order from this
+                  </span>
+                )}
               </p>
               {q.invoiceId ? (
                 <Link href={`/purchasing/invoices/${q.invoiceId}`} className="text-sm font-medium text-primary hover:underline">

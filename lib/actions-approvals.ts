@@ -8,6 +8,8 @@ import { sendEmail, approvalRequestEmail } from "@/lib/email"
 import { notifyByPermission } from "@/lib/actions-notifications"
 import { notifyActivity } from "@/lib/activity"
 import { getJobApprovals as loadSignedApprovals } from "@/lib/quote-invoice"
+import { loadApprovedToOrder } from "@/lib/approved-to-order"
+import { notifyUsers } from "@/lib/attendance-notify"
 import { buildApprovalMessage, waMeLink } from "@/lib/whatsapp"
 import { revalidatePath } from "next/cache"
 
@@ -702,13 +704,46 @@ async function notifyPurchasersOfApproval(jobId: string, jobNo: string, status: 
   const more = approved.length > 3 ? ` +${approved.length - 3} more` : ""
   const partialNote = status === "partial" && declined > 0 ? ` (${declined} declined, not to order)` : ""
 
+  const orderNote = await notifyOrderAssignment(jobId, jobNo)
   await notifyByPermission("purchase_orders.manage", {
     title: "Customer approved parts - ready to order",
-    body: `Job ${jobNo}: ${count} approved part${count === 1 ? "" : "s"} to order${partialNote}.${preview ? ` ${preview}${more}` : ""}`,
+    body: `Job ${jobNo}: ${count} approved part${count === 1 ? "" : "s"} to order${partialNote}.${preview ? ` ${preview}${more}` : ""}${orderNote}`,
     type: "parts",
     link: "/purchasing/approved",
   })
   revalidatePath("/purchasing/approved")
+}
+
+/**
+ * Tells the purchaser whose quote won that they place the order, and any other
+ * purchaser who quoted the same car not to. Returns a short line naming who orders
+ * for the team-wide notification.
+ */
+async function notifyOrderAssignment(jobId: string, jobNo: string): Promise<string> {
+  const [job] = await loadApprovedToOrder([jobId])
+  const orderer = job?.orderer
+  if (!orderer) return " No supplier quote yet. Whoever quotes first should order."
+
+  const supplier = orderer.supplier ? ` from ${orderer.supplier}` : ""
+  await notifyUsers([orderer.userId], {
+    title: "You order these parts",
+    body: `Job ${jobNo}: the customer approved. Order the parts${supplier} using your quote ${orderer.quoteLabel}.`,
+    type: "parts",
+    link: "/purchasing/approved",
+  })
+
+  const others = [
+    ...new Set(job.quotes.map((q) => q.quotedById).filter((id): id is string => Boolean(id) && id !== orderer.userId)),
+  ]
+  if (others.length) {
+    await notifyUsers(others, {
+      title: "Do not order - another purchaser is ordering",
+      body: `Job ${jobNo}: ${orderer.name} will order the approved parts (quote ${orderer.quoteLabel}). Do not order from your quote.`,
+      type: "parts",
+      link: "/purchasing/approved",
+    })
+  }
+  return ` ${orderer.name} will order.`
 }
 
 /** Marks every not-yet-released part on the job as released and optionally alerts purchasing. */
@@ -724,9 +759,10 @@ async function releaseJobParts(jobId: string, jobNo: string, userId: string | nu
     .select("id")
   const count = data?.length ?? 0
   if (notify && count > 0) {
+    const orderNote = await notifyOrderAssignment(jobId, jobNo)
     await notifyByPermission("purchase_orders.manage", {
       title: "Approved parts to order",
-      body: `Job ${jobNo}: ${count} approved part${count === 1 ? "" : "s"} ready to purchase.`,
+      body: `Job ${jobNo}: ${count} approved part${count === 1 ? "" : "s"} ready to purchase.${orderNote}`,
       type: "parts",
       link: "/purchasing/approved",
     })

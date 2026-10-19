@@ -32,15 +32,14 @@ export default async function InvoiceCapturePage() {
 
   const { data: invoices } = await supabase
     .from("supplier_invoices")
-    .select("id, doc_number, status, payment_status, invoice_number, invoice_date, total, vat_amount, amount_paid, supplier_id, supplier_name_raw, created_at, created_by, deleted_at, suppliers(name)")
+    .select("id, doc_number, doc_type, status, payment_status, invoice_number, invoice_date, total, vat_amount, amount_paid, supplier_id, supplier_name_raw, created_at, created_by, deleted_at, suppliers(name)")
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(200)
 
-  const rows = invoices ?? []
+  const rows = (invoices ?? []).filter((r) => r.doc_type !== "quote" && r.status !== "quoted")
   type Row = (typeof rows)[number]
-  const invoiceRows = rows.filter((r) => r.status !== "quoted")
-  const quoteRows = rows.filter((r) => r.status === "quoted")
+  const invoiceRows = rows
   const canDeleteDuplicates = user.permissions.includes("purchase_orders.manage")
   const duplicates = findDuplicateGroups(rows)
   const names = await loadProfileNames(createServiceClient(), rows.map((r) => r.created_by))
@@ -151,8 +150,15 @@ export default async function InvoiceCapturePage() {
           />
         )}
 
-        <InvoiceUpload />
+        <InvoiceUpload docType="invoice" />
         <NewBlankInvoiceButton />
+        <p className="text-xs text-muted-foreground">
+          Got a price quote, not a bill? Upload it under{" "}
+          <Link href="/purchasing/quotes" className="font-medium text-primary hover:underline">
+            Supplier Quotes
+          </Link>
+          .
+        </p>
 
         <Card className="overflow-hidden">
           <div className="border-b border-border px-4 py-3">
@@ -167,25 +173,6 @@ export default async function InvoiceCapturePage() {
             </div>
           ) : (
             renderTable(invoiceRows, "invoice")
-          )}
-        </Card>
-
-        <Card className="overflow-hidden">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Supplier quotations <span className="font-normal normal-case">({quoteRows.length})</span>
-            </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Price quotes only — not bills. They don&apos;t count towards VAT or the payable amount.
-            </p>
-          </div>
-          {quoteRows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
-              <FileText className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">No supplier quotations.</p>
-            </div>
-          ) : (
-            renderTable(quoteRows, "quote")
           )}
         </Card>
       </div>

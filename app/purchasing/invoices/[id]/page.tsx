@@ -156,10 +156,10 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
       <div className="mx-auto max-w-6xl space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Link
-            href="/purchasing/invoices"
+            href={invoice.doc_type === "quote" ? "/purchasing/quotes" : "/purchasing/invoices"}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="h-4 w-4" /> Invoice Capture
+            <ArrowLeft className="h-4 w-4" /> {invoice.doc_type === "quote" ? "Supplier Quotes" : "Invoice Capture"}
           </Link>
           {user.role === "owner" &&
             !invoice.deleted_at &&

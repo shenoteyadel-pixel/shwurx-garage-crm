@@ -64,6 +64,7 @@ const NAV_GROUPS = [
       { href: "/attendance", label: "Check In / Out", icon: Fingerprint },
       { href: "/gate-pass", label: "Gate Pass & Keys", icon: KeySquare, anyOf: ["gate_pass.release"] },
       { href: "/control-center", label: "AI Control Center", icon: Sparkles, ownerOnly: true },
+      { href: "/ai-marketing", label: "AI Marketing Manager", icon: Megaphone, ownerOnly: true },
     ],
   },
   {

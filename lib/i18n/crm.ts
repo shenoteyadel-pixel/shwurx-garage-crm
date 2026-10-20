@@ -66,6 +66,7 @@ const en: CrmDict = {
     "/attendance": "Check In / Out",
     "/gate-pass": "Gate Pass & Keys",
     "/control-center": "AI Control Center",
+    "/ai-marketing": "AI Marketing Manager",
     "/finance": "Finance & Audit",
     "/finance/expenses": "Expenses & Salaries",
     "/reports/vat": "VAT Return",
@@ -259,6 +260,7 @@ const ar: CrmDict = {
     "/attendance": "تسجيل الحضور / الانصراف",
     "/gate-pass": "تصريح الخروج والمفاتيح",
     "/control-center": "مركز التحكم الذكي",
+    "/ai-marketing": "مدير التسويق الذكي",
     "/finance": "المالية والتدقيق",
     "/finance/expenses": "المصروفات والرواتب",
     "/reports/vat": "إقرار ضريبة القيمة المضافة",
@@ -394,14 +396,14 @@ const ar: CrmDict = {
       },
       users: {
         title: "المستخدمون والأدوار",
-        body: "ادعُ الموظفين وحدّد أدوارهم واضبط صلاحيات كل شخص.",
+        body: "ادعُ ال��وظفين وحدّد أدوارهم واضبط صلاحيات كل شخص.",
         tips: [
           "امنح كل شخص الصلاحيات التي يحتاجها فقط.",
           "عطّل حسابات المغادرين بدلاً من حذفها.",
         ],
       },
       alerts: {
-        title: "التنبيهات والتحذيرات",
+        title: "الت��بيهات والتحذيرات",
         body: "ينبهك النظام عند التأخير أو نسيان تسجيل الانصراف أو وجود أعمال متأخرة.",
         tips: [
           "تظهر التنبيهات المهمة تلقائياً عند فتح النظام.",

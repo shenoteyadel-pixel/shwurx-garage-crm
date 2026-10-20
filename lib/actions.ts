@@ -1025,6 +1025,100 @@ export async function deletePart(partId: string, jobId: string) {
   revalidatePath("/parts")
 }
 
+export type ReturnPartResult = { ok: true } | { ok: false; error: string }
+
+/**
+ * Record a part coming off a car: sent back to the supplier, or put back into
+ * garage stock. Returned parts stop counting toward the car's parts cost. When
+ * returned to stock and the part is linked to an inventory item (via the
+ * supplier bill line), stock goes back up with an `in` movement.
+ */
+export async function returnPart(partId: string, jobId: string, formData: FormData): Promise<ReturnPartResult> {
+  const { supabase, ctx } = await guard("jobs.update_status")
+  const returnTo = String(formData.get("return_to") || "")
+  if (returnTo !== "supplier" && returnTo !== "stock") return { ok: false, error: "Choose where the part is going." }
+  const reason = String(formData.get("return_reason") || "").trim().slice(0, 500) || null
+
+  const { data: part } = await supabase
+    .from("parts_requests")
+    .select("id, job_id, part_name, quantity, cost, returned_at, deleted_at")
+    .eq("id", partId)
+    .maybeSingle()
+  if (!part || part.job_id !== jobId || part.deleted_at) return { ok: false, error: "Part not found." }
+  if (part.returned_at) return { ok: false, error: "This part is already returned." }
+
+  const maxQty = Number(part.quantity ?? 1) || 1
+  const rawQty = Number(formData.get("return_quantity") || maxQty)
+  if (!Number.isFinite(rawQty) || rawQty <= 0 || rawQty > maxQty) {
+    return { ok: false, error: `Quantity must be between 1 and ${maxQty}.` }
+  }
+
+  const { error } = await supabase
+    .from("parts_requests")
+    .update({
+      returned_at: new Date().toISOString(),
+      returned_by: ctx.userId,
+      return_to: returnTo,
+      return_reason: reason,
+      return_quantity: rawQty,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", partId)
+  if (error) return { ok: false, error: error.message }
+
+  if (returnTo === "stock") {
+    const { data: line } = await supabase
+      .from("supplier_invoice_items")
+      .select("inventory_item_id, unit_cost")
+      .eq("parts_request_id", partId)
+      .not("inventory_item_id", "is", null)
+      .limit(1)
+      .maybeSingle()
+    if (line?.inventory_item_id) {
+      const { data: job } = await supabase.from("jobs").select("job_number").eq("id", jobId).maybeSingle()
+      await supabase.from("stock_movements").insert({
+        item_id: line.inventory_item_id,
+        kind: "in",
+        quantity: rawQty,
+        unit_cost: line.unit_cost ?? part.cost ?? null,
+        reference: job?.job_number ?? null,
+        job_id: jobId,
+        note: `Returned from car${reason ? `: ${reason}` : ""}`,
+        created_by: ctx.userId,
+      })
+    }
+  }
+
+  await logAction(ctx, "part_returned", "job", jobId, { partId, returnTo, quantity: rawQty })
+  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/parts")
+  revalidatePath("/inventory")
+  return { ok: true }
+}
+
+export async function undoReturnPart(partId: string, jobId: string): Promise<ReturnPartResult> {
+  const { supabase, ctx } = await guard("jobs.update_status")
+  const { data: part } = await supabase
+    .from("parts_requests")
+    .select("job_id, returned_at, return_to")
+    .eq("id", partId)
+    .maybeSingle()
+  if (!part || part.job_id !== jobId) return { ok: false, error: "Part not found." }
+  if (!part.returned_at) return { ok: true }
+  if (part.return_to === "stock") {
+    return { ok: false, error: "This part was put back into stock. Issue it to the car again from Parts instead." }
+  }
+  const { error } = await supabase
+    .from("parts_requests")
+    .update({ returned_at: null, returned_by: null, return_to: null, return_reason: null, return_quantity: null })
+    .eq("id", partId)
+  if (error) return { ok: false, error: error.message }
+  await logAction(ctx, "part_return_undone", "job", jobId, { partId })
+  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/parts")
+  return { ok: true }
+}
+
 /* ---------------- Auth ---------------- */
 export async function signOut() {
   const supabase = await createClient()

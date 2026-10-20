@@ -1,12 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { addPart, updatePart, deletePart, sendPartsToQuotation } from "@/lib/actions"
+import { addPart, updatePart, deletePart, sendPartsToQuotation, returnPart, undoReturnPart } from "@/lib/actions"
 import { sendPartsAsAdditionalWork } from "@/lib/actions-approvals"
 import { Button, Card, Input, Select } from "@/components/ui"
 import { PART_STATUSES } from "@/lib/constants"
 import { formatCurrency, cn } from "@/lib/utils"
-import { Plus, Trash2, Package, FileUp, Loader2 } from "lucide-react"
+import { Plus, Trash2, Package, FileUp, Loader2, Undo2 } from "lucide-react"
 
 type Part = {
   id: string
@@ -19,6 +19,10 @@ type Part = {
   lead_time_days?: number | null
   bucket?: "waiting" | "bought_on_quote" | "bought_extra"
   source?: "bill" | "quote" | "request"
+  returned_at?: string | null
+  return_to?: "supplier" | "stock" | null
+  return_reason?: string | null
+  return_quantity?: number | null
 }
 
 const SECTIONS = [
@@ -61,7 +65,9 @@ export function PartsManager({
   const [sending, setSending] = React.useState(false)
   const [feedback, setFeedback] = React.useState<{ tone: "error" | "ok"; text: string } | null>(null)
 
-  const partsTotal = parts.reduce((sum, p) => sum + (p.cost != null ? p.cost * p.quantity : 0), 0)
+  const activeParts = parts.filter((p) => !p.returned_at)
+  const returnedParts = parts.filter((p) => p.returned_at)
+  const partsTotal = activeParts.reduce((sum, p) => sum + (p.cost != null ? p.cost * p.quantity : 0), 0)
 
   async function handleSend() {
     setSending(true)
@@ -172,7 +178,7 @@ export function PartsManager({
         <>
           <div className="flex flex-col gap-5">
             {SECTIONS.map((section) => {
-              const rows = parts.filter((p) => (p.bucket ?? "waiting") === section.key)
+              const rows = activeParts.filter((p) => (p.bucket ?? "waiting") === section.key)
               if (!rows.length) return null
               return (
                 <section key={section.key} aria-label={section.title} className="flex flex-col gap-2">
@@ -188,10 +194,23 @@ export function PartsManager({
                 </section>
               )
             })}
+            {returnedParts.length > 0 && (
+              <section aria-label="Returned parts" className="flex flex-col gap-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h3 className="text-sm font-semibold">
+                    Returned <span className="font-normal text-muted-foreground">({returnedParts.length})</span>
+                  </h3>
+                  <p className="text-xs text-muted-foreground">Sent back to the supplier or put back in stock</p>
+                </div>
+                {returnedParts.map((p) => (
+                  <ReturnedPartRow key={p.id} jobId={jobId} part={p} />
+                ))}
+              </section>
+            )}
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm">
             <span className="text-muted-foreground">
-              {parts.length} part{parts.length === 1 ? "" : "s"} · estimated cost
+              {activeParts.length} part{activeParts.length === 1 ? "" : "s"} · estimated cost
             </span>
             <span className="font-semibold tabular-nums">{formatCurrency(partsTotal)}</span>
           </div>
@@ -220,8 +239,102 @@ export function PartsManager({
   )
 }
 
+function ReturnedPartRow({ jobId, part }: { jobId: string; part: Part }) {
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const where = part.return_to === "stock" ? "Back to stock" : "Returned to supplier"
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border bg-background/20 p-3">
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium text-muted-foreground line-through decoration-muted-foreground/60">
+          {part.part_name}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {where} · Qty {part.return_quantity ?? part.quantity}
+          {part.returned_at ? ` · ${new Date(part.returned_at).toLocaleDateString()}` : ""}
+          {part.return_reason ? ` · ${part.return_reason}` : ""}
+        </div>
+        {error && <p className="mt-1 text-xs text-red-300">{error}</p>}
+      </div>
+      <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300">
+        Returned
+      </span>
+      {part.return_to === "supplier" && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true)
+            setError(null)
+            const res = await undoReturnPart(part.id, jobId)
+            if (!res.ok) setError(res.error)
+            setBusy(false)
+          }}
+        >
+          <Undo2 className="h-3.5 w-3.5" /> Undo
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function ReturnForm({ jobId, part, onDone }: { jobId: string; part: Part; onDone: () => void }) {
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  return (
+    <form
+      action={async (fd) => {
+        setBusy(true)
+        setError(null)
+        const res = await returnPart(part.id, jobId, fd)
+        setBusy(false)
+        if (!res.ok) setError(res.error)
+        else onDone()
+      }}
+      className="grid w-full gap-2 rounded-lg border border-border bg-background/60 p-3 sm:grid-cols-3"
+    >
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Return to
+        <Select name="return_to" defaultValue="supplier" required>
+          <option value="supplier">Supplier</option>
+          <option value="stock">Garage stock</option>
+        </Select>
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Quantity
+        <Input
+          name="return_quantity"
+          type="number"
+          min="1"
+          max={part.quantity}
+          step="1"
+          defaultValue={String(part.quantity)}
+          required
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Reason
+        <Input name="return_reason" placeholder="Wrong part, damaged, not needed..." maxLength={500} />
+      </label>
+      {error && <p className="text-xs text-red-300 sm:col-span-3">{error}</p>}
+      <div className="flex justify-end gap-2 sm:col-span-3">
+        <Button type="button" variant="ghost" size="sm" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit" size="sm" disabled={busy}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Undo2 className="h-3.5 w-3.5" />}
+          Confirm return
+        </Button>
+      </div>
+    </form>
+  )
+}
+
 function PartRow({ jobId, part }: { jobId: string; part: Part }) {
   const status = PART_STATUSES.find((s) => s.value === part.status) ?? PART_STATUSES[0]
+  const [returning, setReturning] = React.useState(false)
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-background/40 p-3">
       <div className="min-w-0 flex-1">
@@ -263,6 +376,16 @@ function PartRow({ jobId, part }: { jobId: string; part: Part }) {
           ))}
         </Select>
       </form>
+      <button
+        type="button"
+        onClick={() => setReturning((r) => !r)}
+        className="text-muted-foreground hover:text-amber-300"
+        aria-label={`Return ${part.part_name}`}
+        aria-expanded={returning}
+        title="Return part"
+      >
+        <Undo2 className="h-4 w-4" />
+      </button>
       <form action={deletePart.bind(null, part.id, jobId)}>
         <button
           type="submit"
@@ -272,6 +395,7 @@ function PartRow({ jobId, part }: { jobId: string; part: Part }) {
           <Trash2 className="h-4 w-4" />
         </button>
       </form>
+      {returning && <ReturnForm jobId={jobId} part={part} onDone={() => setReturning(false)} />}
     </div>
   )
 }

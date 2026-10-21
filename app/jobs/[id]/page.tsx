@@ -181,7 +181,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const { data: parts } = await supabase
     .from("parts_requests")
-    .select("id, part_name, quantity, status, supplier, cost, notes, lead_time_days, released_at")
+    .select("id, part_name, quantity, status, supplier, cost, notes, lead_time_days, released_at, returned_at, return_to, return_reason, return_quantity")
     .eq("job_id", id)
     .is("deleted_at", null)
     .order("created_at")

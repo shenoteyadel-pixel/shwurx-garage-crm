@@ -33,7 +33,12 @@ async function loadCostLookup(supabase: Supabase, jobId: string, names: string[]
       .from("supplier_invoice_items")
       .select("description, sku, oem_part_number, supplier_part_number, unit_cost, inventory_item_id")
       .eq("job_id", jobId),
-    supabase.from("parts_requests").select("part_name, cost").eq("job_id", jobId).is("deleted_at", null),
+    supabase
+      .from("parts_requests")
+      .select("part_name, cost")
+      .eq("job_id", jobId)
+      .is("deleted_at", null)
+      .is("returned_at", null),
     rawPns.length
       ? supabase.from("inventory_items").select("id, name, sku, oem_part_number, cost_price").in("sku", rawPns)
       : Promise.resolve({ data: [] as any[] }),

@@ -122,11 +122,11 @@ async function resolvePages(token: string): Promise<PageTarget[]> {
   }
 
   // Pages managed through Business Manager are missing from me/accounts, but the
-  // token's granular scopes still name them, and each can issue its own Page token.
-  const scoped = await scopedPageIds(token)
-  if (scoped.length) {
+  // token's granular scopes or its businesses still name them, and each can issue its own Page token.
+  const candidates = [...new Set([...(await scopedPageIds(token)), ...(await businessPageIds(token))])]
+  if (candidates.length) {
     const found: PageTarget[] = []
-    for (const id of scoped) {
+    for (const id of candidates) {
       try {
         const page = await graph<{ id: string; name?: string; access_token?: string }>(
           `${encodeURIComponent(id)}?fields=id,name,access_token`,
@@ -140,8 +140,37 @@ async function resolvePages(token: string): Promise<PageTarget[]> {
     if (found.length) return found
   }
 
-  const me = await graph<{ id: string; name?: string }>("me?fields=id,name", token)
-  return [{ id: me.id, name: me.name, token }]
+  // A Page token answers `me` with the Page itself (it has a category); a user token does not.
+  const me = await graph<{ id: string; name?: string; category?: string }>("me?fields=id,name,category", token).catch(
+    () => null,
+  )
+  if (me?.category) return [{ id: me.id, name: me.name, token }]
+  throw new Error(
+    `${NO_PAGE_ACCESS}${candidates.length ? "" : " No Facebook Page is linked to this token."}`,
+  )
+}
+
+const NO_PAGE_ACCESS =
+  "The Meta token belongs to a person or system user, not a Page, and cannot open any Page's lead forms."
+
+async function businessPageIds(token: string): Promise<string[]> {
+  try {
+    const businesses = await graph<Paged<{ id: string }>>("me/businesses?fields=id&limit=50", token)
+    const ids: string[] = []
+    for (const b of businesses.data ?? []) {
+      for (const edge of ["owned_pages", "client_pages"]) {
+        try {
+          const res = await graph<Paged<{ id: string }>>(`${b.id}/${edge}?fields=id&limit=100`, token)
+          ids.push(...(res.data ?? []).map((p) => p.id))
+        } catch {
+          // Edge not available for this business; skip it.
+        }
+      }
+    }
+    return ids
+  } catch {
+    return []
+  }
 }
 
 async function scopedPageIds(token: string): Promise<string[]> {
@@ -205,6 +234,9 @@ export function isMetaTokenExpired(message: string | null | undefined): boolean 
 export function explainMetaError(message: string): string {
   if (isMetaTokenExpired(message)) {
     return "Meta token has expired, so no new leads are coming in. Paste a fresh token in Reconnect Meta below once; the CRM turns it into a permanent Page token and keeps it."
+  }
+  if (message.includes(NO_PAGE_ACCESS) || /nonexisting field \(leadgen_forms\)/.test(message)) {
+    return "The saved Meta token cannot open the Shwurx Auto Service Center Page, so no leads are imported. In Business Settings → System users → shenotey eskander → Generate new token, tick pages_show_list, pages_read_engagement, leads_retrieval, pages_manage_metadata and pages_manage_ads, then paste it in Replace Meta token."
   }
   if (/pages_manage_ads/.test(message)) {
     return "Meta token is missing the pages_manage_ads permission, so lead forms cannot be read. Generate a new token with pages_manage_ads, leads_retrieval, pages_show_list, pages_read_engagement and pages_manage_metadata, then update META_PAGE_ACCESS_TOKEN."

@@ -106,10 +106,12 @@ export async function upgradeAndStoreMetaToken(input: string, userId?: string | 
       savedAt: new Date().toISOString(),
     }
   } else {
-    const me = await graphGet<{ id: string; name?: string }>(`me?fields=id,name&access_token=${encodeURIComponent(longLived)}`)
+    const me = await graphGet<{ id: string; name?: string; category?: string }>(
+      `me?fields=id,name,category&access_token=${encodeURIComponent(longLived)}`,
+    )
     value = {
       token: longLived,
-      kind: pages.length ? "user" : "page",
+      kind: me.category ? "page" : "user",
       pages: pages.length ? pages.map((p) => p.name ?? p.id) : [me.name ?? me.id],
       expiresAt: appToken ? await tokenExpiry(longLived, appToken) : null,
       savedAt: new Date().toISOString(),

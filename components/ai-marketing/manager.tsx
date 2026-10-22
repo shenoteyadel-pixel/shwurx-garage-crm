@@ -8,9 +8,16 @@ import { Badge, Card } from "@/components/ui"
 import { getAiMarketingStrings } from "@/components/ai-marketing/strings"
 import {
   AI_MARKETING_SECTIONS,
+  type ActionLogEntry,
   type AiMarketingSection,
+  type AttributionReport,
+  type CheckType,
+  type ExecutionSetting,
+  type IntegrationCheck,
+  type LiveResult,
   type MarketingRecommendation,
   type MarketingRecommendationEvent,
+  type PlatformPerformance,
 } from "@/lib/ai-marketing/types"
 import {
   OverviewSection,
@@ -21,21 +28,27 @@ import {
   SettingsSection,
 } from "@/components/ai-marketing/sections"
 
-export function AiMarketingManager({
-  initialSection,
-  recommendations,
-  events,
-  loadError,
-}: {
-  initialSection: AiMarketingSection
+export interface AiMarketingData {
   recommendations: MarketingRecommendation[]
   events: MarketingRecommendationEvent[]
-  loadError: string | null
-}) {
+  checks: Partial<Record<CheckType, IntegrationCheck>>
+  actionLog: ActionLogEntry[]
+  execSettings: ExecutionSetting[]
+  liveEnvEnabled: boolean
+  meta: LiveResult<PlatformPerformance>
+  google: LiveResult<PlatformPerformance>
+  attribution: AttributionReport | null
+}
+
+export function AiMarketingManager({
+  initialSection,
+  loadError,
+  ...data
+}: AiMarketingData & { initialSection: AiMarketingSection; loadError: string | null }) {
   const { lang } = useI18n()
   const s = getAiMarketingStrings(lang)
   const [section, setSection] = React.useState<AiMarketingSection>(initialSection)
-  const pendingCount = recommendations.filter((r) => r.status === "pending").length
+  const pendingCount = data.recommendations.filter((r) => r.status === "pending").length
 
   const select = (next: AiMarketingSection) => {
     setSection(next)
@@ -108,13 +121,13 @@ export function AiMarketingManager({
       </nav>
 
       <section id={`ai-mkt-${section}`} role="tabpanel" aria-label={s.sections[section]}>
-        {section === "overview" && <OverviewSection s={s} recommendations={recommendations} onNavigate={select} />}
-        {section === "meta" && <PlatformSection s={s} platform="meta" recommendations={recommendations} />}
-        {section === "google" && <PlatformSection s={s} platform="google" recommendations={recommendations} />}
-        {section === "recommendations" && <RecommendationsSection s={s} recommendations={recommendations} />}
-        {section === "approvals" && <ApprovalQueueSection s={s} recommendations={recommendations} />}
-        {section === "history" && <HistorySection s={s} recommendations={recommendations} events={events} />}
-        {section === "settings" && <SettingsSection s={s} />}
+        {section === "overview" && <OverviewSection s={s} data={data} onNavigate={select} />}
+        {section === "meta" && <PlatformSection s={s} platform="meta" data={data} />}
+        {section === "google" && <PlatformSection s={s} platform="google" data={data} />}
+        {section === "recommendations" && <RecommendationsSection s={s} recommendations={data.recommendations} />}
+        {section === "approvals" && <ApprovalQueueSection s={s} data={data} />}
+        {section === "history" && <HistorySection s={s} data={data} />}
+        {section === "settings" && <SettingsSection s={s} data={data} />}
       </section>
     </div>
   )

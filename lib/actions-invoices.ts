@@ -1639,6 +1639,86 @@ async function reconcileJobs(jobIds: (string | null | undefined)[]) {
 async function reconcileInvoiceJobs(invoiceId: string) {
   const { data } = await createServiceClient().from("supplier_invoice_items").select("job_id").eq("invoice_id", invoiceId)
   await reconcileJobs(((data as { job_id: string | null }[] | null) ?? []).map((r) => r.job_id))
+  try {
+    await ensureInvoicePartsOnQuotations(invoiceId)
+  } catch (e) {
+    console.error("[ensureInvoicePartsOnQuotations] failed", invoiceId, e)
+  }
+}
+
+/**
+ * Last safety net after a purchase is confirmed: every part line assigned to a
+ * car must be on that job card's quotation at its marked-up sale price. A line
+ * that is missing (and wasn't merged into a bought line) is posted again.
+ */
+async function ensureInvoicePartsOnQuotations(invoiceId: string) {
+  const db = createServiceClient()
+  const { data: inv } = await db
+    .from("supplier_invoices")
+    .select("doc_type, invoice_number, status, source_quote_id")
+    .eq("id", invoiceId)
+    .maybeSingle()
+  if (!inv || (inv.status !== "confirmed" && inv.status !== "quoted")) return
+  const isQuote = inv.doc_type === "quote"
+  const reference = isQuote
+    ? inv.invoice_number
+      ? `Quote ${inv.invoice_number}`
+      : "Supplier quote"
+    : inv.invoice_number
+      ? `Bill ${inv.invoice_number}`
+      : "Supplier invoice"
+
+  const { data: lines } = await db
+    .from("supplier_invoice_items")
+    .select("job_id, description, quantity, unit_cost, suggested_sale_price, markup_pct, oem_part_number, supplier_part_number, match_status")
+    .eq("invoice_id", invoiceId)
+    .not("job_id", "is", null)
+  const parts = (lines ?? []).filter((l) => l.match_status !== "ignore" && l.match_status !== "expense" && n(l.quantity) > 0)
+  if (!parts.length) return
+
+  const settings = await getSettings()
+  for (const l of parts) {
+    const jobId = l.job_id as string
+    const name = String(l.description || "Part").trim()
+    const pn = String(l.oem_part_number || l.supplier_part_number || "").trim().toLowerCase()
+    const { data: quote } = await db
+      .from("quotations")
+      .select("id, quotation_items(name, part_number, kind)")
+      .eq("job_id", jobId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const items = ((quote?.quotation_items as { name: string | null; part_number: string | null; kind: string }[] | null) ?? []).filter(
+      (i) => i.kind === "part",
+    )
+    const present = items.some(
+      (i) =>
+        (pn && String(i.part_number ?? "").trim().toLowerCase() === pn) ||
+        String(i.name ?? "").trim().toLowerCase() === name.toLowerCase() ||
+        bestPartMatch(name, [i], (x) => x.name) !== null,
+    )
+    if (present) continue
+
+    const cost = n(l.unit_cost)
+    const sale =
+      n(l.suggested_sale_price) > 0
+        ? n(l.suggested_sale_price)
+        : suggestSalePrice(cost, settings.pricing_method, n(l.markup_pct) > 0 ? n(l.markup_pct) : settings.default_markup_pct)
+    console.warn("[ensureInvoicePartsOnQuotations] re-posting missing part", { invoiceId, jobId, name })
+    await addPartToJobQuotation(
+      db,
+      jobId,
+      {
+        name,
+        partNumber: (l.oem_part_number as string | null) || (l.supplier_part_number as string | null) || null,
+        quantity: n(l.quantity),
+        unitPrice: sale,
+        detail: reference,
+      },
+      n(settings.vat_rate, 5),
+      { keepCustomerPrice: Boolean(inv.source_quote_id) },
+    )
+  }
 }
 
 export async function confirmSupplierInvoice(id: string): Promise<ConfirmResult> {

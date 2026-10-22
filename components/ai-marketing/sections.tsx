@@ -448,6 +448,15 @@ export function PlatformSection({ s, platform, data }: S & D & { platform: "meta
     <div className="flex flex-col gap-4">
       <CheckCard s={s} type={platform} data={data} />
       <p className="text-sm leading-relaxed text-muted-foreground">{platform === "meta" ? s.metaBody : s.googleBody}</p>
+      {platform === "google" && (
+        <a
+          href="/ai-marketing/google"
+          className="inline-flex h-9 items-center gap-2 self-start rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+        >
+          <Plug className="h-4 w-4" aria-hidden="true" />
+          Google Ads integration, dashboard & CRM leads
+        </a>
+      )}
       <LiveState s={s} result={result}>
         {(d) => (
           <div className="flex flex-col gap-3">

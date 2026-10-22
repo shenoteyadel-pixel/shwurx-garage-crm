@@ -78,6 +78,9 @@ const PROMPT = [
   "Prices written like '100.00 + VAT' are the ex-VAT unit price (100). '600.00 each' is the unit price (600) with the quantity in the Qty column.",
   "When the Total column INCLUDES VAT (e.g. 105.00 for 100.00 + VAT), still return line_total EXCLUDING VAT (100).",
   "Qty 'Per liter' means price per litre: quantity 1, unit ltr. A total of 'TBC' means line_total null — keep the line.",
+  "Every document that shows any amount MUST return at least one line item — never an empty line_items array when a price or total is printed.",
+  "Read the table row by row: Description, Brand, Qty, Rate, Tax %, Tax, Amount. 'Rate' is the ex-VAT unit price; 'Amount' is usually the ex-VAT line total (Qty x Rate).",
+  "Fuel station / POS receipts (ENOC, ADNOC, Emarat etc.): the product (e.g. DIESEL, SUPER 98) is the line item; litres is the quantity (unit ltr), price per litre is unit_cost (ex-VAT), and the receipt number is the invoice_number. If only a card-payment amount is printed, treat it as the VAT-inclusive total and still return one line for the product.",
   "Summary totals (subtotal / VAT / total) may be absent on quotations; return null for them rather than inventing values.",
   "If a value is missing or unreadable, return null rather than guessing. UAE standard VAT is 5%.",
   "Set a realistic confidence (0..1) per line, for the OEM-vs-supplier classification, and overall so a human knows what to double-check.",
@@ -100,12 +103,60 @@ async function runExtraction(data: Uint8Array, mediaType: string): Promise<Extra
   return object
 }
 
-/** One retry: vision extraction occasionally returns malformed output on a busy page. */
-export async function extractInvoice(data: Uint8Array, mediaType: string): Promise<ExtractedInvoice> {
-  try {
-    return await runExtraction(data, mediaType)
-  } catch (first) {
-    console.error("[v0] invoice OCR attempt 1 failed, retrying:", first)
-    return await runExtraction(data, mediaType)
+const hasPricedLine = (x: ExtractedInvoice) =>
+  (x.line_items ?? []).some((l) => (l.line_total ?? 0) > 0 || (l.unit_cost ?? 0) > 0)
+
+/**
+ * Fuel slips and single-item receipts often come back with the header total but
+ * no line rows. Turn the printed totals into one editable line so the bill never
+ * shows AED 0.00 and can't be confirmed empty.
+ */
+function ensureLines(x: ExtractedInvoice): ExtractedInvoice {
+  if (hasPricedLine(x)) return x
+  const vat = x.vat_amount ?? null
+  const net =
+    x.subtotal ??
+    (x.total != null ? Math.round((vat != null ? x.total - vat : x.total / 1.05) * 100) / 100 : null)
+  if (net == null || net <= 0) return x
+  const existing = x.line_items?.[0]
+  const quantity = existing?.quantity && existing.quantity > 0 ? existing.quantity : 1
+  return {
+    ...x,
+    line_items: [
+      {
+        description: existing?.description?.trim() || x.supplier_name?.trim() || "Purchase",
+        oem_part_number: existing?.oem_part_number ?? null,
+        supplier_part_number: existing?.supplier_part_number ?? null,
+        part_number_kind_confidence: 0,
+        brand: existing?.brand ?? null,
+        quantity,
+        unit: existing?.unit ?? null,
+        unit_cost: Math.round((net / quantity) * 100) / 100,
+        line_total: net,
+        confidence: 0.5,
+      },
+    ],
   }
+}
+
+/**
+ * One retry on malformed output, and one more read when the first pass found no
+ * priced lines (common on fuel slips / phone photos). Best result wins.
+ */
+export async function extractInvoice(data: Uint8Array, mediaType: string): Promise<ExtractedInvoice> {
+  let first: ExtractedInvoice
+  try {
+    first = await runExtraction(data, mediaType)
+  } catch (err) {
+    console.error("[v0] invoice OCR attempt 1 failed, retrying:", err)
+    return ensureLines(await runExtraction(data, mediaType))
+  }
+  if (hasPricedLine(first)) return first
+  try {
+    const second = await runExtraction(data, mediaType)
+    if (hasPricedLine(second)) return second
+  } catch (err) {
+    console.error("[v0] invoice OCR re-read failed:", err)
+  }
+  return ensureLines(first)
 }

@@ -1119,6 +1119,17 @@ async function applyConfirm(
   const isQuote = invoice.doc_type === "quote"
   if (!isQuote && !String(invoice.invoice_number ?? "").trim()) throw new Error(MISSING_INVOICE_NUMBER)
 
+  const { data: pricedLines } = await supabase
+    .from("supplier_invoice_items")
+    .select("quantity, unit_cost")
+    .eq("invoice_id", id)
+  const hasAmount = (pricedLines ?? []).some((l) => Number(l.quantity) * Number(l.unit_cost) > 0)
+  if (!hasAmount) {
+    throw new Error(
+      "This document has no priced lines (total AED 0.00). Tap \"Re-read document\" or add the line amounts before confirming.",
+    )
+  }
+
   // Final guard: the number may have been typed/edited during review, so
   // re-check against invoices already posted to stock and the supplier ledger.
   const dup = await findDuplicateInvoice(supabase, {

@@ -32,6 +32,10 @@ export type PurchaseLine = {
   date: string
   supplier: string
   supplierTrn: string | null
+  /** Amount before discount, as printed on the supplier invoice. */
+  gross: number
+  discount: number
+  /** Taxable value after discount. Net + VAT = Total. */
   net: number
   vat: number
   total: number
@@ -53,10 +57,19 @@ export type VatReport = {
   purchases: PurchaseLine[]
   blockedInputVat: number
   blockedCount: number
+  salesTotals: RegisterTotals
+  purchaseTotals: RegisterTotals & { gross: number; discount: number }
 }
+
+export type RegisterTotals = { net: number; vat: number; total: number }
 
 const n = (v: unknown) => Number(v) || 0
 const r2 = (v: number) => Math.round(v * 100) / 100
+const totals = (rows: { net: number; vat: number; total: number }[]): RegisterTotals => ({
+  net: r2(rows.reduce((s, x) => s + x.net, 0)),
+  vat: r2(rows.reduce((s, x) => s + x.vat, 0)),
+  total: r2(rows.reduce((s, x) => s + x.total, 0)),
+})
 /** UAE TRNs are 15 digits. Input VAT is only recoverable against a valid tax invoice (Art. 55 Executive Regulation). */
 export const isValidTrn = (trn: string | null | undefined) => !!trn && /^\d{15}$/.test(trn.replace(/\s|-/g, ""))
 
@@ -71,7 +84,7 @@ export async function loadVatReport(supabase: SupabaseClient, from: string, to: 
       .order("issue_date"),
     supabase
       .from("supplier_invoices")
-      .select("doc_number, invoice_number, invoice_date, supplier_name_raw, subtotal, vat_amount, total, suppliers(name, trn)")
+      .select("doc_number, invoice_number, invoice_date, supplier_name_raw, subtotal, discount_amount, vat_amount, total, suppliers(name, trn)")
       .eq("status", "confirmed")
       .is("deleted_at", null)
       .gte("invoice_date", from)
@@ -105,11 +118,14 @@ export async function loadVatReport(supabase: SupabaseClient, from: string, to: 
     date: string,
     supplier: { name?: string; trn?: string | null } | null,
     rawName: string | null,
-    net: unknown,
+    subtotal: unknown,
+    discountAmount: unknown,
     vat: unknown,
     total: unknown,
   ): PurchaseLine => {
     const v = n(vat)
+    const gross = n(subtotal)
+    const discount = n(discountAmount)
     const trn = supplier?.trn ?? null
     let reason: string | undefined
     if (v <= 0) reason = "No VAT charged"
@@ -119,7 +135,9 @@ export async function loadVatReport(supabase: SupabaseClient, from: string, to: 
       date,
       supplier: supplier?.name ?? rawName ?? "Unknown supplier",
       supplierTrn: trn,
-      net: n(net),
+      gross,
+      discount,
+      net: r2(gross - discount),
       vat: v,
       total: n(total),
       recoverable: !reason,
@@ -129,10 +147,10 @@ export async function loadVatReport(supabase: SupabaseClient, from: string, to: 
 
   const purchases: PurchaseLine[] = [
     ...(bills ?? []).map((b: any) =>
-      toPurchase(b.invoice_number || b.doc_number, b.invoice_date, b.suppliers, b.supplier_name_raw, b.subtotal, b.vat_amount, b.total),
+      toPurchase(b.invoice_number || b.doc_number, b.invoice_date, b.suppliers, b.supplier_name_raw, b.subtotal, b.discount_amount, b.vat_amount, b.total),
     ),
     ...(pos ?? []).map((p: any) =>
-      toPurchase(p.supplier_invoice_no || p.po_number, p.order_date, p.suppliers, null, p.subtotal, p.vat_amount, p.total),
+      toPurchase(p.supplier_invoice_no || p.po_number, p.order_date, p.suppliers, null, p.subtotal, 0, p.vat_amount, p.total),
     ),
   ].sort((a, b) => a.date.localeCompare(b.date))
 
@@ -190,6 +208,12 @@ export async function loadVatReport(supabase: SupabaseClient, from: string, to: 
     purchases,
     blockedInputVat: r2(blocked.reduce((s, p) => s + p.vat, 0)),
     blockedCount: blocked.length,
+    salesTotals: totals(sales),
+    purchaseTotals: {
+      ...totals(purchases),
+      gross: r2(purchases.reduce((s, p) => s + p.gross, 0)),
+      discount: r2(purchases.reduce((s, p) => s + p.discount, 0)),
+    },
   }
 }
 

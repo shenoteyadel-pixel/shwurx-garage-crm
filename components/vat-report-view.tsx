@@ -92,20 +92,53 @@ export function VatReportView({
         n2(s.vat),
         n2(s.total),
       ]),
+      ["", "", "Total", "", "", "", n2(report.salesTotals.net), n2(report.salesTotals.vat), n2(report.salesTotals.total)],
       [],
       ["Purchase tax invoice register"],
-      ["Invoice no.", "Date", "Supplier", "Supplier TRN", "Net (AED)", "VAT (AED)", "Total (AED)", "Input VAT recoverable", "Note"],
+      [
+        "Invoice no.",
+        "Date",
+        "Supplier",
+        "Supplier TRN",
+        "Gross (AED)",
+        "Discount (AED)",
+        "Net after discount (AED)",
+        "VAT (AED)",
+        "Total (AED)",
+        "Input VAT recoverable",
+        "Note",
+      ],
       ...report.purchases.map((p) => [
         p.number,
         p.date,
         p.supplier,
         p.supplierTrn ?? "",
+        n2(p.gross),
+        n2(p.discount),
         n2(p.net),
         n2(p.vat),
         n2(p.total),
         p.recoverable ? "Yes" : "No",
         p.reason ?? "",
       ]),
+      [
+        "",
+        "",
+        "Total",
+        "",
+        n2(report.purchaseTotals.gross),
+        n2(report.purchaseTotals.discount),
+        n2(report.purchaseTotals.net),
+        n2(report.purchaseTotals.vat),
+        n2(report.purchaseTotals.total),
+        "",
+        "",
+      ],
+      [],
+      ["Input VAT reconciliation"],
+      ["VAT on all purchase invoices", "", n2(report.purchaseTotals.vat)],
+      ["Less: excluded (supplier TRN missing or invalid)", "", n2(-report.blockedInputVat)],
+      ["Recoverable input VAT (Box 9 / Box 13)", "", n2(report.box13)],
     ])
   }
 
@@ -234,26 +267,50 @@ export function VatReportView({
         </dl>
       </section>
 
+      <section className="overflow-hidden rounded-xl border border-border bg-card">
+        <h2 className="border-b border-border px-4 py-3 font-semibold">Input VAT reconciliation</h2>
+        <dl className="divide-y divide-border text-sm">
+          <RecRow label={`VAT on all ${report.purchases.length} purchase invoices`} value={report.purchaseTotals.vat} />
+          <RecRow
+            label={`Less: excluded, supplier TRN missing or invalid (${report.blockedCount})`}
+            value={-report.blockedInputVat}
+          />
+          <RecRow label="Recoverable input VAT (Box 9 / Box 13)" value={report.box13} strong />
+        </dl>
+      </section>
+
       <Register
         title="Sales tax invoices"
         empty="No sales invoices in this period."
         head={["Invoice", "Date", "Customer", "TRN", "Net", "VAT", "Total"]}
         rows={report.sales.map((s) => [s.number, s.date, s.customer, s.customerTrn || "—", money(s.net), money(s.vat), money(s.total)])}
+        foot={["Total", "", "", "", money(report.salesTotals.net), money(report.salesTotals.vat), money(report.salesTotals.total)]}
       />
       <Register
         title="Purchase tax invoices"
         empty="No confirmed purchase invoices in this period."
-        head={["Invoice", "Date", "Supplier", "TRN", "Net", "VAT", "Recoverable"]}
+        head={["Invoice", "Date", "Supplier", "TRN", "Net", "VAT", "Total", "Recoverable"]}
         rows={report.purchases.map((p) => [
           p.number,
           p.date,
           p.supplier,
           p.supplierTrn || "—",
-          money(p.net),
+          p.discount > 0 ? `${money(p.net)} (−${n2(p.discount)} disc.)` : money(p.net),
           money(p.vat),
+          money(p.total),
           p.recoverable ? "Yes" : p.reason ?? "No",
         ])}
         flag={report.purchases.map((p) => !p.recoverable && p.vat > 0)}
+        foot={[
+          "Total",
+          "",
+          "",
+          "",
+          money(report.purchaseTotals.net),
+          money(report.purchaseTotals.vat),
+          money(report.purchaseTotals.total),
+          "",
+        ]}
       />
 
       <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
@@ -334,18 +391,29 @@ function NetRow({ box, label, value, strong }: { box: string; label: string; val
   )
 }
 
+function RecRow({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between gap-4 px-4 py-3 ${strong ? "font-semibold" : ""}`}>
+      <dt>{label}</dt>
+      <dd className={`tabular-nums ${strong ? "text-primary" : ""}`}>{money(value)}</dd>
+    </div>
+  )
+}
+
 function Register({
   title,
   head,
   rows,
   empty,
   flag,
+  foot,
 }: {
   title: string
   head: string[]
   rows: string[][]
   empty: string
   flag?: boolean[]
+  foot?: string[]
 }) {
   return (
     <section className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -381,6 +449,17 @@ function Register({
               </tr>
             ))}
           </tbody>
+          {foot && (
+            <tfoot>
+              <tr className="border-t border-border bg-accent/50 font-semibold">
+                {foot.map((c, i) => (
+                  <td key={i} className={`px-4 py-2 ${i >= 4 ? "text-right tabular-nums" : ""}`}>
+                    {c}
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
+          )}
         </table>
       )}
     </section>

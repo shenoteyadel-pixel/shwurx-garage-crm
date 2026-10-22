@@ -68,31 +68,58 @@ export default async function VatPrintPage({ searchParams }: { searchParams: Pro
           </tbody>
         </table>
 
-        {report.blockedCount > 0 && (
-          <p className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-            {formatCurrency(report.blockedInputVat)} input VAT on {report.blockedCount} purchase invoice(s) was excluded
-            from Box 9: supplier TRN missing or invalid (no valid tax invoice).
-          </p>
-        )}
+        <h3 className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          Input VAT reconciliation
+        </h3>
+        <table className="w-full border-collapse text-sm">
+          <tbody>
+            <tr className="border-b border-neutral-200">
+              <td className="py-1.5">VAT on all {report.purchases.length} purchase invoices</td>
+              <td className="py-1.5 text-right tabular-nums">{formatCurrency(report.purchaseTotals.vat)}</td>
+            </tr>
+            <tr className="border-b border-neutral-200">
+              <td className="py-1.5">
+                Less: excluded, supplier TRN missing or invalid ({report.blockedCount})
+              </td>
+              <td className="py-1.5 text-right tabular-nums">{formatCurrency(-report.blockedInputVat)}</td>
+            </tr>
+            <tr className="border-b-2 border-neutral-800 font-semibold">
+              <td className="py-2">Recoverable input VAT (Box 9 / Box 13)</td>
+              <td className="py-2 text-right tabular-nums">{formatCurrency(report.box13)}</td>
+            </tr>
+          </tbody>
+        </table>
 
         <div className="break-before-page pt-6">
           <Register
             title="Sales tax invoice register"
             head={["Invoice", "Date", "Customer", "Customer TRN", "Net", "VAT", "Total"]}
             rows={report.sales.map((s) => [s.number, formatDate(s.date), s.customer, s.customerTrn || "—", n2(s.net), n2(s.vat), n2(s.total)])}
+            foot={["Total", "", "", "", n2(report.salesTotals.net), n2(report.salesTotals.vat), n2(report.salesTotals.total)]}
           />
           <Register
             title="Purchase tax invoice register"
-            head={["Invoice", "Date", "Supplier", "Supplier TRN", "Net", "VAT", "Recoverable"]}
+            head={["Invoice", "Date", "Supplier", "Supplier TRN", "Net", "VAT", "Total", "Recoverable"]}
             rows={report.purchases.map((p) => [
               p.number,
               formatDate(p.date),
               p.supplier,
               p.supplierTrn || "—",
-              n2(p.net),
+              p.discount > 0 ? `${n2(p.net)} (−${n2(p.discount)} disc.)` : n2(p.net),
               n2(p.vat),
+              n2(p.total),
               p.recoverable ? "Yes" : "No",
             ])}
+            foot={[
+              "Total",
+              "",
+              "",
+              "",
+              n2(report.purchaseTotals.net),
+              n2(report.purchaseTotals.vat),
+              n2(report.purchaseTotals.total),
+              "",
+            ]}
           />
         </div>
 
@@ -166,7 +193,7 @@ function NetRow({ box, label, value }: { box: string; label: string; value: numb
   )
 }
 
-function Register({ title, head, rows }: { title: string; head: string[]; rows: string[][] }) {
+function Register({ title, head, rows, foot }: { title: string; head: string[]; rows: string[][]; foot?: string[] }) {
   return (
     <>
       <h3 className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
@@ -201,6 +228,17 @@ function Register({ title, head, rows }: { title: string; head: string[]; rows: 
             ))
           )}
         </tbody>
+        {foot && rows.length > 0 && (
+          <tfoot>
+            <tr className="border-t-2 border-neutral-800 font-semibold">
+              {foot.map((c, i) => (
+                <td key={i} className={`py-1.5 pr-2 ${i >= 4 ? "text-right tabular-nums" : ""}`}>
+                  {c}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </>
   )

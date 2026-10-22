@@ -20,6 +20,7 @@ export interface MarketingRecommendation {
   failure_reason: string | null
   created_at: string
   updated_at: string
+  proposed_action: { action?: ProposedAction; content?: AiContent; model?: string } | null
 }
 
 export interface MarketingRecommendationEvent {

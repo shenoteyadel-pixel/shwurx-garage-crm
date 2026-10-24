@@ -50,6 +50,7 @@ export function TrackingGate({ tags: input }: { tags?: RuntimeTags | null }) {
       events: tags.events,
       ga4Id: tags.ga4Id,
       adsId: tags.adsId,
+      metaPixelId: tags.metaPixelId,
       adsLabels: tags.adsLabels,
       retentionDays: tags.retentionDays,
       publicSlugs: tags.publicSlugs,

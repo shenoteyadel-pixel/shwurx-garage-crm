@@ -61,11 +61,13 @@ export function LeadsBoard({
   staff,
   canManage,
   canDelete = false,
+  assignmentUnavailable = false,
 }: {
   leads: LeadRow[]
   staff: StaffOption[]
   canManage: boolean
   canDelete?: boolean
+  assignmentUnavailable?: boolean
 }) {
   const [filter, setFilter] = useState<"all" | LeadStatus>("all")
   const [origin, setOrigin] = useState<"all" | LeadOriginKind>("all")
@@ -80,7 +82,7 @@ export function LeadsBoard({
     return c
   }, [leads])
 
-  const origins = useMemo(() => new Map(leads.map((l) => [l.id, leadOrigin(l.metadata)])), [leads])
+  const origins = useMemo(() => new Map(leads.map((l) => [l.id, leadOrigin(l.metadata, l.source)])), [leads])
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: leads.length }
@@ -194,7 +196,7 @@ export function LeadsBoard({
       ) : (
         <div className="grid gap-3">
           {visible.map((lead) => (
-            <LeadCard key={lead.id} lead={lead} staff={staff} canManage={canManage} canDelete={canDelete} />
+            <LeadCard key={lead.id} lead={lead} staff={staff} canManage={canManage} canDelete={canDelete} assignmentUnavailable={assignmentUnavailable} />
           ))}
         </div>
       )}
@@ -207,11 +209,13 @@ function LeadCard({
   staff,
   canManage,
   canDelete,
+  assignmentUnavailable,
 }: {
   lead: LeadRow
   staff: StaffOption[]
   canManage: boolean
   canDelete: boolean
+  assignmentUnavailable: boolean
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -224,7 +228,7 @@ function LeadCard({
   const meta = STATUS_META[lead.status]
   const md = lead.metadata ?? {}
   const notes = Array.isArray(md.notes) ? md.notes : []
-  const origin = leadOrigin(md)
+  const origin = leadOrigin(md, lead.source)
   const utm = origin.campaign
   const vehicle = [origin.model, origin.year].filter(Boolean).join(" · ")
   const isConverted = lead.status === "converted"
@@ -365,7 +369,7 @@ function LeadCard({
             ))}
           </Select>
 
-          <Select
+          {assignmentUnavailable ? <span className="text-xs text-muted-foreground">Assignment unavailable</span> : <Select
             aria-label="Assign to"
             className="h-8 w-auto text-xs"
             value={md.assigned_to ?? ""}
@@ -378,15 +382,12 @@ function LeadCard({
                 {s.name}
               </option>
             ))}
-          </Select>
+          </Select>}
 
           {lead.phone ? (
             <>
               <a
                 href={`tel:${lead.phone}`}
-                onClick={() => {
-                  if (lead.status === "new") run(() => setLeadStatus(lead.id, "contacted"))
-                }}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
               >
                 <Phone className="h-3.5 w-3.5" /> Call
@@ -395,9 +396,6 @@ function LeadCard({
                 href={`https://wa.me/${lead.phone.replace(/[^\d]/g, "")}`}
                 target="_blank"
                 rel="noreferrer"
-                onClick={() => {
-                  if (lead.status === "new") run(() => setLeadStatus(lead.id, "contacted"))
-                }}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
               >
                 <MessageSquare className="h-3.5 w-3.5" /> WhatsApp
@@ -408,6 +406,10 @@ function LeadCard({
           <Button size="sm" variant="outline" disabled={pending} onClick={() => setNoteOpen(true)}>
             <StickyNote className="h-3.5 w-3.5" /> Note
           </Button>
+
+          <p className="w-full text-xs text-muted-foreground">
+            Opening Call or WhatsApp does not confirm contact. Record the actual call or conversation outcome in a note before updating the lead status.
+          </p>
 
           {!isConverted ? (
             <Button size="sm" variant="success" disabled={pending} onClick={() => setConvertOpen(true)}>

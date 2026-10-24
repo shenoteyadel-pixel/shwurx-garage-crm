@@ -3,8 +3,10 @@
  * website master switch (`__shwurxTrack`) and visitor consent.
  *
  *  - First-party events (own database) require analytics consent.
- *  - Google/Meta delivery goes to exactly one configured owner: the GTM
+ *  - Google delivery goes to exactly one configured owner: the GTM
  *    dataLayer (`event: 'shwurx_event'`) or the direct gtag fallback.
+ *  - Confirmed website leads may also go to the configured Meta pixel with
+ *    advertising consent and an opaque server-issued deduplication token.
  *  - Attribution touches are stored only with advertising consent and expire
  *    after the configured retention window.
  *
@@ -14,6 +16,7 @@
 import { effectiveConsent, type ConsentState } from "@/lib/consent"
 import { looksLikeContactData } from "@/lib/website/contact-shape"
 import { isPublicSitePath } from "@/lib/website/paths"
+import { googleAcquisitionIds } from "@/lib/website/google-acquisition-ids"
 
 import { CONVERSION_EVENT_KEYS, EVENT_KEY_SET, safeConversionToken, telemetryToken } from "@/lib/website/tracking-contract"
 import { sanitizeAnalytics, type ConversionKey } from "@/lib/website/analytics"
@@ -22,6 +25,7 @@ export interface TagMapping {
   events: Record<ConversionKey, string>
   ga4Id: string | null
   adsId: string | null
+  metaPixelId?: string | null
   adsLabels: Record<ConversionKey, string>
   retentionDays?: number
   publicSlugs?: { brands: string[]; services: string[] }
@@ -39,6 +43,8 @@ declare global {
     dataLayer?: unknown[]
     gtag?: (...args: unknown[]) => void
     fbq?: (...args: unknown[]) => void
+    /** Pixel initialized by our consent-gated bootstrap, not another script. */
+    __shwurxMetaPixelId?: string
   }
 }
 
@@ -360,6 +366,9 @@ export interface Touch {
   gclid: string | null
   gbraid: string | null
   wbraid: string | null
+  /** CRM attribution only: not included in any provider telemetry envelope. */
+  campaign_id?: string | null
+  adgroup_id?: string | null
 }
 /** Kept for callers that predate touch timestamps. */
 export type Attribution = Touch
@@ -384,6 +393,7 @@ function externalReferrer(): string | null {
 
 function currentTouch(): { touch: Touch; meaningful: boolean } {
   const q = new URLSearchParams(window.location.search)
+  const acquisitionIds = googleAcquisitionIds(Object.fromEntries(q.entries()))
   const t: Touch = {
     at: new Date().toISOString(),
     landingPath: pageContext(window.location.pathname).page_path,
@@ -396,6 +406,7 @@ function currentTouch(): { touch: Touch; meaningful: boolean } {
     gclid: clickId(q.get("gclid")),
     gbraid: clickId(q.get("gbraid")),
     wbraid: clickId(q.get("wbraid")),
+    ...acquisitionIds,
   }
   const campaign = UTM.some((k) => t[k]) || !!(t.gclid || t.gbraid || t.wbraid)
   return { touch: t, meaningful: campaign || !!t.referrer }
@@ -632,32 +643,35 @@ export function emitClick(kind: "phone_click" | "whatsapp_click", placement: str
 /* -------------------------------------------------------------- conversions */
 
 export type DeliveryState = "queued" | "dispatched" | "skipped" | "abandoned"
+type ConversionDestination = Destination | "meta"
 export interface DeliveryRecord {
   key: string
   outcome: "lead" | "appointment"
   state: DeliveryState
   at: string
-  destination?: Destination
+  destination?: ConversionDestination
   reason?: string
 }
 
-function record(key: string, outcome: "lead" | "appointment", state: DeliveryState, reason?: string, destination?: Destination) {
+function record(key: string, outcome: "lead" | "appointment", state: DeliveryState, reason?: string, destination?: ConversionDestination) {
   const log = (window.__shwurxDelivery ??= [])
   log.push({ key, outcome, state, at: new Date().toISOString(), ...(destination ? { destination } : {}), ...(reason ? { reason } : {}) })
   if (log.length > 50) log.splice(0, log.length - 50)
 }
 
 const MARKER_TTL_MS = 400 * 86_400_000
-function markerKey(dest: Destination, outcome: "lead" | "appointment", id: string) {
+function markerKey(dest: ConversionDestination, outcome: "lead" | "appointment", id: string) {
   return `shwurx_conv4_${dest}_${outcome}_${id}`
 }
 /**
  * Per-destination marker. The pre-split shared marker (`shwurx_conv4_<outcome>_<id>`)
  * proves a GTM push or a GA4 event, but never that a direct Ads conversion was sent.
  */
-function hasDestMarker(dest: Destination, outcome: "lead" | "appointment", id: string): boolean {
+const metaDispatched = new Set<string>()
+function hasDestMarker(dest: ConversionDestination, outcome: "lead" | "appointment", id: string): boolean {
+  if (dest === "meta" && metaDispatched.has(markerKey(dest, outcome, id))) return true
   if (hasMarker(markerKey(dest, outcome, id))) return true
-  return dest !== "ads" && hasMarker(`shwurx_conv4_${outcome}_${id}`)
+  return dest !== "ads" && dest !== "meta" && hasMarker(`shwurx_conv4_${outcome}_${id}`)
 }
 function hasMarker(key: string): boolean {
   try {
@@ -703,6 +717,30 @@ export interface ConversionContext {
   outcome?: "lead" | "appointment"
 }
 
+/** Meta is independent of the Google owner; an absent pixel never gets a fallback ID. */
+function metaLeadTarget(): string | null {
+  const pixel = window.__shwurxTags?.metaPixelId
+  return siteActive() && window.__shwurxThirdParty === true && effectiveConsent().ads
+    && typeof pixel === "string" && /^\d{6,20}$/.test(pixel) ? pixel : null
+}
+
+function allowedConversionDestinations(outcome: "lead" | "appointment", conversionToken: unknown): ConversionDestination[] {
+  const out: ConversionDestination[] = providersActive()
+    ? allowedDestinations(!!adsTarget(outcome) && !!safeConversionToken(conversionToken)) : []
+  if (outcome === "lead" && safeConversionToken(conversionToken) && metaLeadTarget()) out.push("meta")
+  return out
+}
+
+/** The empty custom-data object deliberately excludes all form/customer values. */
+function pushMetaLead(pixel: string | undefined, conversionToken: unknown): boolean {
+  const eventID = safeConversionToken(conversionToken)
+  if (!pixel || !eventID || metaLeadTarget() !== pixel || window.__shwurxMetaPixelId !== pixel || typeof window.fbq !== "function") return false
+  try {
+    window.fbq("trackSingle", pixel, "Lead", {}, { eventID })
+    return true // queued with the pixel, not a claim of provider receipt
+  } catch { return false }
+}
+
 /**
  * Conversion for a VERIFIED persisted record. Keyed by outcome + durable record
  * id, so a lost response followed by a retry that returns "duplicate" with the
@@ -726,19 +764,21 @@ export function emitConversion(recordId: string, ctx: ConversionContext) {
         setMarker(fpKey)
       }
     }
-    if (!providersActive()) return
     // Each destination is gated and deduped on its own. Only destinations
     // allowed NOW are queued; an explicit later retry for the same record (for
     // example after an Ads grant) fills in the missing destination only.
-    for (const dest of allowedDestinations(!!adsTarget(outcome) && !!safeConversionToken(ctx.token))) {
-      const key = markerKey(dest, outcome, recordId)
-      if (hasDestMarker(dest, outcome, recordId) || inFlight.has(key)) continue
+    const metaPixel = metaLeadTarget() ?? undefined
+    for (const dest of allowedConversionDestinations(outcome, ctx.token)) {
+      // Scope Meta retries to this pixel and opaque event token, never a raw CRM id.
+      const dedupeId = dest === "meta" ? `${metaPixel}_${ctx.token}` : recordId
+      const key = markerKey(dest, outcome, dedupeId)
+      if (hasDestMarker(dest, outcome, dedupeId) || inFlight.has(key)) continue
       record(key, outcome, "queued", undefined, dest)
       inFlight.set(key, 0)
-      dispatch(key, dest, outcome, recordId, envelope(CONVERSION_EVENT_KEYS[outcome], {
+      dispatch(key, dest, outcome, dedupeId, envelope(CONVERSION_EVENT_KEYS[outcome], {
         form_key: ctx.form, form_context: ctx.formContext, brand_slug: ctx.brand,
         service_slug: ctx.service, conversion_token: ctx.token,
-      }), 0, window.__shwurxConsentEpoch ?? 0)
+      }), 0, window.__shwurxConsentEpoch ?? 0, metaPixel)
     }
   } catch {
     /* best-effort */
@@ -748,17 +788,18 @@ export function emitConversion(recordId: string, ctx: ConversionContext) {
 /**
  * Hands the conversion to the single configured owner. Every attempt rechecks
  * the durable marker and eligibility, so a parallel caller or another tab that
- * already sent it wins. "dispatched" means handed to the tag — not that Google
+ * already sent it wins. "dispatched" means handed to the tag — not that a provider
  * received or counted it.
  */
 function dispatch(
   key: string,
-  dest: Destination,
+  dest: ConversionDestination,
   outcome: "lead" | "appointment",
   recordId: string,
   env: Record<string, string | number | null>,
   attempt: number,
   epoch: number,
+  metaPixel?: string,
 ) {
   if (!inFlight.has(key)) return
   if (hasDestMarker(dest, outcome, recordId)) {
@@ -766,21 +807,24 @@ function dispatch(
     record(key, outcome, "skipped", "already_sent", dest)
     return
   }
-  if (!providersActive() || epoch !== (window.__shwurxConsentEpoch ?? 0) || !allowedDestinations(dest === "ads").includes(dest)) {
+  if (epoch !== (window.__shwurxConsentEpoch ?? 0)
+    || !allowedConversionDestinations(outcome, env.conversion_token).includes(dest)
+    || (dest === "meta" && metaLeadTarget() !== metaPixel)) {
     inFlight.delete(key)
     record(key, outcome, "abandoned", "ineligible", dest)
     return
   }
   const sendTo = adsTarget(outcome)
   const ads = dest === "ads" && sendTo ? { sendTo, transactionId: env.conversion_token as string | null } : undefined
-  if (pushTo(dest, env, ads)) {
+  if (dest === "meta" ? pushMetaLead(metaPixel, env.conversion_token) : pushTo(dest, env, ads)) {
+    if (dest === "meta") metaDispatched.add(key)
     setMarker(key)
     inFlight.delete(key)
     record(key, outcome, "dispatched", undefined, dest)
     return
   }
   if (attempt < 20) {
-    inFlight.set(key, window.setTimeout(() => dispatch(key, dest, outcome, recordId, env, attempt + 1, epoch), 500))
+    inFlight.set(key, window.setTimeout(() => dispatch(key, dest, outcome, recordId, env, attempt + 1, epoch, metaPixel), 500))
     return
   }
   inFlight.delete(key)

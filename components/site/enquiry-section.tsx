@@ -29,8 +29,8 @@ export function EnquirySection({
   const service = serviceSlug ? doc.services.find((x) => x.slug === serviceSlug) : null
   const waText =
     lang === "ar"
-      ? `مرحباً، لدي استفسار${brand ? ` عن ${pick(brand.name, lang)}` : ""}${service ? ` — ${pick(service.name, lang)}` : ""}`
-      : `Hello, I have an enquiry${brand ? ` about my ${pick(brand.name, lang)}` : ""}${service ? ` — ${pick(service.name, lang)}` : ""}`
+      ? `مرحباً، لدي استفسار${brand ? ` عن ${pick(brand.name, lang)}` : ""}${service ? ` — ${pick(service.name, lang)}` : ""}\nالماركة والموديل:\nسنة الصنع:\nالعطل أو الخدمة المطلوبة:`
+      : `Hello, I have an enquiry${brand ? ` about my ${pick(brand.name, lang)}` : ""}${service ? ` — ${pick(service.name, lang)}` : ""}\nMake & model:\nYear:\nFault or service needed:`
 
   return (
     <section id="enquire" className="scroll-mt-24 border-t border-border bg-muted/30">

@@ -1,4 +1,5 @@
 import type { LeadRow } from "@/lib/actions-leads"
+import { leadCampaignName } from "@/lib/lead-origin"
 
 export type LeadSourceKey = "all" | "google_ads" | "meta" | "website"
 
@@ -35,7 +36,7 @@ export function leadsToCsv(leads: LeadRow[]): string {
       l.status,
       l.service_interest,
       l.message,
-      md.utm_campaign ?? (md as Record<string, unknown>).campaign_name ?? "",
+      leadCampaignName(md) ?? "",
       md.assigned_name ?? "",
       (l as unknown as { created_at?: string }).created_at ?? "",
     ]

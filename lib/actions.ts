@@ -212,12 +212,30 @@ export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: str
 export async function markJobPaid(
   jobId: string,
   opts: { amount?: number | null; method?: string | null } = {},
-) {
+): Promise<{ ok: true } | { ok: false; error: string; needsInvoice?: boolean }> {
   const { supabase, ctx } = await guard("jobs.update_status")
   const user = { id: ctx.userId }
   const amount = opts.amount != null && !Number.isNaN(Number(opts.amount)) ? Number(opts.amount) : null
   const method = opts.method?.trim() || null
   const nowIso = new Date().toISOString()
+
+  // A payment must always be backed by a customer (VAT) invoice, otherwise the
+  // money is recorded only on the job/gate pass and no invoice ever exists.
+  const { data: existingInvoices, error: invErr } = await supabase
+    .from("invoices")
+    .select("id")
+    .eq("job_id", jobId)
+    .neq("status", "cancelled")
+    .limit(1)
+  if (invErr) return { ok: false, error: `Could not check the job's invoice: ${invErr.message}` }
+  if (!existingInvoices?.length) {
+    return {
+      ok: false,
+      needsInvoice: true,
+      error: "This job has no invoice yet. Create the customer invoice first, then record the payment.",
+    }
+  }
+
   const { error } = await supabase
     .from("jobs")
     .update({

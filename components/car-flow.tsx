@@ -124,13 +124,21 @@ function CollectPaymentDialog({
   const [amount, setAmount] = React.useState("")
   const [method, setMethod] = React.useState("Cash")
   const [saving, setSaving] = React.useState(false)
+  const [error, setError] = React.useState<{ message: string; needsInvoice: boolean } | null>(null)
   const vehicle = [job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "vehicle"
 
   async function submit() {
     setSaving(true)
+    setError(null)
     try {
-      await markJobPaid(job.id, { amount: amount ? Number(amount) : null, method })
+      const res = await markJobPaid(job.id, { amount: amount ? Number(amount) : null, method })
+      if (!res.ok) {
+        setError({ message: res.error, needsInvoice: Boolean(res.needsInvoice) })
+        return
+      }
       onPaid()
+    } catch {
+      setError({ message: "Could not record the payment. Please try again.", needsInvoice: false })
     } finally {
       setSaving(false)
     }
@@ -186,6 +194,20 @@ function CollectPaymentDialog({
           <option>Cheque</option>
           <option>Other</option>
         </select>
+
+        {error && (
+          <div role="alert" className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+            <p>{error.message}</p>
+            {error.needsInvoice && (
+              <a
+                href={`/invoices/new?job=${job.id}`}
+                className="mt-2 inline-block font-semibold underline underline-offset-2"
+              >
+                Create invoice for {job.job_number}
+              </a>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button

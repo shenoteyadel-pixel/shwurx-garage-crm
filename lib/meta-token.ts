@@ -47,19 +47,6 @@ async function writeStored(value: StoredMetaToken, _userId?: string | null) {
   if (error) throw new Error(error.message)
 }
 
-/** Expiry of any token, read with the app token so it also works on expired tokens. 0 means never. */
-async function tokenExpiry(token: string, appToken: string): Promise<number | null> {
-  try {
-    const r = await graphGet<{ data?: { expires_at?: number; data_access_expires_at?: number } }>(
-      `debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(appToken)}`,
-    )
-    const exp = r.data?.expires_at
-    return typeof exp === "number" ? exp : null
-  } catch {
-    return null
-  }
-}
-
 /**
  * Turns any token from Meta (short-lived user token from Graph API Explorer, long-lived
  * user token, or Page token) into the longest-lasting one available and saves it.
@@ -85,41 +72,118 @@ export async function upgradeAndStoreMetaToken(input: string, userId?: string | 
     }
   }
 
-  let pages: { id: string; name?: string; access_token?: string }[] = []
-  try {
-    const accounts = await graphGet<{ data?: { id: string; name?: string; access_token?: string }[] }>(
-      `me/accounts?fields=id,name,access_token&limit=100&access_token=${encodeURIComponent(longLived)}`,
-    )
-    pages = (accounts.data ?? []).filter((p) => p.access_token)
-  } catch {
-    // A Page token cannot list accounts.
-  }
+  const info = await inspectToken(longLived, appToken)
+  if (!info.valid) throw new Error(info.error ?? "Meta says this token is not valid. Generate a new one and try again.")
 
+  const savedAt = new Date().toISOString()
   let value: StoredMetaToken
-  if (pages.length === 1) {
-    const token = pages[0].access_token!
-    value = {
-      token,
-      kind: "page",
-      pages: [pages[0].name ?? pages[0].id],
-      expiresAt: appToken ? await tokenExpiry(token, appToken) : null,
-      savedAt: new Date().toISOString(),
-    }
+
+  if (info.type === "PAGE") {
+    const me = await graphGet<{ id: string; name?: string }>(`me?fields=id,name&access_token=${encodeURIComponent(longLived)}`)
+    value = { token: longLived, kind: "page", pages: [me.name ?? me.id], expiresAt: info.expiresAt, savedAt }
   } else {
-    const me = await graphGet<{ id: string; name?: string; category?: string }>(
-      `me?fields=id,name,category&access_token=${encodeURIComponent(longLived)}`,
-    )
-    value = {
-      token: longLived,
-      kind: me.category ? "page" : "user",
-      pages: pages.length ? pages.map((p) => p.name ?? p.id) : [me.name ?? me.id],
-      expiresAt: appToken ? await tokenExpiry(longLived, appToken) : null,
-      savedAt: new Date().toISOString(),
+    const pages = await findPageTokens(longLived, info.pageIds)
+    if (!pages.length) {
+      const missing = REQUIRED_PAGE_SCOPES.filter((s) => !info.scopes.includes(s))
+      throw new Error(
+        `This ${info.type === "SYSTEM_USER" ? "system user" : "user"} token cannot open any Facebook Page, so it was not saved and the current connection is unchanged.` +
+          (missing.length ? ` Missing permissions: ${missing.join(", ")}.` : " Check that the token's user has a role on the Page."),
+      )
+    }
+    if (pages.length === 1) {
+      const token = pages[0].access_token
+      const pageInfo = await inspectToken(token, appToken)
+      value = { token, kind: "page", pages: [pages[0].name ?? pages[0].id], expiresAt: pageInfo.expiresAt, savedAt }
+    } else {
+      value = { token: longLived, kind: "user", pages: pages.map((p) => p.name ?? p.id), expiresAt: info.expiresAt, savedAt }
     }
   }
 
   await writeStored(value, userId)
   return value
+}
+
+const REQUIRED_PAGE_SCOPES = ["pages_show_list", "pages_read_engagement", "leads_retrieval", "pages_manage_metadata"]
+const PAGE_SCOPES = new Set([...REQUIRED_PAGE_SCOPES, "pages_manage_ads"])
+
+interface TokenInspection {
+  valid: boolean
+  type: "PAGE" | "USER" | "SYSTEM_USER" | "APP" | null
+  expiresAt: number | null
+  scopes: string[]
+  pageIds: string[]
+  error?: string
+}
+
+/** Reads token type, validity, expiry and granted scopes via debug_token. Never returns the token. */
+async function inspectToken(token: string, appToken: string | null): Promise<TokenInspection> {
+  try {
+    const r = await graphGet<{
+      data?: {
+        is_valid?: boolean
+        type?: TokenInspection["type"]
+        expires_at?: number
+        scopes?: string[]
+        profile_id?: string
+        granular_scopes?: { scope: string; target_ids?: string[] }[]
+        error?: { message?: string }
+      }
+    }>(`debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(appToken ?? token)}`)
+    const d = r.data ?? {}
+    const pageIds = new Set<string>()
+    for (const s of d.granular_scopes ?? []) if (PAGE_SCOPES.has(s.scope)) s.target_ids?.forEach((id) => pageIds.add(id))
+    return {
+      valid: d.is_valid === true,
+      type: d.type ?? null,
+      expiresAt: d.is_valid && typeof d.expires_at === "number" ? d.expires_at : null,
+      scopes: d.scopes ?? [],
+      pageIds: [...pageIds],
+      error: d.error?.message,
+    }
+  } catch (err) {
+    return { valid: false, type: null, expiresAt: null, scopes: [], pageIds: [], error: (err as Error).message }
+  }
+}
+
+/** Page tokens the given user/system-user token can issue, from me/accounts, granular scopes, then its businesses. */
+async function findPageTokens(token: string, scopedIds: string[]) {
+  type Page = { id: string; name?: string; access_token?: string }
+  const t = encodeURIComponent(token)
+  try {
+    const accounts = await graphGet<{ data?: Page[] }>(`me/accounts?fields=id,name,access_token&limit=100&access_token=${t}`)
+    const managed = (accounts.data ?? []).filter((p): p is Page & { access_token: string } => !!p.access_token)
+    if (managed.length) return managed
+  } catch {
+    // Business Manager Pages can be missing from me/accounts; try the other sources.
+  }
+
+  const ids = new Set(scopedIds)
+  try {
+    const biz = await graphGet<{ data?: { id: string }[] }>(`me/businesses?fields=id&limit=50&access_token=${t}`)
+    for (const b of biz.data ?? []) {
+      for (const edge of ["owned_pages", "client_pages"]) {
+        try {
+          const res = await graphGet<{ data?: { id: string }[] }>(`${b.id}/${edge}?fields=id&limit=100&access_token=${t}`)
+          res.data?.forEach((p) => ids.add(p.id))
+        } catch {
+          // Edge not available for this business.
+        }
+      }
+    }
+  } catch {
+    // Token cannot list businesses.
+  }
+
+  const found: (Page & { access_token: string })[] = []
+  for (const id of ids) {
+    try {
+      const p = await graphGet<Page>(`${encodeURIComponent(id)}?fields=id,name,access_token&access_token=${t}`)
+      if (p.access_token) found.push({ ...p, access_token: p.access_token })
+    } catch {
+      // Not a Page or no access.
+    }
+  }
+  return found
 }
 
 let autoUpgradeTried = false

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { AttributionChannel, AttributionReport } from "@/lib/ai-marketing/types"
+import { ACQUISITION_LEAD_SOURCES, isExcludedAcquisitionLead, resolvePaidLeadAttribution } from "./lead-attribution"
 
 /**
  * Ad campaign → Lead → Advisor → Appointment → Job Card → Invoice → Payment.
@@ -7,9 +8,7 @@ import type { AttributionChannel, AttributionReport } from "@/lib/ai-marketing/t
  * A lead only counts towards revenue when it is linked to a customer record,
  * so revenue is never guessed from name/phone similarity.
  */
-const CHANNEL_OF: Record<string, "meta" | "google"> = { facebook: "meta", instagram: "meta", google_ads: "google" }
-
-type Lead = { id: string; source: string; customer_id: string | null; created_at: string; metadata: Record<string, unknown> | null }
+type Lead = { id: string; name: string | null; source: string; customer_id: string | null; created_at: string; metadata: Record<string, unknown> | null }
 
 const ratio = (a: number, b: number) => (b > 0 ? a / b : null)
 
@@ -23,14 +22,13 @@ export async function computeAttribution(
 
   const { data: leadRows, error } = await supabase
     .from("leads")
-    .select("id, source, customer_id, created_at, metadata")
-    .in("source", Object.keys(CHANNEL_OF))
+    .select("id, name, source, customer_id, created_at, metadata")
+    .in("source", [...ACQUISITION_LEAD_SOURCES])
     .gte("created_at", since)
   if (error) throw new Error(`Could not read leads: ${error.message}`)
 
   const leads = ((leadRows ?? []) as Lead[]).filter((l) => {
-    const m = l.metadata ?? {}
-    return !m.deleted_at && !m.test && m.organic !== true
+    return !isExcludedAcquisitionLead(l) && resolvePaidLeadAttribution(l.source, l.metadata) !== null
   })
   const customerIds = [...new Set(leads.map((l) => l.customer_id).filter((v): v is string => Boolean(v)))]
 
@@ -63,7 +61,7 @@ export async function computeAttribution(
     if (l.customer_id && !firstLead.has(l.customer_id)) firstLead.set(l.customer_id, l)
   }
 
-  const campaignKey = (l: Lead) => String(l.metadata?.campaign ?? l.metadata?.campaign_id ?? "Unknown campaign")
+  const campaignKey = (l: Lead) => resolvePaidLeadAttribution(l.source, l.metadata)?.campaign ?? "Unknown campaign"
   const campaigns = new Map<string, { channel: "meta" | "google"; campaign: string; leads: number; customers: number; revenue: number }>()
   const advisors = new Map<string, { name: string; leads: number; customers: number }>()
   const ch: Record<"meta" | "google", Omit<AttributionChannel, "spend" | "costPerLead" | "costPerAppointment" | "costPerCustomer" | "roas" | "leadToCustomerRate">> = {
@@ -72,7 +70,7 @@ export async function computeAttribution(
   }
 
   for (const l of leads) {
-    const c = CHANNEL_OF[l.source]
+    const c = resolvePaidLeadAttribution(l.source, l.metadata)!.channel
     ch[c].leads++
     if (l.customer_id) ch[c].linkedLeads++
     const key = `${c}:${campaignKey(l)}`
@@ -88,7 +86,7 @@ export async function computeAttribution(
   }
 
   for (const [customerId, lead] of firstLead) {
-    const c = CHANNEL_OF[lead.source]
+    const c = resolvePaidLeadAttribution(lead.source, lead.metadata)!.channel
     const custAppts = appts.filter((a) => a.customer_id === customerId && a.created_at >= lead.created_at)
     const custJobs = jobs.filter((j) => j.customer_id === customerId && j.created_at >= lead.created_at)
     const revenue = custJobs.reduce((n, j) => n + (paidByJob.get(j.id) ?? 0), 0)

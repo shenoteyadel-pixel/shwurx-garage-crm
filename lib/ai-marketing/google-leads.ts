@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { isExcludedAcquisitionLead, resolvePaidLeadAttribution } from "./lead-attribution"
 
 /**
  * Read-only Google Ads lead → CRM funnel built from existing records:
@@ -13,6 +14,7 @@ export interface GoogleLeadRow {
   email: string | null
   source: string
   campaign: string | null
+  adGroup: string | null
   gclid: string | null
   vehicle: string | null
   service: string | null
@@ -41,25 +43,14 @@ type Lead = {
 }
 
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null)
-const pick = (o: unknown, ...path: string[]): unknown =>
-  path.reduce<unknown>((cur, k) => (cur && typeof cur === "object" ? (cur as Record<string, unknown>)[k] : undefined), o)
 const phoneKey = (p: string | null) => (p ? p.replace(/\D/g, "").slice(-9) : null)
 
 export function leadGclid(meta: Record<string, unknown> | null): string | null {
-  return (
-    str(meta?.gclid) ??
-    str(pick(meta, "click_ids", "gclid")) ??
-    str(pick(meta, "attribution", "click_ids", "gclid")) ??
-    str(pick(meta, "attribution", "gclid"))
-  )
+  return resolvePaidLeadAttribution("website", meta)?.gclid ?? null
 }
 
 function isGoogleLead(l: Lead) {
-  if (l.source === "google_ads") return true
-  const m = l.metadata
-  if (leadGclid(m)) return true
-  const utm = str(m?.utm_source) ?? str(pick(m, "attribution", "utm_source")) ?? str(pick(m, "utm", "source"))
-  return utm?.toLowerCase() === "google" && (str(m?.utm_medium) ?? str(pick(m, "attribution", "utm_medium")) ?? "").match(/cpc|ppc|paid/i) !== null
+  return resolvePaidLeadAttribution(l.source, l.metadata)?.channel === "google"
 }
 
 export async function getGoogleLeadFunnel(supabase: SupabaseClient, days = 90): Promise<GoogleLeadRow[]> {
@@ -72,7 +63,7 @@ export async function getGoogleLeadFunnel(supabase: SupabaseClient, days = 90): 
     .limit(1000)
   if (error) throw new Error(`Could not read leads: ${error.message}`)
 
-  const leads = ((data ?? []) as Lead[]).filter((l) => !l.metadata?.deleted_at && isGoogleLead(l))
+  const leads = ((data ?? []) as Lead[]).filter((l) => !isExcludedAcquisitionLead(l) && isGoogleLead(l))
   if (!leads.length) return []
 
   const customerIds = [...new Set(leads.map((l) => l.customer_id).filter((v): v is string => Boolean(v)))]
@@ -151,8 +142,9 @@ export async function getGoogleLeadFunnel(supabase: SupabaseClient, days = 90): 
       phone: l.phone,
       email: l.email,
       source: l.source,
-      campaign: str(l.metadata?.campaign) ?? str(pick(l.metadata, "attribution", "utm_campaign")) ?? null,
-      gclid: leadGclid(l.metadata),
+      campaign: resolvePaidLeadAttribution(l.source, l.metadata)?.campaign ?? null,
+      adGroup: resolvePaidLeadAttribution(l.source, l.metadata)?.adGroup ?? null,
+      gclid: resolvePaidLeadAttribution(l.source, l.metadata)?.gclid ?? null,
       vehicle,
       service: l.service_interest ?? appt?.service_interest ?? null,
       advisor: str(l.metadata?.assigned_name) ?? (job?.advisor_id ? (advisorName.get(job.advisor_id) ?? null) : null),

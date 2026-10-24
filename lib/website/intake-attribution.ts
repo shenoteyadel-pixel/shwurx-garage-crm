@@ -1,4 +1,6 @@
 import { isPublicSitePath } from "./paths"
+import { looksLikeContactData } from "./contact-shape"
+import { googleAcquisitionIds } from "./google-acquisition-ids"
 
 /**
  * Server-side revalidation of the browser's first/latest touches before they
@@ -8,13 +10,29 @@ import { isPublicSitePath } from "./paths"
 // eslint-disable-next-line no-control-regex
 const CTRL = /[\u0000-\u001f\u007f]/g
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.replace(CTRL, " ").trim().slice(0, max) : "")
-const CONTACT_RE = /@|https?:|www\.|\d[\d\s().-]{6,}\d/i
+const EIGHT_DIGIT_PHONE = /\d[\d\s().-]{6,}\d/
 const CLICK_ID_RE = /^[A-Za-z0-9_-]{8,200}$/
 
-/** Campaign text without anything that looks like contact data. */
-function campaign(v: unknown): string | null {
+/** A conservative date exception for named campaigns, not standalone numbers. */
+function validCampaignDate(v: string): boolean {
+  if (!/^20\d{6}$/.test(v)) return false
+  const year = Number(v.slice(0, 4)), month = Number(v.slice(4, 6)), day = Number(v.slice(6, 8))
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+}
+
+/** Campaign text without contact data; only the campaign name may contain a valid separated date token. */
+function campaign(v: unknown, allowNamedDate = false): string | null {
   const s = str(v, 120)
-  return s && !CONTACT_RE.test(s) ? s : null
+  if (!s || looksLikeContactData(s)) return null
+  let phoneView = s
+  try { phoneView = decodeURIComponent(phoneView) } catch { /* keep raw */ }
+  phoneView = phoneView.replace(/[٠-٩۰-۹]/g, (digit) => String(digit.charCodeAt(0) - (digit <= "٩" ? 0x660 : 0x6f0)))
+  if (allowNamedDate && /\p{L}/u.test(phoneView)) {
+    phoneView = phoneView.replace(/(^|[_\s|-])(\d{8})(?=$|[_\s|-])/g,
+      (whole, separator: string, date: string) => validCampaignDate(date) ? `${separator}date` : whole)
+  }
+  return EIGHT_DIGIT_PHONE.test(phoneView) ? null : s
 }
 const clickId = (v: unknown) => {
   const s = str(v, 200)
@@ -49,10 +67,11 @@ function timestamp(v: unknown, now: number): string | null {
 export function sanitizeTouch(a: unknown, now = Date.now()) {
   const o = a && typeof a === "object" && !Array.isArray(a) ? (a as Record<string, unknown>) : {}
   return {
+    ...googleAcquisitionIds(o),
     utm: {
       source: campaign(o.utm_source),
       medium: campaign(o.utm_medium),
-      campaign: campaign(o.utm_campaign),
+      campaign: campaign(o.utm_campaign, true),
       content: campaign(o.utm_content),
       term: campaign(o.utm_term),
     },

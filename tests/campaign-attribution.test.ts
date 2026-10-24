@@ -12,11 +12,11 @@ class Storage {
   setItem(k: string, v: string) { this.values.set(k, v) }
   removeItem(k: string) { this.values.delete(k) }
 }
-let win: any, doc: any, calls: any[][], local: Storage
+let win: any, doc: any, calls: any[][], local: Storage, beacons: Blob[]
 const query = "?utm_source=google&utm_medium=cpc&utm_campaign=shwurx_porsche_search&utm_content=hero&utm_term=porsche%20repair&gclid=Cj0KCQjw_SYNTHETIC123&email=synthetic%40example.test"
 function init(search = query, referrer = "https://www.referral.test/private?email=synthetic@example.test#phone") {
   const config = { ...structuredClone(SEED_ANALYTICS), managed: true, enabled: true }
-  calls = []; local = new Storage()
+  calls = []; local = new Storage(); beacons = []
   win = {
     location: { pathname: "/brands/porsche", search, origin: "https://www.swurxauto.com" },
     localStorage: local, sessionStorage: new Storage(), dataLayer: [],
@@ -30,7 +30,7 @@ function init(search = query, referrer = "https://www.referral.test/private?emai
   }
   doc = { referrer, head: { appendChild: () => {} }, createElement: () => ({}) }
   Object.assign(globalThis, { window: win, document: doc, sessionStorage: win.sessionStorage })
-  Object.defineProperty(globalThis, "navigator", { value: { userAgent: "test", sendBeacon: () => true }, configurable: true })
+  Object.defineProperty(globalThis, "navigator", { value: { userAgent: "test", sendBeacon: (_url: string, body: Blob) => { beacons.push(body); return true } }, configurable: true })
   bus.cancelPendingConversions("test_reset"); bus.beginPageLoad(); bus.resetPageViewState()
   return config
 }
@@ -39,6 +39,25 @@ function bridge() {
   assert.equal(win.__shwurxRegisterGtmConsentListener((choice: any) => win.__shwurxGtmConsentApplied(choice)), true)
 }
 beforeEach(() => { init() })
+
+test("numeric Google IDs remain in the CRM touch and never expand provider or first-party telemetry", async () => {
+  init("?utm_source=google&utm_medium=cpc&utm_campaign=24324930475&adgroup_id=201689562398", "")
+  win.__shwurxConsent = { analytics: true, ads: true }
+  const attr = bus.captureAttribution()
+  assert.equal(attr.latest.campaign_id, "24324930475")
+  assert.equal(attr.latest.adgroup_id, "201689562398")
+  assert.equal(attr.latest.utm_campaign, null)
+  bridge(); bus.notePageView(win.location.pathname)
+  const serialized = JSON.stringify(win.dataLayer)
+  assert.equal(serialized.includes("24324930475"), false)
+  assert.equal(serialized.includes("201689562398"), false)
+  assert.equal(serialized.includes("campaign_id"), false)
+  assert.equal(serialized.includes("adgroup_id"), false)
+  assert.ok(beacons.length > 0)
+  const firstParty = (await Promise.all(beacons.map((body) => body.text()))).join("\n")
+  assert.equal(firstParty.includes("24324930475"), false)
+  assert.equal(firstParty.includes("201689562398"), false)
+})
 
 test("native consent control carries safe current-entry campaign before the first manual view", () => {
   bridge(); bus.notePageView(win.location.pathname)

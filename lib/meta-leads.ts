@@ -140,11 +140,15 @@ async function resolvePages(token: string): Promise<PageTarget[]> {
     if (found.length) return found
   }
 
-  // A Page token answers `me` with the Page itself (it has a category); a user token does not.
-  const me = await graph<{ id: string; name?: string; category?: string }>("me?fields=id,name,category", token).catch(
-    () => null,
-  )
-  if (me?.category) return [{ id: me.id, name: me.name, token }]
+  // `category` is not a valid field on User nodes, so ask debug_token for the token type instead.
+  const debug = await graph<{ data?: { type?: string } }>(
+    `debug_token?input_token=${encodeURIComponent(token)}`,
+    token,
+  ).catch(() => null)
+  if (debug?.data?.type === "PAGE") {
+    const me = await graph<{ id: string; name?: string }>("me?fields=id,name", token).catch(() => null)
+    if (me) return [{ id: me.id, name: me.name, token }]
+  }
   throw new Error(
     `${NO_PAGE_ACCESS}${candidates.length ? "" : " No Facebook Page is linked to this token."}`,
   )

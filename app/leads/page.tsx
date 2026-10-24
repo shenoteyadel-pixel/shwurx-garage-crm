@@ -66,7 +66,7 @@ async function loadAdSources(): Promise<AdSourceStatus[]> {
       connectNeeded: metaMissing.length > 0,
       connectedNote:
         tokenInfo.source === "stored"
-          ? `Connected to ${tokenInfo.pages.join(", ") || "your Page"}${tokenInfo.expiresAt === 0 ? " · token never expires" : ""}. New leads sync automatically.`
+          ? `Connected to ${tokenInfo.pages.join(", ") || "your Page"}${tokenInfo.expiresAt === 0 ? " · no expiry date when last checked" : ""}. New leads sync automatically.`
           : null,
       ...(metaMissing.length === 0 && syncedOk ? { ...metaStats, lastError: null } : metaStats),
       steps: [

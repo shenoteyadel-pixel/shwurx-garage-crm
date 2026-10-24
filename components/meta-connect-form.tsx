@@ -41,7 +41,7 @@ export function MetaConnectForm({ needed }: { needed: boolean }) {
           {state?.ok === true ? (
             <span className="text-primary">
               Connected to {state.pages.join(", ")}
-              {state.permanent ? " with a token that never expires" : ""}. {state.imported} new lead
+              {state.permanent ? ". Meta reports this token as valid with no expiry date" : ""}. {state.imported} new lead
               {state.imported === 1 ? "" : "s"} imported.
             </span>
           ) : state?.ok === false ? (

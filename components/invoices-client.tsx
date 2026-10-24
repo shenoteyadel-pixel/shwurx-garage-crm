@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { Card, Button, Input, Badge } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import { Plus, Search, FileText } from "lucide-react"
+import { Plus, Search, FileText, AlertTriangle } from "lucide-react"
 
 type Invoice = {
   id: string
@@ -25,7 +25,26 @@ const STATUS: Record<string, string> = {
   cancelled: "border-red-500/30 bg-red-500/15 text-red-300",
 }
 
-export function InvoicesClient({ invoices }: { invoices: Invoice[] }) {
+export type PaidJobWithoutInvoice = {
+  id: string
+  job_number: string | null
+  customer_name: string | null
+  plate_code: string | null
+  plate_number: string | null
+  vehicle_make: string | null
+  vehicle_model: string | null
+  paid_at: string
+  paid_amount: number | null
+  payment_method: string | null
+}
+
+export function InvoicesClient({
+  invoices,
+  paidWithoutInvoice = [],
+}: {
+  invoices: Invoice[]
+  paidWithoutInvoice?: PaidJobWithoutInvoice[]
+}) {
   const [q, setQ] = useState("")
   const [filter, setFilter] = useState<string>("all")
 
@@ -64,6 +83,70 @@ export function InvoicesClient({ invoices }: { invoices: Invoice[] }) {
           </Link>
         </div>
       </div>
+
+      {paidWithoutInvoice.length > 0 && (
+        <Card className="mb-6 overflow-hidden border-amber-500/40">
+          <div className="flex flex-col gap-1 border-b border-border p-4">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-amber-300">
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+              Paid jobs without an invoice ({paidWithoutInvoice.length})
+            </h2>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Payment was recorded on these jobs but no customer (VAT) invoice was issued. Review each one and create the
+              invoice, then record the payment already received against it.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Job</th>
+                  <th className="px-4 py-3 font-semibold">Customer</th>
+                  <th className="px-4 py-3 font-semibold">Paid on</th>
+                  <th className="px-4 py-3 text-right font-semibold">Amount</th>
+                  <th className="px-4 py-3 text-right font-semibold">
+                    <span className="sr-only">Action</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {paidWithoutInvoice.map((j) => (
+                  <tr key={j.id} className="border-b border-border/60 last:border-0 hover:bg-accent/40">
+                    <td className="px-4 py-3">
+                      <Link href={`/jobs/${j.id}`} className="font-mono font-medium text-primary hover:underline">
+                        {j.job_number || "Job"}
+                      </Link>
+                      <div className="text-xs text-muted-foreground">
+                        {[j.vehicle_make, j.vehicle_model].filter(Boolean).join(" ") || "—"}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{j.customer_name || "—"}</div>
+                      {(j.plate_code || j.plate_number) && (
+                        <div className="text-xs text-muted-foreground">
+                          {[j.plate_code, j.plate_number].filter(Boolean).join(" ")}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{formatDate(j.paid_at)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {j.paid_amount != null ? formatCurrency(j.paid_amount) : "Not entered"}
+                      {j.payment_method && <div className="text-xs text-muted-foreground">{j.payment_method}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link href={`/invoices/new?job=${j.id}`}>
+                        <Button variant="outline" className="h-8 text-xs">
+                          <Plus className="h-3.5 w-3.5" /> Create invoice
+                        </Button>
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-2">
         {["all", "unpaid", "partial", "paid", "cancelled"].map((f) => (

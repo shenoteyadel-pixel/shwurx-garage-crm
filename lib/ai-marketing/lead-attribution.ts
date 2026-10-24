@@ -59,6 +59,7 @@ function touch(v: unknown) {
  */
 export function resolvePaidLeadAttribution(source: string, metadata: RecordValue | null): PaidLeadAttribution | null {
   const m = record(metadata)
+  if (source === "manual_whatsapp" || source === "manual_phone" || m.kind === "manual_contact") return null
   const a = record(m.attribution)
   const native = source === "google_ads" ? "google" : ["facebook", "instagram"].includes(source) ? "meta" : null
   const touches = [m.latest_touch, a.latest_touch, m.first_touch, a.first_touch, a, m].map(touch)

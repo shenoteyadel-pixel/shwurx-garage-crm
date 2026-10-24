@@ -6,6 +6,7 @@ import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/co
 import { notifyByPermission } from "@/lib/actions-notifications"
 
 import { LEAD_STATUSES, type LeadStatus } from "@/lib/lead-status"
+import { isManualLeadSource } from "@/lib/manual-lead"
 
 export type { LeadStatus }
 
@@ -66,6 +67,9 @@ async function readLead(supabase: Awaited<ReturnType<typeof createClient>>, id: 
 
 export async function setLeadStatus(id: string, status: LeadStatus) {
   const { supabase, ctx } = await guard("leads.manage")
+  if (!LEAD_STATUSES.includes(status)) throw new Error("Invalid lead status")
+  const lead = await readLead(supabase, id)
+  if (isManualLeadSource(lead.source) || lead.metadata?.kind === "manual_contact") throw new Error("Use Record follow-up to update a manual lead with evidence.")
   const { error } = await supabase
     .from("leads")
     .update({ status, updated_at: new Date().toISOString() })
@@ -86,14 +90,18 @@ export async function deleteLead(id: string) {
   if (ctx.role !== "owner") throw new Error("Only the owner can delete leads")
   const lead = await readLead(supabase, id)
   const now = new Date().toISOString()
-  const { error } = await supabase
+  const manual = isManualLeadSource(lead.source)
+  const revision = Number(lead.metadata?.manual_revision ?? 0)
+  const query = supabase
     .from("leads")
     .update({
-      metadata: { ...(lead.metadata ?? {}), deleted_at: now, deleted_by: ctx.userId },
+      metadata: { ...(lead.metadata ?? {}), deleted_at: now, deleted_by: ctx.userId, ...(manual ? { manual_revision: revision + 1 } : {}) },
       updated_at: now,
     })
     .eq("id", id)
+  const { data, error } = await (manual ? query.eq("metadata->>manual_revision", String(revision)) : query).select("id").maybeSingle()
   if (error) throw new Error(error.message)
+  if (!data) throw new Error("The lead changed. Reload before deleting it.")
   await logAction(ctx, "lead.delete", "lead", id, { name: lead.name, source: lead.source })
   revalidatePath("/leads")
 }
@@ -114,12 +122,16 @@ export async function assignLead(id: string, userId: string | null) {
     assignedName = profile?.full_name || profile?.email || "Staff"
   }
 
-  const metadata = { ...(lead.metadata ?? {}), assigned_to: userId, assigned_name: assignedName }
-  const { error } = await supabase
+  const manual = isManualLeadSource(lead.source)
+  const revision = Number(lead.metadata?.manual_revision ?? 0)
+  const metadata = { ...(lead.metadata ?? {}), assigned_to: userId, assigned_name: assignedName, ...(manual ? { manual_revision: revision + 1 } : {}) }
+  const query = supabase
     .from("leads")
     .update({ metadata, updated_at: new Date().toISOString() })
     .eq("id", id)
+  const { data, error } = await (manual ? query.eq("metadata->>manual_revision", String(revision)) : query).select("id").maybeSingle()
   if (error) throw new Error(error.message)
+  if (!data) throw new Error("The lead changed. Reload before assigning it.")
   await logAction(ctx, "lead.assign", "lead", id, { assigned_to: userId })
   revalidatePath("/leads")
 }
@@ -131,6 +143,7 @@ export async function addLeadNote(id: string, text: string) {
   if (!trimmed) return
   const { supabase, ctx } = await guard("leads.manage")
   const lead = await readLead(supabase, id)
+  if (isManualLeadSource(lead.source)) throw new Error("Use Record follow-up to append evidence to a manual lead.")
   const notes: LeadNote[] = Array.isArray(lead.metadata?.notes) ? lead.metadata!.notes! : []
   const nextNotes = [...notes, { at: new Date().toISOString(), by: ctx.name, text: trimmed }]
   const metadata = { ...(lead.metadata ?? {}), notes: nextNotes }
@@ -203,6 +216,11 @@ export async function convertLeadToCustomer(
   const { supabase, ctx } = await guard("leads.manage")
   const lead = await readLead(supabase, id)
   if (lead.customer_id) throw new Error("This lead has already been converted")
+  const manual = isManualLeadSource(lead.source)
+  const qualification = lead.metadata?.qualification_evidence as { result?: string; reason?: string } | null
+  if (manual && (lead.status !== "qualified" || lead.metadata?.kind !== "manual_contact" || lead.metadata.deleted_at || !["answered", "conversation"].includes(String(qualification?.result)) || String(qualification?.reason ?? "").trim().length < 10)) {
+    throw new Error("Record an evidence-backed qualified follow-up before creating a customer.")
+  }
 
   let customerId = opts.useExistingCustomerId ?? null
   if (!customerId) {
@@ -221,11 +239,14 @@ export async function convertLeadToCustomer(
   }
   if (!customerId) throw new Error("Could not resolve a customer for this lead")
 
-  const { error: linkErr } = await supabase
+  const revision = Number(lead.metadata?.manual_revision ?? 0)
+  const linkQuery = supabase
     .from("leads")
-    .update({ status: "converted", customer_id: customerId, updated_at: new Date().toISOString() })
+    .update({ status: "converted", customer_id: customerId, updated_at: new Date().toISOString(), ...(manual ? { metadata: { ...lead.metadata, manual_revision: revision + 1 } } : {}) })
     .eq("id", id)
+  const { data: linked, error: linkErr } = await (manual ? linkQuery.eq("metadata->>manual_revision", String(revision)).eq("status", "qualified").is("customer_id", null).is("metadata->>deleted_at", null) : linkQuery).select("id").maybeSingle()
   if (linkErr) throw new Error(linkErr.message)
+  if (!linked) throw new Error("The lead changed. Reload and select the existing customer before retrying conversion.")
 
   await logAction(ctx, "lead.convert", "lead", id, { customer_id: customerId })
 

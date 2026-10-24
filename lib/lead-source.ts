@@ -1,16 +1,19 @@
 import type { LeadRow } from "@/lib/actions-leads"
 import { leadCampaignName } from "@/lib/lead-origin"
+import { isManualLeadSource } from "@/lib/manual-lead"
 
-export type LeadSourceKey = "all" | "google_ads" | "meta" | "website"
+export type LeadSourceKey = "all" | "google_ads" | "meta" | "website" | "manual"
 
 export const SOURCE_FILTERS: { key: LeadSourceKey; label: string }[] = [
   { key: "all", label: "All sources" },
   { key: "google_ads", label: "Google Ads" },
   { key: "meta", label: "Meta (Facebook / Instagram)" },
   { key: "website", label: "Website & other" },
+  { key: "manual", label: "WhatsApp / phone (staff entry)" },
 ]
 
 export function leadSourceKey(source: string | null): Exclude<LeadSourceKey, "all"> {
+  if (isManualLeadSource(source)) return "manual"
   if (source === "google_ads") return "google_ads"
   if (source === "facebook" || source === "instagram") return "meta"
   return "website"

@@ -36,6 +36,9 @@ import {
   type CustomerMatch,
 } from "@/lib/actions-leads"
 import { LEAD_STATUSES, type LeadStatus } from "@/lib/lead-status"
+import { isManualLeadSource, manualSourceLabel } from "@/lib/manual-lead"
+import { useI18n } from "@/lib/i18n/provider"
+import { AddManualLead } from "@/components/manual-lead-form"
 
 const STATUS_META: Record<LeadStatus, { label: string; tone: string }> = {
   new: { label: "New", tone: "bg-amber-500/15 text-amber-400" },
@@ -246,13 +249,13 @@ function LeadCard({
   }
 
   return (
-    <Card className="p-4">
+    <Card id={`lead-${lead.id}`} className="scroll-mt-6 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate font-medium text-foreground">{lead.name || "Unnamed lead"}</span>
             <Badge className={meta.tone}>{meta.label}</Badge>
-            {lead.source ? <Badge className="bg-muted text-muted-foreground">{lead.source}</Badge> : null}
+            {lead.source ? <Badge className="bg-muted text-muted-foreground">{manualSourceLabel(lead.source)}</Badge> : null}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             {lead.phone ? (
@@ -351,11 +354,13 @@ function LeadCard({
         </div>
       ) : null}
 
+      {isManualLeadSource(lead.source) ? <ManualSourceNotice /> : null}
+
       {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
 
       {canManage ? (
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3">
-          <Select
+          {isManualLeadSource(lead.source) ? !isConverted ? <AddManualLead lead={lead} /> : null : <Select
             aria-label="Lead status"
             className="h-8 w-auto text-xs"
             value={lead.status}
@@ -367,7 +372,7 @@ function LeadCard({
                 {STATUS_META[s].label}
               </option>
             ))}
-          </Select>
+          </Select>}
 
           {assignmentUnavailable ? <span className="text-xs text-muted-foreground">Assignment unavailable</span> : <Select
             aria-label="Assign to"
@@ -403,15 +408,15 @@ function LeadCard({
             </>
           ) : null}
 
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => setNoteOpen(true)}>
+          {!isManualLeadSource(lead.source) ? <Button size="sm" variant="outline" disabled={pending} onClick={() => setNoteOpen(true)}>
             <StickyNote className="h-3.5 w-3.5" /> Note
-          </Button>
+          </Button> : null}
 
           <p className="w-full text-xs text-muted-foreground">
             Opening Call or WhatsApp does not confirm contact. Record the actual call or conversation outcome in a note before updating the lead status.
           </p>
 
-          {!isConverted ? (
+          {!isConverted && (!isManualLeadSource(lead.source) || lead.status === "qualified") ? (
             <Button size="sm" variant="success" disabled={pending} onClick={() => setConvertOpen(true)}>
               <UserPlus className="h-3.5 w-3.5" /> Convert to customer
             </Button>
@@ -489,6 +494,11 @@ function LeadCard({
       />
     </Card>
   )
+}
+
+function ManualSourceNotice() {
+  const { lang } = useI18n()
+  return <p className="mt-3 text-xs text-muted-foreground">{lang === "ar" ? "سجل موظف: المصدر المذكور حسب إفادة العميل، وليس إسنادًا إعلانيًا مثبتًا. التحويل إلى ملف عميل لا يعني إتمام بيع." : "Staff entry: reported source is not verified ad attribution. Converting to a customer record does not confirm a paid sale."}</p>
 }
 
 function NoteModal({

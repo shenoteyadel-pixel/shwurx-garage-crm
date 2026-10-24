@@ -1,3 +1,5 @@
+import { isManualLeadSource, manualSourceLabel } from "@/lib/manual-lead"
+
 export type LeadOriginKind = "brand" | "service" | "contact" | "advisor" | "appointment" | "ad_form" | "other"
 
 export interface LeadOrigin {
@@ -30,6 +32,7 @@ const object = (v: unknown): Record<string, unknown> =>
 /** Read the actual provider/website campaign fields; no names are inferred from vehicle text. */
 export function leadCampaignName(metadata: unknown): string | null {
   const md = object(metadata)
+  if (md.kind === "manual_contact") return null
   const firstUtm = object(object(md.first_touch).utm)
   const latestUtm = object(object(md.latest_touch).utm)
   return text(firstUtm.campaign) ?? text(latestUtm.campaign) ?? text(md.utm_campaign) ?? text(md.campaign) ?? text(md.campaign_name)
@@ -45,6 +48,12 @@ function titleFromSlug(slug: string) {
 /** Derives where a lead came from using the metadata the public intake routes persist. */
 export function leadOrigin(metadata: unknown, source?: string | null): LeadOrigin {
   const md = (metadata && typeof metadata === "object" ? metadata : {}) as Record<string, unknown>
+  if (isManualLeadSource(source) || md.kind === "manual_contact") return {
+    kind: "other", label: manualSourceLabel(source) || "Staff entry", path: null, brandSlug: null,
+    model: [text(md.vehicle_make), text(md.vehicle_model)].filter(Boolean).join(" ") || null,
+    year: typeof md.vehicle_year === "number" ? md.vehicle_year : null,
+    campaign: null, referrer: null, landingPath: null,
+  }
   const path = text(md.submit_path) ?? text(md.page_path)
   const pageContext = text(md.page_context) ?? ""
   const brandSlug = text(md.brand_slug)

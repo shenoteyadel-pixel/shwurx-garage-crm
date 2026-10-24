@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { AddManualLead } from "@/components/manual-lead-form"
 import { getShellUser } from "@/lib/shell-user"
 import { requirePageAccess } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
@@ -117,9 +118,10 @@ export default async function LeadsPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Leads</h1>
             <p className="text-sm text-muted-foreground">
-              {openCount === null ? "Leads from the website, Meta and Google Ads" : `${openCount} open lead${openCount === 1 ? "" : "s"} from the website, Meta and Google Ads`}
+              {openCount === null ? "Website, ad forms and staff-recorded WhatsApp / phone enquiries" : `${openCount} open lead${openCount === 1 ? "" : "s"} across website, ad forms and staff-recorded contacts`}
             </p>
           </div>
+          {canManage && result.state !== "error" ? <AddManualLead /> : null}
         </div>
 
         {adSources ? <AdSourcesCard sources={adSources} /> : null}

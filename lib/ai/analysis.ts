@@ -134,7 +134,8 @@ export async function runAnalysis(): Promise<Analysis> {
   ])
 
   const jobs = jobsRes.data ?? []
-  const invoices = invoicesRes.data ?? []
+  // Cancelled invoices are voided (usually re-issued after an edit), so they are never money owed or revenue.
+  const invoices = (invoicesRes.data ?? []).filter((i) => i.status !== "cancelled")
   const supplierInvoices = supplierInvoicesRes.data ?? []
   const payments = paymentsRes.data ?? []
   const partsReq = partsReqRes.data ?? []

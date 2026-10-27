@@ -1,5 +1,6 @@
 import QRCode from "qrcode"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { appBaseUrl } from "@/lib/account-links"
 
 export type LoyaltyInvoiceSummary = {
   program_enabled: boolean
@@ -15,10 +16,8 @@ export type LoyaltyInvoiceSummary = {
 
 export const TIER_LABEL: Record<string, string> = { member: "Member", silver: "Silver", vip: "VIP" }
 
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://swurxauto.com").replace(/\/$/, "")
-
 export function loyaltyJoinUrl(token: string) {
-  return `${SITE_URL}/loyalty/join/${encodeURIComponent(token)}`
+  return `${appBaseUrl()}/loyalty/join/${encodeURIComponent(token)}`
 }
 
 export function loyaltyQrSvg(url: string) {

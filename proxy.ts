@@ -28,6 +28,8 @@ function isPublicPath(path: string): boolean {
     "/api/public", // website ingestion: /track, /appointments, /leads (anon RPC only)
     "/api/stripe", // Stripe checkout session + webhook for invoice payments
     "/api/webhooks", // inbound provider webhooks (Meta, Google Ads); each route verifies its own secret
+    "/api/cron", // Vercel Cron + backup heartbeat; each route requires Bearer CRON_SECRET
+    "/api/health", // uptime probe for external monitors; returns no data
   ]
   for (const prefix of tokenizedPrefixes) {
     if (path === prefix || path.startsWith(prefix + "/")) return true

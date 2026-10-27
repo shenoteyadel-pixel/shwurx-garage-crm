@@ -73,6 +73,24 @@ async function main() {
 
   await writeFile(join(dir, "_manifest.json"), JSON.stringify(manifest, null, 2))
   console.log(`\n[v0] Backup complete: ${manifest.total_rows} rows -> backups/${stamp}/`)
+  await reportHeartbeat({ total_rows: manifest.total_rows, tables: Object.keys(manifest.tables).length })
+}
+
+/** Lets Critical Services detect stale backups. Skipped when the site URL or CRON_SECRET is not set. */
+async function reportHeartbeat(detail) {
+  const site = process.env.NEXT_PUBLIC_SITE_URL
+  const secret = process.env.CRON_SECRET
+  if (!site || !secret) return console.log("[v0] Heartbeat skipped: NEXT_PUBLIC_SITE_URL or CRON_SECRET not set")
+  try {
+    const res = await fetch(`${site.replace(/\/$/, "")}/api/cron/heartbeat`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ job: "backup", status: "ok", detail }),
+    })
+    console.log(`[v0] Heartbeat ${res.ok ? "recorded" : `failed (${res.status})`}`)
+  } catch (err) {
+    console.log("[v0] Heartbeat failed:", err.message)
+  }
 }
 
 main().catch((err) => {

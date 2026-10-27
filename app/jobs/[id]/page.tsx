@@ -26,6 +26,7 @@ import { getAssignableStaff } from "@/lib/staff-directory"
 import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
 import { DiagnosticsPanel, type DiagnosticTest } from "@/components/diagnostics-panel"
+import { WorkOverridePanel, type OverrideView } from "@/components/work-override-panel"
 import { InspectionPanel } from "@/components/inspection/inspection-panel"
 import { FullInspectionPanel, type FullInspectionData } from "@/components/inspection/full-inspection-panel"
 import { JobTypeSwitch } from "@/components/job-type-switch"
@@ -223,6 +224,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const duplicateGroups = sessionCtx?.permissions.has("quotations.edit")
     ? await findJobDuplicateParts(supabase, id, quotation?.quotation_items as any[])
     : []
+  const canAuthorizeOverride = sessionCtx?.permissions.has("jobs.assign") ?? false
+  const { data: workOverrides } = await supabase
+    .from("work_authorization_overrides")
+    .select("id, scope, reason, authorized_by_name, created_at, expires_at, revoked_at")
+    .eq("job_id", id)
+    .order("created_at", { ascending: false })
+    .limit(20)
   const canManageExpenses = sessionCtx?.permissions.has("purchase_orders.manage") ?? false
   const canEditVehicle = sessionCtx?.permissions.has("jobs.update_status") ?? false
   const isOwner = sessionCtx?.role === "owner"
@@ -563,6 +571,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 currentUserId={viewerId}
               />
               {!isInspectionOnly && <RepairDetails job={job as any} />}
+              {!isInspectionOnly && (
+                <WorkOverridePanel
+                  jobId={job.id}
+                  approved={job.approval_status === "approved"}
+                  overrides={(workOverrides ?? []) as OverrideView[]}
+                  canAuthorize={canAuthorizeOverride}
+                />
+              )}
               <InspectionPanel
                 jobId={job.id}
                 inspection={inspectionData}

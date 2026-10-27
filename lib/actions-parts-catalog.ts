@@ -101,7 +101,7 @@ export async function listCatalog(): Promise<CatalogEntry[]> {
     const current = currentRevision(revisions)
     return {
       ...(item as Omit<CatalogEntry, "label" | "current" | "pending" | "revisions">),
-      label: catalogSpecLabel(item as Record<string, never>),
+      label: catalogSpecLabel(item as unknown as Record<string, never>),
       current: current ? { revision_id: current.id, selling_price: current.selling_price } : null,
       pending: revisions.find((r) => r.status === "pending") ?? null,
       revisions,
@@ -147,7 +147,7 @@ export async function searchCatalogForQuote(query: string): Promise<QuoteCatalog
         revision_id: price.revision_id as string,
         name: item.name as string,
         part_number: (item.part_number as string | null) ?? null,
-        label: catalogSpecLabel(item as Record<string, never>),
+        label: catalogSpecLabel(item as unknown as Record<string, never>),
         selling_price: Number(price.selling_price),
       },
     ]

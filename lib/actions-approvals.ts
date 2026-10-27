@@ -639,6 +639,29 @@ async function emailApprovalLink(
  * Staff-side notification that a customer has responded. Called from the public
  * submit route after the RPC records the signed decision.
  */
+/**
+ * Every line on a signed request carries a decision (approved or declined), so a
+ * signed submission means all lines are decided. Management gets one summary.
+ */
+export async function notifyManagementAllLinesDecided(
+  jobId: string,
+  status: string,
+  approvedTotal: number,
+  totalConfirmed: boolean,
+) {
+  const svc = createServiceClient()
+  const { data: job } = await svc.from("jobs").select("job_number").eq("id", jobId).maybeSingle()
+  const outcome = status === "rejected" ? "declined all lines" : status === "partial" ? "approved some lines" : "approved all lines"
+  await notifyByPermission("settings.manage", {
+    title: "All quotation lines decided",
+    body: `Job ${job?.job_number ?? ""}: customer ${outcome}. Approved total ${approvedTotal.toFixed(2)} AED${
+      status === "rejected" ? "" : totalConfirmed ? ", final total confirmed by customer." : ", final total NOT confirmed. Check before starting."
+    }`,
+    type: "approval",
+    link: `/jobs/${jobId}`,
+  })
+}
+
 export async function notifyApprovalDecision(jobId: string, status: string) {
   const svc = createServiceClient()
   const { data: job } = await svc.from("jobs").select("job_number").eq("id", jobId).maybeSingle()

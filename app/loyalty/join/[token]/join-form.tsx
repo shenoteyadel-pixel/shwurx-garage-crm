@@ -13,6 +13,12 @@ export function JoinForm({ token, firstName }: { token: string; firstName: strin
         <p className="text-sm leading-relaxed text-muted-foreground">
           Your SWURX Rewards membership is active. Points are added automatically when your invoices are paid.
         </p>
+        <a
+          href={`/loyalty/join/${token}`}
+          className="mt-2 flex h-12 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground"
+        >
+          Show my card
+        </a>
       </div>
     )
   }

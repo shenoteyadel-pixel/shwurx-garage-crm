@@ -8,12 +8,15 @@ import { Check } from "lucide-react"
 
 export function StageStepper({ jobId, stage }: { jobId: string; stage: Stage }) {
   const [pending, setPending] = React.useState<Stage | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
   const currentIndex = STAGE_ORDER.indexOf(stage)
 
   async function go(target: Stage) {
     setPending(target)
+    setError(null)
     try {
-      await updateStage(jobId, target)
+      const res = await updateStage(jobId, target)
+      if (!res.ok) setError(res.error)
     } finally {
       setPending(null)
     }
@@ -52,6 +55,11 @@ export function StageStepper({ jobId, stage }: { jobId: string; stage: Stage }) 
           )
         })}
       </div>
+      {error && (
+        <p role="alert" className="mt-2 max-w-xl text-pretty text-xs text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

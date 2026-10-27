@@ -38,6 +38,7 @@ export function CarFlow({ jobs }: { jobs: Job[] }) {
   const [dragId, setDragId] = React.useState<string | null>(null)
   const [pending, setPending] = React.useState<string | null>(null)
   const [dropTarget, setDropTarget] = React.useState<string | null>(null)
+  const [moveError, setMoveError] = React.useState<string | null>(null)
 
   React.useEffect(() => setItems(jobs), [jobs])
 
@@ -50,8 +51,14 @@ export function CarFlow({ jobs }: { jobs: Job[] }) {
       prev.map((j) => (j.id === job.id ? { ...j, stage, lift_bay: stage === "repair" ? liftBay ?? null : null } : j)),
     )
     setPending(job.id)
+    setMoveError(null)
     try {
-      await moveJobLocation(job.id, stage, liftBay ?? null)
+      const res = await moveJobLocation(job.id, stage, liftBay ?? null)
+      if (!res.ok) {
+        setItems((prev) => prev.map((j) => (j.id === job.id ? job : j)))
+        setMoveError(res.error)
+        return
+      }
       router.refresh()
     } finally {
       setPending(null)
@@ -74,6 +81,22 @@ export function CarFlow({ jobs }: { jobs: Job[] }) {
           {activeCount} active {activeCount === 1 ? "vehicle" : "vehicles"}
         </span>
       </div>
+
+      {moveError && (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          <p className="text-pretty">{moveError}</p>
+          <button
+            type="button"
+            onClick={() => setMoveError(null)}
+            className="shrink-0 text-xs font-medium underline underline-offset-2"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="scrollbar-thin flex gap-4 overflow-x-auto pb-4">
         {ZONES.map((zone) => (

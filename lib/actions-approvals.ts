@@ -2,6 +2,7 @@
 
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { requirePermission } from "@/lib/rbac/context"
+import { checkWorkAuthorization } from "@/lib/work-authorization"
 import { VAT_RATE } from "@/lib/constants"
 import { appBaseUrl } from "@/lib/account-links"
 import { sendEmail, approvalRequestEmail } from "@/lib/email"
@@ -776,7 +777,8 @@ export async function releasePartsToPurchaser(jobId: string): Promise<{ ok: bool
   const svc = createServiceClient()
   const { data: job } = await svc.from("jobs").select("job_number, approval_status").eq("id", jobId).maybeSingle()
   if (!job) return { ok: false, error: "Job not found." }
-  if (job.approval_status !== "approved") return { ok: false, error: "The customer has not approved this job yet." }
+  const authorization = await checkWorkAuthorization(jobId, "order_parts")
+  if (!authorization.ok) return { ok: false, error: authorization.error }
   const count = await releaseJobParts(jobId, job.job_number ?? "a job", ctx.userId)
   if (count === 0) return { ok: false, error: "All parts have already been sent to the purchaser." }
   revalidatePath(`/jobs/${jobId}`)

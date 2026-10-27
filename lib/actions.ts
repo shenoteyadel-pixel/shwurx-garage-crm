@@ -2,7 +2,10 @@
 
 import { logCurrent } from "@/lib/rbac/context"
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
+import { checkWorkAuthorization } from "@/lib/work-authorization"
+import { requiredScopeForMove } from "@/lib/work-authorization-rules"
+import { pricesMatch, quoteUnitPrice } from "@/lib/parts-catalog"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { after } from "next/server"
@@ -176,8 +179,25 @@ export async function createJob(formData: FormData) {
   redirect(`/jobs/${data.id}`)
 }
 
-export async function updateStage(jobId: string, stage: Stage) {
+async function workGateForMove(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  jobId: string,
+  stage: Stage,
+): Promise<string | null> {
+  const { data: current } = await supabase.from("jobs").select("stage").eq("id", jobId).maybeSingle()
+  const scope = requiredScopeForMove((current?.stage as Stage | undefined) ?? null, stage)
+  if (!scope) return null
+  const check = await checkWorkAuthorization(jobId, scope)
+  return check.ok ? null : check.error
+}
+
+export async function updateStage(
+  jobId: string,
+  stage: Stage,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { supabase, ctx } = await guard("jobs.update_status")
+  const blocked = await workGateForMove(supabase, jobId, stage)
+  if (blocked) return { ok: false, error: blocked }
   const { error } = await supabase
     .from("jobs")
     .update({ stage, updated_at: new Date().toISOString() })
@@ -187,11 +207,18 @@ export async function updateStage(jobId: string, stage: Stage) {
   await logAction(ctx, "job.update_stage", "job", jobId, { stage })
   revalidatePath("/crm")
   revalidatePath(`/jobs/${jobId}`)
+  return { ok: true }
 }
 
 // Car Flow drag & drop: move a job to a new stage (workshop zone) and optionally a lift bay.
-export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: string | null) {
+export async function moveJobLocation(
+  jobId: string,
+  stage: Stage,
+  liftBay?: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { supabase } = await guard("jobs.update_status")
+  const blocked = await workGateForMove(supabase, jobId, stage)
+  if (blocked) return { ok: false, error: blocked }
   const patch: Record<string, unknown> = { stage, updated_at: new Date().toISOString() }
   // Lift bay only applies to the repair/workshop zone; clear it otherwise.
   patch.lift_bay = stage === "repair" ? liftBay || null : null
@@ -202,6 +229,7 @@ export async function moveJobLocation(jobId: string, stage: Stage, liftBay?: str
   revalidatePath("/crm")
   revalidatePath("/flow")
   revalidatePath(`/jobs/${jobId}`)
+  return { ok: true }
 }
 
 /**
@@ -663,7 +691,9 @@ export type QuoteItemInput = {
   category?: string
   recommendation?: "required" | "recommended" | "optional"
   lead_time_days?: number
-}
+  catalog_id?: string | null
+  catalog_revision_id?: string | null
+  }
 
 function cleanLeadTime(kind: string, days: unknown): number | null {
   const d = Math.round(Number(days) || 0)
@@ -685,6 +715,34 @@ export async function saveQuotation(
   const vatRate = Number.isFinite(payload.vatRate) ? payload.vatRate : VAT_RATE
   const vatInclusive = Boolean(payload.vatInclusive)
   const items = payload.items
+
+  // Lines picked from the price catalog must carry the current approved price.
+  const catalogLines = items.filter((i) => i.kind === "part" && i.catalog_revision_id)
+  if (catalogLines.length) {
+    const { data: currentPrices } = await createServiceClient()
+      .from("parts_price_current")
+      .select("catalog_id, revision_id, selling_price")
+      .in(
+        "catalog_id",
+        catalogLines.map((i) => i.catalog_id as string),
+      )
+    const byItem = new Map((currentPrices ?? []).map((p) => [p.catalog_id as string, p]))
+    for (const line of catalogLines) {
+      const current = byItem.get(line.catalog_id as string)
+      if (!current || current.revision_id !== line.catalog_revision_id) {
+        return {
+          ok: false as const,
+          error: `The approved price for "${line.name}" has changed. Remove it and pick it again from the catalog.`,
+        }
+      }
+      if (!pricesMatch(Number(line.unit_price), quoteUnitPrice(Number(current.selling_price), vatRate, vatInclusive))) {
+        return {
+          ok: false as const,
+          error: `"${line.name}" must use its approved catalog price. Ask management to approve a price change instead.`,
+        }
+      }
+    }
+  }
 
   // Per-line computation. Parts use qty*unit_price; labour uses hours*rate (or a flat rate).
   // VAT-exclusive: entered prices are pre-VAT, VAT is added on top.
@@ -803,6 +861,8 @@ export async function saveQuotation(
         recommendation: i.recommendation || "required",
         lead_time_days: cleanLeadTime(i.kind, i.lead_time_days),
         sort_order: i.sort_order,
+        catalog_id: i.kind === "part" && i.catalog_revision_id ? i.catalog_id : null,
+        catalog_revision_id: i.kind === "part" && i.catalog_revision_id ? i.catalog_revision_id : null,
       })),
     )
     if (itemErr) throw new Error(itemErr.message)
@@ -833,6 +893,7 @@ export async function saveQuotation(
 
   await notifyActivity({ title: "Quotation saved", body: `${items.length} line item(s)`, link: `/jobs/${jobId}` })
   revalidatePath(`/jobs/${jobId}`)
+  return { ok: true as const }
 }
 
 /* ---------------- Convert parts requests into the quotation ---------------- */

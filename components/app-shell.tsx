@@ -49,6 +49,7 @@ import {
   Target,
   DatabaseBackup,
   Tag,
+  Activity,
 } from "lucide-react"
 
 // Nav is grouped into labeled sections so every area — especially admin tools
@@ -74,6 +75,8 @@ const NAV_GROUPS = [
       { href: "/finance", label: "Finance & Audit", icon: Wallet, anyOf: ["reports.financial", "payments.view"] },
       { href: "/finance/expenses", label: "Expenses & Salaries", icon: Receipt, anyOf: ["expenses.manage", "payroll.manage", "reports.financial"] },
       { href: "/reports/vat", label: "VAT Return", icon: Landmark, anyOf: ["reports.view"] },
+      { href: "/finance/subscriptions", label: "Subscriptions & Renewals", icon: CalendarClock, anyOf: ["subscriptions.manage", "subscriptions.approve", "subscriptions.view_assigned"] },
+      { href: "/finance/continuity", label: "Critical Services", icon: Activity, anyOf: ["continuity.view"] },
     ],
   },
   {

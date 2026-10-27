@@ -262,9 +262,11 @@ export async function decideSubscriptionPayment(paymentId: string, decision: "co
   if (decision === "rejected" && note.trim().length < 5) return { ok: false, error: "Give a reason for rejecting the payment." }
 
   const svc = createServiceClient()
-  const { data: pay } = await svc.from("subscription_payments").select("id, subscription_id, due_date, status, amount, currency").eq("id", paymentId).maybeSingle()
+  const { data: pay } = await svc.from("subscription_payments").select("id, subscription_id, due_date, status, amount, currency, recorded_by").eq("id", paymentId).maybeSingle()
   if (!pay) return { ok: false, error: "Payment not found." }
   if (pay.status !== "pending_confirmation") return { ok: false, error: "This payment was already decided." }
+  if (decision === "confirmed" && pay.recorded_by === ctx.userId && ctx.role !== "owner")
+    return { ok: false, error: "Someone other than the person who recorded this payment must confirm it." }
 
   const { error } = await svc
     .from("subscription_payments")

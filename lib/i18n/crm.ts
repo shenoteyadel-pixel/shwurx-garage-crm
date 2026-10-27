@@ -70,6 +70,8 @@ const en: CrmDict = {
     "/finance": "Finance & Audit",
     "/finance/expenses": "Expenses & Salaries",
     "/reports/vat": "VAT Return",
+    "/finance/subscriptions": "Subscriptions & Renewals",
+    "/finance/continuity": "Critical Services",
     "/flow": "Car Flow",
     "/jobs": "Job Cards",
     "/appointments": "Appointments",
@@ -264,6 +266,8 @@ const ar: CrmDict = {
     "/finance": "المالية والتدقيق",
     "/finance/expenses": "المصروفات والرواتب",
     "/reports/vat": "إقرار ضريبة القيمة المضافة",
+    "/finance/subscriptions": "الاشتراكات والتجديدات",
+    "/finance/continuity": "الخدمات الحيوية",
     "/flow": "حركة السيارات",
     "/jobs": "بطاقات العمل",
     "/appointments": "المواعيد",
@@ -392,7 +396,7 @@ const ar: CrmDict = {
       reports: {
         title: "التقارير",
         body: "راجع الإيرادات وساعات العمل وضريبة القيمة المضافة والأداء في الورشة.",
-        tips: ["صدّر ملفات PDF و CSV للمحاسبة."],
+        tips: ["صدّر ملفات PDF �� CSV للمحاسبة."],
       },
       users: {
         title: "المستخدمون والأدوار",

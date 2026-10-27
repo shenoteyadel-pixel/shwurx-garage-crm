@@ -13,3 +13,4 @@ node_modules
 /backups/
 .vercel
 .env*
+backups/

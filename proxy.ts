@@ -30,6 +30,7 @@ function isPublicPath(path: string): boolean {
     "/api/webhooks", // inbound provider webhooks (Meta, Google Ads); each route verifies its own secret
     "/api/cron", // Vercel Cron + backup heartbeat; each route requires Bearer CRON_SECRET
     "/api/health", // uptime probe for external monitors; returns no data
+    "/loyalty/join", // customer loyalty enrollment via opaque QR token; verified by mobile digits
   ]
   for (const prefix of tokenizedPrefixes) {
     if (path === prefix || path.startsWith(prefix + "/")) return true

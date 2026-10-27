@@ -6,6 +6,8 @@ import { DocHeader, DocFooter, DocWatermark, DocBrandStrip } from "@/components/
 import { PrintButton } from "@/components/print-button"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { FREE_BADGE, isFree, warrantyLabel } from "@/lib/invoice-line"
+import { getLoyaltyInvoiceSummary } from "@/lib/loyalty"
+import { LoyaltyDocBlock } from "@/components/loyalty-doc-block"
 
 export default async function InvoicePrintPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -20,7 +22,10 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
     supabase.from("invoices").select("*, invoice_items(*)").eq("id", id).maybeSingle(),
   ])
   if (!inv) notFound()
-  const comments = await loadInvoiceComments([id])
+  const [comments, loyalty] = await Promise.all([
+    loadInvoiceComments([id]),
+    inv.status === "cancelled" ? Promise.resolve(null) : getLoyaltyInvoiceSummary(supabase, id),
+  ])
   const items = ((inv.invoice_items ?? []) as any[]).sort((a, b) => a.sort_order - b.sort_order)
 
   // Pull the linked customer's company details (company customers show their
@@ -176,6 +181,8 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
             </ul>
           </section>
         )}
+
+        <LoyaltyDocBlock summary={loyalty} />
 
         <DocBrandStrip />
         <DocFooter settings={settings} />

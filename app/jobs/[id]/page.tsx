@@ -856,7 +856,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 >
                   <FolderOpen className="h-4 w-4 text-muted-foreground" /> Document Center
                 </Link>
-                {canSeeQuotation && (
+                {canSeeQuotation && quotation && (
                   <Link
                     href={`/jobs/${job.id}/quotation/print`}
                     className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"

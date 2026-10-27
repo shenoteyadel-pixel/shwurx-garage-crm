@@ -28,7 +28,25 @@ export default async function QuotationPrintPage({ params }: { params: Promise<{
     .limit(1)
     .maybeSingle()
 
-  if (!quotation) notFound()
+  if (!quotation) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-neutral-100 p-6">
+        <div className="flex max-w-sm flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 text-center">
+          <h1 className="text-lg font-semibold text-neutral-900 text-balance">No quotation for this job yet</h1>
+          <p className="text-sm leading-relaxed text-neutral-600 text-pretty">
+            Job {job.job_number ?? ""} has no saved quotation, so there is no PDF to download. Open the job, add the
+            parts and labour in the Quotation section, and save it. The PDF will then be ready.
+          </p>
+          <a
+            href={`/jobs/${id}`}
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-neutral-50 hover:bg-neutral-700"
+          >
+            Back to job
+          </a>
+        </div>
+      </main>
+    )
+  }
 
   const { data: approvals } = await supabase
     .from("approval_requests")

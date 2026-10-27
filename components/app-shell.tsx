@@ -48,6 +48,7 @@ import {
   Trophy,
   Target,
   DatabaseBackup,
+  Tag,
 } from "lucide-react"
 
 // Nav is grouped into labeled sections so every area — especially admin tools
@@ -99,6 +100,7 @@ const NAV_GROUPS = [
     label: "Parts & Purchasing",
     items: [
       { href: "/parts", label: "Parts", icon: Package, anyOf: ["parts.view"] },
+      { href: "/pricing", label: "Price Catalog", icon: Tag, anyOf: ["quotations.edit", "settings.manage"] },
       { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, anyOf: ["purchase_orders.manage", "parts.view"] },
       { href: "/purchasing/invoices", label: "Scan Invoice", icon: ScanLine, anyOf: ["purchase_orders.manage", "parts.view"] },
       { href: "/inventory", label: "Store / Inventory", icon: Warehouse, anyOf: ["parts.view"] },

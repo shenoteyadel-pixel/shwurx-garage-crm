@@ -2,6 +2,7 @@
 
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { requirePermission } from "@/lib/rbac/context"
+import { checkWorkAuthorization } from "@/lib/work-authorization"
 import { VAT_RATE } from "@/lib/constants"
 import { appBaseUrl } from "@/lib/account-links"
 import { sendEmail, approvalRequestEmail } from "@/lib/email"
@@ -638,6 +639,29 @@ async function emailApprovalLink(
  * Staff-side notification that a customer has responded. Called from the public
  * submit route after the RPC records the signed decision.
  */
+/**
+ * Every line on a signed request carries a decision (approved or declined), so a
+ * signed submission means all lines are decided. Management gets one summary.
+ */
+export async function notifyManagementAllLinesDecided(
+  jobId: string,
+  status: string,
+  approvedTotal: number,
+  totalConfirmed: boolean,
+) {
+  const svc = createServiceClient()
+  const { data: job } = await svc.from("jobs").select("job_number").eq("id", jobId).maybeSingle()
+  const outcome = status === "rejected" ? "declined all lines" : status === "partial" ? "approved some lines" : "approved all lines"
+  await notifyByPermission("settings.manage", {
+    title: "All quotation lines decided",
+    body: `Job ${job?.job_number ?? ""}: customer ${outcome}. Approved total ${approvedTotal.toFixed(2)} AED${
+      status === "rejected" ? "" : totalConfirmed ? ", final total confirmed by customer." : ", final total NOT confirmed. Check before starting."
+    }`,
+    type: "approval",
+    link: `/jobs/${jobId}`,
+  })
+}
+
 export async function notifyApprovalDecision(jobId: string, status: string) {
   const svc = createServiceClient()
   const { data: job } = await svc.from("jobs").select("job_number").eq("id", jobId).maybeSingle()
@@ -776,7 +800,8 @@ export async function releasePartsToPurchaser(jobId: string): Promise<{ ok: bool
   const svc = createServiceClient()
   const { data: job } = await svc.from("jobs").select("job_number, approval_status").eq("id", jobId).maybeSingle()
   if (!job) return { ok: false, error: "Job not found." }
-  if (job.approval_status !== "approved") return { ok: false, error: "The customer has not approved this job yet." }
+  const authorization = await checkWorkAuthorization(jobId, "order_parts")
+  if (!authorization.ok) return { ok: false, error: authorization.error }
   const count = await releaseJobParts(jobId, job.job_number ?? "a job", ctx.userId)
   if (count === 0) return { ok: false, error: "All parts have already been sent to the purchaser." }
   revalidatePath(`/jobs/${jobId}`)

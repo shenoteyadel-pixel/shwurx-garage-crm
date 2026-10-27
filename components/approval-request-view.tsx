@@ -76,6 +76,7 @@ export function ApprovalRequestView({ token, data }: { token: string; data: Data
   const [wholeDecision, setWholeDecision] = React.useState<"approved" | "rejected" | null>(null)
   const [signerName, setSignerName] = React.useState(data.customer?.full_name ?? "")
   const [comment, setComment] = React.useState("")
+  const [confirmedTotal, setConfirmedTotal] = React.useState<number | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [done, setDone] = React.useState<null | "approved" | "rejected" | "partial">(null)
@@ -98,6 +99,9 @@ export function ApprovalRequestView({ token, data }: { token: string; data: Data
     : items.filter((i) => decisions[i.key] === "approved").length
 
   const grouped = React.useMemo(() => groupByCategory(items), [items])
+  const roundedTotal = Math.round(approvedTotal * 100) / 100
+  // The tick confirms one exact amount; changing any decision clears it.
+  const totalConfirmed = confirmedTotal !== null && confirmedTotal === roundedTotal
 
   function setItem(key: string, d: "approved" | "rejected") {
     setDecisions((prev) => ({ ...prev, [key]: d }))
@@ -117,6 +121,10 @@ export function ApprovalRequestView({ token, data }: { token: string; data: Data
       setError("Please sign in the box below to confirm your decision.")
       return
     }
+    if (approvedCount > 0 && !totalConfirmed) {
+      setError("Please tick the box to confirm the final total.")
+      return
+    }
     const payload = isWhole ? { __whole__: wholeDecision } : decisions
 
     setSubmitting(true)
@@ -130,6 +138,7 @@ export function ApprovalRequestView({ token, data }: { token: string; data: Data
           signerName: signerName.trim(),
           signature: sigRef.current?.toDataURL(),
           comment,
+          confirmedTotal: approvedCount > 0 ? Math.round(approvedTotal * 100) / 100 : null,
         }),
       })
       const json = await res.json()
@@ -291,6 +300,22 @@ export function ApprovalRequestView({ token, data }: { token: string; data: Data
             Clear signature
           </button>
         </div>
+
+        {approvedCount > 0 && (
+          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-primary"
+              checked={totalConfirmed}
+              onChange={(e) => setConfirmedTotal(e.target.checked ? roundedTotal : null)}
+            />
+            <span>
+              I confirm the final total of{" "}
+              <strong className="tabular-nums">{formatCurrency(roundedTotal)}</strong> (including VAT) for the{" "}
+              {approvedCount} item{approvedCount === 1 ? "" : "s"} I approved.
+            </span>
+          </label>
+        )}
 
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 

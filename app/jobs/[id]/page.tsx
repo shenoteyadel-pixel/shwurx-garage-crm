@@ -26,6 +26,7 @@ import { getAssignableStaff } from "@/lib/staff-directory"
 import { JobCustomerAccess } from "@/components/job-customer-access"
 import { RepairDetails } from "@/components/repair-details"
 import { DiagnosticsPanel, type DiagnosticTest } from "@/components/diagnostics-panel"
+import { WorkOverridePanel, type OverrideView } from "@/components/work-override-panel"
 import { InspectionPanel } from "@/components/inspection/inspection-panel"
 import { FullInspectionPanel, type FullInspectionData } from "@/components/inspection/full-inspection-panel"
 import { JobTypeSwitch } from "@/components/job-type-switch"
@@ -89,7 +90,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const { data: quotation } = await supabase
     .from("quotations")
     .select(
-      "id, vat_rate, vat_inclusive, description, internal_notes, quotation_items(id, kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, category, recommendation, lead_time_days, sort_order, addon_type)",
+      "id, vat_rate, vat_inclusive, description, internal_notes, quotation_items(id, kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, labor, discount, category, recommendation, lead_time_days, sort_order, addon_type, catalog_id, catalog_revision_id)",
     )
     .eq("job_id", id)
     .order("created_at", { ascending: false })
@@ -223,6 +224,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const duplicateGroups = sessionCtx?.permissions.has("quotations.edit")
     ? await findJobDuplicateParts(supabase, id, quotation?.quotation_items as any[])
     : []
+  const canAuthorizeOverride = sessionCtx?.permissions.has("jobs.assign") ?? false
+  const { data: workOverrides } = await supabase
+    .from("work_authorization_overrides")
+    .select("id, scope, reason, authorized_by_name, created_at, expires_at, revoked_at")
+    .eq("job_id", id)
+    .order("created_at", { ascending: false })
+    .limit(20)
   const canManageExpenses = sessionCtx?.permissions.has("purchase_orders.manage") ?? false
   const canEditVehicle = sessionCtx?.permissions.has("jobs.update_status") ?? false
   const isOwner = sessionCtx?.role === "owner"
@@ -414,6 +422,16 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       category: i.category || "",
       recommendation: (i.recommendation || "required") as "required" | "recommended" | "optional",
       lead_time_days: Number(i.lead_time_days ?? 0),
+      catalog_id: i.catalog_id ?? null,
+      catalog_revision_id: i.catalog_revision_id ?? null,
+      catalog_price:
+        i.catalog_revision_id != null
+          ? Math.round(
+              (quotation?.vat_inclusive
+                ? Number(i.unit_price ?? 0) / (1 + Number(quotation?.vat_rate ?? 5) / 100)
+                : Number(i.unit_price ?? 0)) * 100,
+            ) / 100
+          : null,
     })) ?? []
 
   const role = profile?.role || "advisor"
@@ -553,6 +571,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 currentUserId={viewerId}
               />
               {!isInspectionOnly && <RepairDetails job={job as any} />}
+              {!isInspectionOnly && (
+                <WorkOverridePanel
+                  jobId={job.id}
+                  approved={job.approval_status === "approved"}
+                  overrides={(workOverrides ?? []) as OverrideView[]}
+                  canAuthorize={canAuthorizeOverride}
+                />
+              )}
               <InspectionPanel
                 jobId={job.id}
                 inspection={inspectionData}

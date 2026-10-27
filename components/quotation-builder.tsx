@@ -5,7 +5,9 @@ import { saveQuotation, type QuoteItemInput } from "@/lib/actions"
 import { Button, Card, Input, AutoTextarea, Label } from "@/components/ui"
 import { VAT_RATE } from "@/lib/constants"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Trash2, Save, Pencil, Printer, FileText, X, Lock, Wrench, Package, Tag } from "lucide-react"
+import { quoteUnitPrice } from "@/lib/parts-catalog"
+import { searchCatalogForQuote, type QuoteCatalogOption } from "@/lib/actions-parts-catalog"
+import { Plus, Trash2, Save, Pencil, Printer, FileText, X, Lock, Wrench, Package, Tag, BookCheck } from "lucide-react"
 
 export type Recommendation = "required" | "recommended" | "optional"
 
@@ -32,6 +34,11 @@ export type Item = {
   recommendation: Recommendation
   /** 0 = in stock; 1–30 = days to order the part. */
   lead_time_days: number
+  /** Set when the line was picked from the approved price catalog; its price is locked. */
+  catalog_id?: string | null
+  catalog_revision_id?: string | null
+  /** Approved ex-VAT catalog selling price. */
+  catalog_price?: number | null
 }
 
 export const LEAD_TIME_OPTIONS = Array.from({ length: 30 }, (_, i) => i + 1)
@@ -383,6 +390,37 @@ function QuotationEditor({
     initialItems.length ? initialItems : [emptyItem("part"), emptyItem("labor")],
   )
   const [saving, setSaving] = React.useState(false)
+  const [saveError, setSaveError] = React.useState<string | null>(null)
+  const [catalogOpen, setCatalogOpen] = React.useState(false)
+
+  function changeVat(nextVat: number, nextInclusive: boolean) {
+    setVat(nextVat)
+    setInclusive(nextInclusive)
+    setItems((prev) =>
+      prev.map((it) =>
+        it.catalog_revision_id && it.catalog_price != null
+          ? { ...it, unit_price: quoteUnitPrice(it.catalog_price, nextVat, nextInclusive) }
+          : it,
+      ),
+    )
+  }
+
+  function addFromCatalog(option: QuoteCatalogOption) {
+    setItems((prev) => [
+      ...prev,
+      {
+        ...emptyItem("part"),
+        name: option.name,
+        part_number: option.part_number ?? "",
+        detail: option.label,
+        unit_price: quoteUnitPrice(option.selling_price, vat, inclusive),
+        catalog_id: option.catalog_id,
+        catalog_revision_id: option.revision_id,
+        catalog_price: option.selling_price,
+      },
+    ])
+    setCatalogOpen(false)
+  }
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
@@ -408,8 +446,9 @@ function QuotationEditor({
 
   async function save() {
     setSaving(true)
+    setSaveError(null)
     try {
-      await saveQuotation(jobId, {
+      const res = await saveQuotation(jobId, {
         description,
         internalNotes,
         vatRate: vat,
@@ -429,8 +468,14 @@ function QuotationEditor({
             category: i.category?.trim() || undefined,
             recommendation: i.recommendation,
             lead_time_days: i.kind === "part" ? Number(i.lead_time_days) || 0 : 0,
+            catalog_id: i.kind === "part" ? (i.catalog_id ?? null) : null,
+            catalog_revision_id: i.kind === "part" ? (i.catalog_revision_id ?? null) : null,
           })),
       })
+      if (res && "ok" in res && !res.ok) {
+        setSaveError(res.error)
+        return
+      }
       onClose()
     } finally {
       setSaving(false)
@@ -509,11 +554,15 @@ function QuotationEditor({
                   </p>
                 )}
               </div>
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={() => add("part")}>
                   <Plus className="h-3.5 w-3.5" /> Add part
                 </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setCatalogOpen((v) => !v)}>
+                  <BookCheck className="h-3.5 w-3.5" /> Add from price catalog
+                </Button>
               </div>
+              {catalogOpen && <CatalogPicker onPick={addFromCatalog} onClose={() => setCatalogOpen(false)} />}
             </section>
 
             {/* LABOUR */}
@@ -573,7 +622,7 @@ function QuotationEditor({
                 <div className="grid grid-cols-2 gap-1">
                   <button
                     type="button"
-                    onClick={() => setInclusive(false)}
+                    onClick={() => changeVat(vat, false)}
                     className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
                       !inclusive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
                     }`}
@@ -582,7 +631,7 @@ function QuotationEditor({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setInclusive(true)}
+                    onClick={() => changeVat(vat, true)}
                     className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
                       inclusive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
                     }`}
@@ -611,7 +660,7 @@ function QuotationEditor({
                     min="0"
                     step="0.5"
                     value={vat}
-                    onChange={(e) => setVat(Number(e.target.value))}
+                    onChange={(e) => changeVat(Number(e.target.value), inclusive)}
                     className="h-8 w-16 text-right"
                   />
                   <span>%</span>
@@ -622,6 +671,11 @@ function QuotationEditor({
                 <span>Grand total</span>
                 <span className="tabular-nums text-primary">{formatCurrency(t.total)}</span>
               </div>
+              {saveError && (
+                <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                  {saveError}
+                </p>
+              )}
               <Button type="button" className="w-full" onClick={save} disabled={saving}>
                 <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save quotation"}
               </Button>
@@ -629,6 +683,71 @@ function QuotationEditor({
           </aside>
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ---------------- Price catalog picker ---------------- */
+function CatalogPicker({ onPick, onClose }: { onPick: (o: QuoteCatalogOption) => void; onClose: () => void }) {
+  const [query, setQuery] = React.useState("")
+  const [results, setResults] = React.useState<QuoteCatalogOption[]>([])
+  const [loading, setLoading] = React.useState(false)
+  const requestId = React.useRef(0)
+
+  React.useEffect(() => {
+    const id = ++requestId.current
+    setLoading(true)
+    const timer = setTimeout(async () => {
+      try {
+        const rows = await searchCatalogForQuote(query)
+        if (id === requestId.current) setResults(rows)
+      } finally {
+        if (id === requestId.current) setLoading(false)
+      }
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-xl border border-primary/30 bg-card p-3">
+      <div className="flex items-center gap-2">
+        <Input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search approved catalog by name, part number or brand"
+          aria-label="Search price catalog"
+          className="h-9 flex-1"
+        />
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Only items with a management-approved selling price appear. Prices are locked on the quotation.
+      </p>
+      <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+        {results.map((o) => (
+          <li key={o.catalog_id}>
+            <button
+              type="button"
+              onClick={() => onPick(o)}
+              className="flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left text-sm hover:bg-accent"
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{o.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">{o.label}</span>
+              </span>
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                {formatCurrency(o.selling_price)} ex VAT
+              </span>
+            </button>
+          </li>
+        ))}
+        {!loading && results.length === 0 && (
+          <li className="py-3 text-center text-xs text-muted-foreground">No approved catalog items match.</li>
+        )}
+      </ul>
     </div>
   )
 }
@@ -764,10 +883,21 @@ function PartRow({
   onRemove: () => void
 }) {
   const { vat: lineVat, total } = lineParts(it, vat, inclusive)
+  const locked = Boolean(it.catalog_revision_id)
   return (
     <div className="rounded-xl border border-border bg-card/60 p-4">
       <div className="mb-3 flex items-center gap-2">
-        <PartNameInput it={it} catalog={catalog} onChange={onChange} />
+        {locked ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <BookCheck className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            <span className="truncate text-sm font-medium">{it.name}</span>
+            <span className="shrink-0 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+              Catalog price
+            </span>
+          </div>
+        ) : (
+          <PartNameInput it={it} catalog={catalog} onChange={onChange} />
+        )}
         <button
           type="button"
           onClick={onRemove}
@@ -788,6 +918,7 @@ function PartRow({
             onChange={(e) => onChange({ part_number: e.target.value })}
             placeholder="e.g. 04465-60320"
             className="h-9 font-mono"
+            readOnly={locked}
           />
         </div>
       </div>
@@ -804,12 +935,22 @@ function PartRow({
 
       <div className="grid grid-cols-3 gap-3">
         <NumField label="Quantity" value={it.quantity} step="1" onChange={(v) => onChange({ quantity: v })} />
-        <NumField
-          label={`Unit price${inclusive ? " (incl.)" : ""}`}
-          value={it.unit_price}
-          step="0.01"
-          onChange={(v) => onChange({ unit_price: v })}
-        />
+        {locked ? (
+          <div>
+            <Label>{`Unit price${inclusive ? " (incl.)" : ""}`}</Label>
+            <div className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-muted/40 px-3 text-sm tabular-nums">
+              <Lock className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+              {formatCurrency(it.unit_price)}
+            </div>
+          </div>
+        ) : (
+          <NumField
+            label={`Unit price${inclusive ? " (incl.)" : ""}`}
+            value={it.unit_price}
+            step="0.01"
+            onChange={(v) => onChange({ unit_price: v })}
+          />
+        )}
         <NumField label="Discount" value={it.discount} step="0.01" onChange={(v) => onChange({ discount: v })} />
       </div>
 

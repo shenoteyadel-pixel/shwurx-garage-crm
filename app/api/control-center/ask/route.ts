@@ -100,6 +100,7 @@ export async function POST(req: Request) {
               .from("invoices")
               .select("invoice_number, total, amount_paid")
               .eq("customer_name", c.full_name)
+              .neq("status", "cancelled")
             const outstanding = (invs ?? []).reduce((t, i) => t + (Number(i.total) - Number(i.amount_paid || 0)), 0)
             results.push({ name: c.full_name, mobile: c.mobile, jobs: jobs ?? [], outstandingBalance: outstanding })
           }

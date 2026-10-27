@@ -55,6 +55,7 @@ export default async function FlowPage() {
       .from("invoices")
       .select("job_id, status, total, amount_paid, created_at")
       .in("job_id", jobIds)
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false })
     for (const inv of invs ?? []) {
       if (!payByJob.has(inv.job_id)) {

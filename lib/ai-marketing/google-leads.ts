@@ -102,7 +102,7 @@ export async function getGoogleLeadFunnel(supabase: SupabaseClient, days = 90): 
   const [quoteRes, invRes, profRes] = await Promise.all([
     jobIds.length ? supabase.from("quotations").select("job_id, total").in("job_id", jobIds) : Promise.resolve({ data: [] }),
     jobIds.length
-      ? supabase.from("invoices").select("job_id, total, amount_paid, status").in("job_id", jobIds).neq("status", "void")
+      ? supabase.from("invoices").select("job_id, total, amount_paid, status").in("job_id", jobIds).not("status", "in", "(cancelled,void)")
       : Promise.resolve({ data: [] }),
     advisorIds.length ? supabase.from("profiles").select("id, full_name").in("id", advisorIds) : Promise.resolve({ data: [] }),
   ])

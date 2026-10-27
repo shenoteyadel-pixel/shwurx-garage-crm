@@ -48,7 +48,7 @@ export async function computeAttribution(
 
   const jobIds = jobs.map((j) => j.id)
   const { data: invRows } = jobIds.length
-    ? await supabase.from("invoices").select("job_id, amount_paid, status").in("job_id", jobIds).neq("status", "void")
+    ? await supabase.from("invoices").select("job_id, amount_paid, status").in("job_id", jobIds).not("status", "in", "(cancelled,void)")
     : { data: [] }
   const paidByJob = new Map<string, number>()
   for (const inv of (invRows ?? []) as { job_id: string; amount_paid: number | null }[]) {

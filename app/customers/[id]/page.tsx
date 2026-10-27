@@ -82,8 +82,9 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
     )
     .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
 
-  const totalInvoiced = (invoices ?? []).reduce((s, i) => s + Number(i.total || 0), 0)
-  const totalPaid = (invoices ?? []).reduce((s, i) => s + Number(i.amount_paid || 0), 0)
+  const liveInvoices = (invoices ?? []).filter((i) => i.status !== "cancelled")
+  const totalInvoiced = liveInvoices.reduce((s, i) => s + Number(i.total || 0), 0)
+  const totalPaid = liveInvoices.reduce((s, i) => s + Number(i.amount_paid || 0), 0)
   const outstanding = Math.max(0, totalInvoiced - totalPaid)
 
   const stageLabel = (v: string) => STAGES.find((s) => s.key === v)?.label ?? v
@@ -297,7 +298,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           ) : (
             <div className="grid gap-2">
               {(invoices ?? []).map((i) => {
-                const bal = Number(i.total || 0) - Number(i.amount_paid || 0)
+                const bal = i.status === "cancelled" ? 0 : Number(i.total || 0) - Number(i.amount_paid || 0)
                 return (
                   <Link key={i.id} href={`/invoices/${i.id}`}>
                     <Card className="flex items-center justify-between gap-4 p-3.5 transition-colors hover:border-primary/50">

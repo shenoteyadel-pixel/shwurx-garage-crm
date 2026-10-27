@@ -50,6 +50,7 @@ export default async function DashboardPage() {
     const { data: invs } = await supabase
       .from("invoices")
       .select("job_id, total, amount_paid, created_at")
+      .neq("status", "cancelled")
       .in(
         "job_id",
         jobs.map((j) => j.id),

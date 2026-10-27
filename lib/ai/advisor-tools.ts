@@ -321,7 +321,7 @@ export function createAdvisorTools() {
             diagnosis: j.diagnosis,
             invoices: (invoices ?? [])
               .filter((i) => i.job_id === j.id)
-              .map((i) => ({ number: i.invoice_number, status: i.status, total: Number(i.total), balanceDue: Math.max(0, Number(i.total) - Number(i.amount_paid || 0)) })),
+              .map((i) => ({ number: i.invoice_number, status: i.status, total: Number(i.total), balanceDue: i.status === "cancelled" ? 0 : Math.max(0, Number(i.total) - Number(i.amount_paid || 0)) })),
           })),
         }
       },

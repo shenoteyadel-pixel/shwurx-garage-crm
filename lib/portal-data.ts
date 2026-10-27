@@ -155,7 +155,7 @@ export async function loadPortalDataByCustomer(customerId: string): Promise<Port
 
   const portalInvoices: PortalInvoice[] = ownInvoices
     .map((inv) => {
-      const bal = Math.max(0, (Number(inv.total) || 0) - (Number(inv.amount_paid) || 0))
+      const bal = inv.status === "cancelled" ? 0 : Math.max(0, (Number(inv.total) || 0) - (Number(inv.amount_paid) || 0))
       const linkLive = !!(inv as any).payment_link_enabled && !!(inv as any).payment_link_url && bal > 0.01
       return {
         id: inv.id,

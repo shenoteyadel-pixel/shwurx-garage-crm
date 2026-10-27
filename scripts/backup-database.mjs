@@ -1,8 +1,8 @@
 // Off-database file backup for the SHWURX CRM.
 //
 // Exports every public table to a timestamped folder of JSON files that you can
-// download and keep outside Supabase. This is Layer 2 of the safety net; Layer 1
-// is the in-database snapshot system (backups.create_snapshot / restore_snapshot).
+// download and keep outside Supabase. This is an ad-hoc local copy; the verified
+// daily backup runs automatically in the cloud via /api/cron/backup.
 //
 // Usage:
 //   node --env-file-if-exists=/vercel/share/.env.project scripts/backup-database.mjs
@@ -72,25 +72,14 @@ async function main() {
   }
 
   await writeFile(join(dir, "_manifest.json"), JSON.stringify(manifest, null, 2))
-  console.log(`\n[v0] Backup complete: ${manifest.total_rows} rows -> backups/${stamp}/`)
-  await reportHeartbeat({ total_rows: manifest.total_rows, tables: Object.keys(manifest.tables).length })
-}
-
-/** Lets Critical Services detect stale backups. Skipped when the site URL or CRON_SECRET is not set. */
-async function reportHeartbeat(detail) {
-  const site = process.env.NEXT_PUBLIC_SITE_URL
-  const secret = process.env.CRON_SECRET
-  if (!site || !secret) return console.log("[v0] Heartbeat skipped: NEXT_PUBLIC_SITE_URL or CRON_SECRET not set")
-  try {
-    const res = await fetch(`${site.replace(/\/$/, "")}/api/cron/heartbeat`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ job: "backup", status: "ok", detail }),
-    })
-    console.log(`[v0] Heartbeat ${res.ok ? "recorded" : `failed (${res.status})`}`)
-  } catch (err) {
-    console.log("[v0] Heartbeat failed:", err.message)
+  const failed = Object.entries(manifest.tables).filter(([, v]) => typeof v === "object")
+  if (failed.length) {
+    console.error(`\n[v0] Backup INCOMPLETE: ${failed.length} table(s) failed: ${failed.map(([t]) => t).join(", ")}`)
+    process.exit(1)
   }
+  console.log(`\n[v0] Local copy complete: ${manifest.total_rows} rows -> backups/${stamp}/`)
+  // Local copies are not reported as the production backup. The verified daily
+  // backup runs in the cloud (/api/cron/backup); fetch it with scripts/download-backup.mjs.
 }
 
 main().catch((err) => {

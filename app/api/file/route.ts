@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { get } from "@vercel/blob"
 import { createClient } from "@/lib/supabase/server"
+import { BACKUP_PREFIX } from "@/lib/database-backup"
 
 // Streams a PRIVATE blob (original supplier-invoice scan/PDF) to authenticated
 // staff only. Private blob URLs are never exposed to the client directly.
@@ -13,6 +14,8 @@ export async function GET(request: NextRequest) {
 
   const pathname = request.nextUrl.searchParams.get("pathname")
   if (!pathname) return NextResponse.json({ error: "Missing pathname" }, { status: 400 })
+  // Database backups hold every table; they are never downloadable through the app.
+  if (pathname.replace(/^\/+/, "").startsWith(BACKUP_PREFIX)) return new NextResponse("Not found", { status: 404 })
 
   try {
     const result = await get(pathname, {

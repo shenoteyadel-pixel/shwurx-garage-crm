@@ -3,10 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Activity, BellRing, RefreshCw } from "lucide-react"
+import { Activity, AlertTriangle, BellRing, DatabaseBackup, RefreshCw } from "lucide-react"
 import { Badge, Button, Card } from "@/components/ui"
 import { CRIT_TONE } from "@/components/subscription-labels"
-import { runChecksNow, runRemindersNow } from "@/lib/actions-continuity"
+import { runBackupNow, runChecksNow, runRemindersNow } from "@/lib/actions-continuity"
 
 export interface MonitorRow {
   id: string
@@ -40,6 +40,15 @@ export interface JobRunRow {
   status: "running" | "ok" | "partial" | "failed"
   started_at: string
   finished_at: string | null
+  log: string[]
+  error: string
+}
+
+export interface OverdueRow {
+  id: string
+  name: string
+  next_due_date: string
+  criticality: string
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -60,15 +69,17 @@ export function ContinuityView({
   monitors,
   incidents,
   runs,
+  overdue,
   canApprove,
 }: {
   monitors: MonitorRow[]
   incidents: IncidentRow[]
   runs: JobRunRow[]
+  overdue: OverdueRow[]
   canApprove: boolean
 }) {
   const router = useRouter()
-  const [busy, setBusy] = React.useState<"checks" | "reminders" | null>(null)
+  const [busy, setBusy] = React.useState<"checks" | "reminders" | "backup" | null>(null)
   const [msg, setMsg] = React.useState<{ tone: "ok" | "err"; text: string } | null>(null)
   const open = incidents.filter((i) => !i.resolved_at)
   const down = monitors.filter((m) => m.enabled && m.last_status === "down").length
@@ -91,6 +102,19 @@ export function ContinuityView({
     setBusy(null)
     if (!res.ok) return setMsg({ tone: "err", text: res.error })
     setMsg({ tone: "ok", text: `${res.due} renewals due for a reminder. ${res.sent} sent, ${res.failed} failed.` })
+    router.refresh()
+  }
+
+  async function backup() {
+    setBusy("backup")
+    setMsg(null)
+    const res = await runBackupNow()
+    setBusy(null)
+    if (!res.ok) {
+      setMsg({ tone: "err", text: res.error })
+    } else {
+      setMsg({ tone: "ok", text: `Backup verified: ${res.tables} tables, ${res.totalRows.toLocaleString("en-US")} rows.` })
+    }
     router.refresh()
   }
 
@@ -119,6 +143,12 @@ export function ContinuityView({
               Send due reminders
             </Button>
           ) : null}
+          {canApprove ? (
+            <Button size="sm" variant="ghost" onClick={backup} disabled={busy !== null}>
+              <DatabaseBackup className={busy === "backup" ? "h-4 w-4 animate-pulse" : "h-4 w-4"} aria-hidden />
+              {busy === "backup" ? "Backing up..." : "Run backup now"}
+            </Button>
+          ) : null}
         </div>
       </header>
 
@@ -133,6 +163,26 @@ export function ContinuityView({
         >
           {msg.text}
         </p>
+      ) : null}
+
+      {overdue.length ? (
+        <div role="alert" className="flex flex-col gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-4">
+          <p className="inline-flex items-center gap-2 text-sm font-semibold text-red-300">
+            <AlertTriangle className="h-4 w-4" aria-hidden />
+            {overdue.length} subscription{overdue.length === 1 ? " is" : "s are"} overdue
+          </p>
+          <ul className="flex flex-col gap-1">
+            {overdue.map((o) => (
+              <li key={o.id} className="flex flex-wrap items-center gap-2 text-sm">
+                <Link href={`/finance/subscriptions/${o.id}`} className="text-foreground underline-offset-2 hover:underline">
+                  {o.name}
+                </Link>
+                <span className="text-xs text-muted-foreground">due {o.next_due_date}</span>
+                <Badge className={CRIT_TONE[o.criticality as keyof typeof CRIT_TONE]}>{o.criticality}</Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       <Card className="flex items-center gap-3 p-4">
@@ -176,8 +226,12 @@ export function ContinuityView({
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-muted-foreground">Last success</dt>
+                    <dt className="text-muted-foreground">{m.kind === "backup" ? "Last verified backup" : m.kind === "scheduled_job" ? "Last successful run" : "Last success"}</dt>
                     <dd className="text-foreground">{fmt(m.last_success_at)}</dd>
+                  </div>
+                  <div className="col-span-2">
+                    <dt className="text-muted-foreground">Last checked</dt>
+                    <dd className="text-foreground">{fmt(m.last_checked_at)}</dd>
                   </div>
                 </dl>
                 {m.last_error && m.last_status !== "up" ? <p className="text-xs text-red-300">{m.last_error}</p> : null}
@@ -234,19 +288,40 @@ export function ContinuityView({
             Scheduled job runs
           </h2>
           {runs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No runs yet. The daily cron writes here.</p>
+            <p className="text-sm text-muted-foreground">No runs yet. Scheduled jobs write here.</p>
           ) : (
             <ul className="flex flex-col divide-y divide-border rounded-xl border border-border">
               {runs.map((r) => (
-                <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                  <span className="inline-flex items-center gap-2 text-sm text-foreground">
-                    <Activity className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-                    {r.job}
-                  </span>
-                  <span className="text-xs">
-                    <span className={RUN_TONE[r.status]}>{r.status}</span>
-                    <span className="text-muted-foreground"> · {fmt(r.started_at)}</span>
-                  </span>
+                <li key={r.id}>
+                  <details className="group">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 hover:bg-muted/40">
+                      <span className="inline-flex items-center gap-2 text-sm text-foreground">
+                        <Activity className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                        {r.job}
+                      </span>
+                      <span className="text-xs">
+                        <span className={RUN_TONE[r.status]}>{r.status}</span>
+                        <span className="text-muted-foreground"> · {fmt(r.started_at)}</span>
+                      </span>
+                    </summary>
+                    <div className="flex flex-col gap-1 px-4 pb-3 text-xs">
+                      <p className="text-muted-foreground">
+                        Started {fmt(r.started_at)} · {r.finished_at ? `finished ${fmt(r.finished_at)}` : "not finished"}
+                      </p>
+                      {r.error ? <p className="break-words text-red-300">{r.error}</p> : null}
+                      {r.log.length ? (
+                        <ul className="flex flex-col gap-0.5 font-mono text-foreground">
+                          {r.log.map((line, i) => (
+                            <li key={i} className="break-words">
+                              {line}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : !r.error ? (
+                        <p className="text-muted-foreground">No details recorded for this run.</p>
+                      ) : null}
+                    </div>
+                  </details>
                 </li>
               ))}
             </ul>

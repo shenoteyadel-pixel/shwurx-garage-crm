@@ -5,6 +5,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { requireSession, ctxCan, writeAudit } from "@/lib/rbac/context"
 import { runServiceChecks } from "@/lib/service-monitor"
 import { runSubscriptionReminders } from "@/lib/subscription-reminders"
+import { runBackupJob } from "@/lib/job-runs"
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -12,7 +13,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export async function runChecksNow(): Promise<Result<{ checked: number; down: number }>> {
   const ctx = await requireSession()
   if (!ctx.isStaff || !ctxCan(ctx, "continuity.view")) return { ok: false, error: "You do not have permission to do this." }
-  const res = await runServiceChecks()
+  let res: Awaited<ReturnType<typeof runServiceChecks>>
+  try {
+    res = await runServiceChecks()
+  } catch (e) {
+    revalidatePath("/finance/continuity")
+    return { ok: false, error: `Checks failed: ${(e as Error).message}` }
+  }
   await writeAudit({ actorId: ctx.userId, actorName: ctx.name, actorRole: ctx.role, action: "service_checks_run_manual", resourceType: "service_monitor", detail: res })
   revalidatePath("/finance/continuity")
   return { ok: true, checked: res.checked, down: res.down }
@@ -30,6 +37,16 @@ export async function runRemindersNow(): Promise<Result<{ sent: number; failed: 
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
+}
+
+export async function runBackupNow(): Promise<Result<{ tables: number; totalRows: number }>> {
+  const ctx = await requireSession()
+  if (!ctx.isStaff || !ctxCan(ctx, "subscriptions.approve")) return { ok: false, error: "You do not have permission to do this." }
+  const res = await runBackupJob("manual")
+  await writeAudit({ actorId: ctx.userId, actorName: ctx.name, actorRole: ctx.role, action: "database_backup_run_manual", resourceType: "scheduled_job", resourceId: res.runId, detail: { ok: res.ok, tables: res.tables, failures: res.failures.length } })
+  revalidatePath("/finance/continuity")
+  if (!res.ok) return { ok: false, error: `Backup failed and was not marked successful: ${res.failures.map((f) => `${f.table}: ${f.error}`).slice(0, 3).join("; ")}` }
+  return { ok: true, tables: res.tables, totalRows: res.totalRows }
 }
 
 export async function saveMonitor(id: string | null, fd: FormData): Promise<Result> {

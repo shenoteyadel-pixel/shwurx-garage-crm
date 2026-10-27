@@ -4,6 +4,7 @@ import { notifyUsers } from "@/lib/attendance-notify"
 import { sendEmail } from "@/lib/email"
 import { sendWhatsAppAlert, whatsAppConfigured } from "@/lib/whatsapp-send"
 import { writeAudit } from "@/lib/rbac/context"
+import { syncJobMonitors } from "@/lib/service-monitor"
 import { staffWithPermission, staffByIds, alertEmailHtml, type StaffContact } from "@/lib/subscription-notify"
 import {
   MAX_REMINDER_ATTEMPTS,
@@ -82,9 +83,26 @@ export interface ReminderRunResult {
   retried: number
 }
 
+/** A second run inside this window is refused so overlapping cron + manual runs cannot double-send. */
+const OVERLAP_GUARD_MS = 10 * 60_000
+
+export class ReminderRunInProgressError extends Error {
+  constructor() {
+    super("Another reminder run is already in progress")
+  }
+}
+
 export async function runSubscriptionReminders(now: Date = new Date()): Promise<ReminderRunResult> {
   const svc = createServiceClient()
   const today = dubaiToday(now)
+  const { data: active } = await svc
+    .from("scheduled_job_runs")
+    .select("id")
+    .eq("job", "subscription-reminders")
+    .eq("status", "running")
+    .gte("started_at", new Date(now.getTime() - OVERLAP_GUARD_MS).toISOString())
+    .limit(1)
+  if (active?.length) throw new ReminderRunInProgressError()
   const { data: run } = await svc.from("scheduled_job_runs").insert({ job: "subscription-reminders" }).select("id").single()
   const result: ReminderRunResult = { runId: run?.id ?? null, checked: 0, due: 0, sent: 0, failed: 0, skipped: 0, retried: 0 }
 
@@ -157,10 +175,12 @@ export async function runSubscriptionReminders(now: Date = new Date()): Promise<
       .update({ status: "failed", finished_at: new Date().toISOString(), detail: { ...result, error: (e as Error).message } })
       .eq("id", result.runId)
     await writeAudit({ action: "subscription_reminders_failed", resourceType: "scheduled_job", resourceId: result.runId, detail: { error: (e as Error).message }, status: "error" })
+    await syncJobMonitors("subscription-reminders").catch(() => {})
     throw e
   }
 
   await writeAudit({ action: "subscription_reminders_run", resourceType: "scheduled_job", resourceId: result.runId, detail: { ...result } })
+  await syncJobMonitors("subscription-reminders").catch(() => {})
   return result
 }
 
@@ -188,13 +208,22 @@ async function retryFailed(people: Map<string, StaffContact>): Promise<number> {
     if (!sub || sub.next_due_date !== r.due_date || !["active", "pending_verification"].includes(sub.status as string)) continue
     const row = { ...sub, amount: Number(sub.amount), fx_rate_to_aed: Number(sub.fx_rate_to_aed), vat_rate: Number(sub.vat_rate) } as SubRow
     const stage = reminderStage(row, dubaiToday()) ?? { stage: r.stage as string, escalated: r.escalated as boolean, daysUntil: 0 }
+    // Claim the retry with a compare-and-set on attempts so two runs can never resend the same reminder.
+    const nextAttempt = (r.attempts as number) + 1
+    const { data: claim } = await svc
+      .from("subscription_reminders")
+      .update({ attempts: nextAttempt, last_error: "in_progress" })
+      .eq("id", r.id)
+      .eq("status", "failed")
+      .eq("attempts", r.attempts as number)
+      .select("id")
+    if (!claim?.length) continue
     const res = await deliver(r.channel as Channel, person, reminderMessage(row, stage), `sub-${row.id}-${r.due_date}-${r.stage}-${r.recipient_key}`)
     retried++
     await svc
       .from("subscription_reminders")
       .update({
         status: res.sent ? "sent" : "failed",
-        attempts: (r.attempts as number) + 1,
         last_error: res.sent ? null : (res.error ?? "unknown"),
         sent_at: res.sent ? new Date().toISOString() : null,
       })

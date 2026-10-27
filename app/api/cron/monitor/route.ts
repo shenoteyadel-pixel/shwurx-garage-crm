@@ -1,16 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server"
+import { isCronAuthorized } from "@/lib/cron-auth"
 import { runServiceChecks } from "@/lib/service-monitor"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
-/**
- * Service checks only. Call this from an external scheduler (e.g. every 5-15
- * minutes) with "Authorization: Bearer CRON_SECRET" for faster detection.
- */
+/** Full service check pass. Scheduled every 15 minutes by Vercel Cron (vercel.json). */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!isCronAuthorized(req.headers.get("authorization"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
   try {

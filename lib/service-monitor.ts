@@ -6,6 +6,7 @@ import { sendWhatsAppAlert, whatsAppConfigured } from "@/lib/whatsapp-send"
 import { writeAudit } from "@/lib/rbac/context"
 import { staffWithPermission, alertEmailHtml } from "@/lib/subscription-notify"
 import { classifyFailure, dubaiToday, type IncidentCause, type SubscriptionLike } from "@/lib/subscriptions"
+import { confirmBackupManifest } from "@/lib/database-backup"
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://swurxauto.com"
 const SLOW_MS = 5000
@@ -30,6 +31,10 @@ interface CheckResult {
   latencyMs?: number
   httpStatus?: number
   error?: string
+  /** Real completion time of the last good job run (freshness checks only). */
+  lastSuccessAt?: string
+  /** The latest run actually failed, as opposed to simply being late. */
+  failedRun?: boolean
 }
 
 async function timed<T>(fn: () => Promise<T>): Promise<[T, number]> {
@@ -75,21 +80,86 @@ async function checkAuth(): Promise<CheckResult> {
   }
 }
 
-async function checkFreshness(job: string, hours: number): Promise<CheckResult> {
+interface JobRun {
+  status: "running" | "ok" | "partial" | "failed"
+  started_at: string
+  finished_at: string | null
+  detail: Record<string, unknown> | null
+}
+
+const STUCK_RUN_MS = 30 * 60_000
+
+function runError(run: JobRun): string {
+  const d = run.detail ?? {}
+  const raw = d.error ?? d.remindersError ?? d.monitorError ?? (Array.isArray(d.failures) && d.failures.length ? JSON.stringify(d.failures[0]) : null)
+  return typeof raw === "string" && raw ? raw.slice(0, 240) : "no error detail recorded"
+}
+
+const when = (iso: string) =>
+  new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Dubai" })
+
+/**
+ * Job/backup freshness. Reads the recorded runs (not the time of the check), so
+ * "last success" is the real completion time. A failed latest run is reported
+ * immediately, and a backup only counts when its verified manifest still exists.
+ */
+async function checkFreshness(m: Monitor): Promise<CheckResult> {
+  const job = m.job_name!
+  const hours = m.freshness_hours ?? 24
   const svc = createServiceClient()
-  const { data, error } = await svc
+  const { data: recent, error } = await svc
     .from("scheduled_job_runs")
-    .select("finished_at, status")
+    .select("status, started_at, finished_at, detail")
+    .eq("job", job)
+    .order("started_at", { ascending: false })
+    .limit(10)
+  if (error) return { status: "down", error: error.message }
+  const runs = (recent ?? []) as JobRun[]
+
+  let successQuery = svc
+    .from("scheduled_job_runs")
+    .select("status, started_at, finished_at, detail")
     .eq("job", job)
     .in("status", ["ok", "partial"])
-    .order("finished_at", { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (error) return { status: "down", error: error.message }
-  if (!data?.finished_at) return { status: "down", error: `No successful "${job}" run recorded yet` }
-  const ageH = (Date.now() - Date.parse(data.finished_at as string)) / 3_600_000
-  if (ageH > hours) return { status: "down", error: `Last successful run ${Math.round(ageH)}h ago (limit ${hours}h)` }
-  return { status: data.status === "partial" ? "degraded" : "up", error: data.status === "partial" ? "Last run had failures" : undefined }
+    .not("finished_at", "is", null)
+  if (m.kind === "backup") successQuery = successQuery.eq("detail->>verified", "true")
+  const { data: success } = await successQuery.order("finished_at", { ascending: false }).limit(1).maybeSingle()
+  const lastOk = success as JobRun | null
+
+  if (m.kind === "backup" && lastOk) {
+    const confirmed = await confirmBackupManifest(lastOk.detail?.manifest)
+    if (!confirmed.ok) return { status: "down", error: confirmed.error, failedRun: true }
+  }
+
+  const latestFinished = runs.find((r) => r.status !== "running")
+  if (latestFinished?.status === "failed" && (!lastOk || Date.parse(latestFinished.started_at) > Date.parse(lastOk.finished_at!))) {
+    return {
+      status: "down",
+      error: `Last run failed ${when(latestFinished.started_at)}: ${runError(latestFinished)}`,
+      lastSuccessAt: lastOk?.finished_at ?? undefined,
+      failedRun: true,
+    }
+  }
+  if (!lastOk?.finished_at) {
+    const stuck = runs.find((r) => r.status === "running" && Date.now() - Date.parse(r.started_at) > STUCK_RUN_MS)
+    return {
+      status: "down",
+      error: stuck
+        ? `Run started ${when(stuck.started_at)} never finished`
+        : m.kind === "backup"
+          ? "No verified backup recorded yet"
+          : `No successful "${job}" run recorded yet`,
+    }
+  }
+  const ageH = (Date.now() - Date.parse(lastOk.finished_at)) / 3_600_000
+  if (ageH > hours) {
+    return { status: "down", error: `Last successful run ${Math.round(ageH)}h ago (limit ${hours}h)`, lastSuccessAt: lastOk.finished_at }
+  }
+  return {
+    status: lastOk.status === "partial" ? "degraded" : "up",
+    error: lastOk.status === "partial" ? `Last run had failures: ${runError(lastOk)}` : undefined,
+    lastSuccessAt: lastOk.finished_at,
+  }
 }
 
 async function runCheck(m: Monitor): Promise<CheckResult> {
@@ -101,9 +171,12 @@ async function runCheck(m: Monitor): Promise<CheckResult> {
     case "auth":
       return checkAuth()
     default:
-      return checkFreshness(m.job_name!, m.freshness_hours ?? 24)
+      return checkFreshness(m)
   }
 }
+
+const isLive = (m: Monitor) => m.kind === "http" || m.kind === "auth" || m.kind === "database"
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 const CAUSE_LABEL: Record<IncidentCause, string> = {
   outage: "Service outage",
@@ -111,9 +184,10 @@ const CAUSE_LABEL: Record<IncidentCause, string> = {
   stale: "Job or backup is overdue",
 }
 
-async function alertIncident(m: Monitor, cause: IncidentCause, summary: string, recovered: boolean) {
+async function alertIncident(m: Monitor, cause: IncidentCause, summary: string, recovered: boolean, failedRun = false) {
   const people = await staffWithPermission("continuity.view")
-  const title = recovered ? `Recovered: ${m.name}` : `${CAUSE_LABEL[cause]}: ${m.name}`
+  const label = failedRun ? (m.kind === "backup" ? "Backup failed" : "Scheduled job failed") : CAUSE_LABEL[cause]
+  const title = recovered ? `Recovered: ${m.name}` : `${label}: ${m.name}`
   const lines = recovered
     ? [`${m.name} is responding normally again.`]
     : [
@@ -140,67 +214,121 @@ async function alertIncident(m: Monitor, cause: IncidentCause, summary: string, 
   }
 }
 
-export async function runServiceChecks(): Promise<{ checked: number; down: number; opened: number; resolved: number }> {
+interface Stats {
+  checked: number
+  down: number
+  opened: number
+  resolved: number
+  results: { monitor: string; status: CheckResult["status"]; error?: string }[]
+}
+
+async function checkAndRecord(m: Monitor, today: string, stats: Stats) {
+  const svc = createServiceClient()
+  let res = await runCheck(m)
+  // One in-run retry so a single network blip does not page anyone.
+  if (res.status === "down" && isLive(m)) {
+    await pause(2000)
+    res = await runCheck(m)
+  }
+
+  const { data: open } = await svc
+    .from("service_incidents")
+    .select("id, cause, summary")
+    .eq("monitor_id", m.id)
+    .is("resolved_at", null)
+    .maybeSingle()
+
+  // Recovery must be confirmed by a second healthy probe before an incident closes.
+  if (open && res.status !== "down" && isLive(m)) {
+    await pause(2000)
+    const confirm = await runCheck(m)
+    if (confirm.status === "down") res = confirm
+  }
+
+  stats.checked++
+  stats.results.push({ monitor: m.name, status: res.status, error: res.error })
+  const nowIso = new Date().toISOString()
+  await svc.from("service_checks").insert({
+    monitor_id: m.id,
+    status: res.status,
+    latency_ms: res.latencyMs ?? null,
+    http_status: res.httpStatus ?? null,
+    error: res.error ?? null,
+  })
+  const lastSuccess = isLive(m) ? (res.status === "down" ? undefined : nowIso) : res.lastSuccessAt
+  await svc
+    .from("service_monitors")
+    .update({
+      last_status: res.status,
+      last_checked_at: nowIso,
+      ...(lastSuccess ? { last_success_at: lastSuccess } : {}),
+      last_error: res.error ?? null,
+      consecutive_failures: res.status === "down" ? m.consecutive_failures + 1 : 0,
+    })
+    .eq("id", m.id)
+
+  if (res.status === "down") {
+    stats.down++
+    const summary = `${m.name}: ${res.error ?? "check failed"}`
+    if (open) {
+      // A new failure on an already-open incident (e.g. a backup that now fails rather than being missing) still alerts.
+      if (res.failedRun && open.summary !== summary) {
+        await svc.from("service_incidents").update({ summary, notified_at: nowIso }).eq("id", open.id)
+        await alertIncident(m, open.cause as IncidentCause, summary, false, true)
+      }
+      return
+    }
+    let linked: SubscriptionLike | null = null
+    if (m.subscription_id) {
+      const { data } = await svc.from("subscriptions").select("*").eq("id", m.subscription_id).maybeSingle()
+      linked = data ? ({ ...data, amount: Number(data.amount), fx_rate_to_aed: Number(data.fx_rate_to_aed), vat_rate: Number(data.vat_rate) } as SubscriptionLike) : null
+    }
+    const cause = classifyFailure({ kind: m.kind, linkedSubscription: linked, today })
+    await svc.from("service_incidents").insert({ monitor_id: m.id, cause, summary, notified_at: nowIso })
+    stats.opened++
+    await writeAudit({ action: "service_incident_opened", resourceType: "service_monitor", resourceId: m.id, detail: { cause, summary }, status: "error" })
+    await alertIncident(m, cause, summary, false, res.failedRun)
+  } else if (open) {
+    await svc.from("service_incidents").update({ resolved_at: nowIso }).eq("id", open.id)
+    stats.resolved++
+    await writeAudit({ action: "service_incident_resolved", resourceType: "service_monitor", resourceId: m.id, detail: { incident: open.id } })
+    await alertIncident(m, open.cause as IncidentCause, "", true)
+  }
+}
+
+const emptyStats = (): Stats => ({ checked: 0, down: 0, opened: 0, resolved: 0, results: [] })
+
+/** Full pass over every enabled monitor; logged as a "service-monitor" job run. */
+export async function runServiceChecks(): Promise<Omit<Stats, "results">> {
   const svc = createServiceClient()
   const today = dubaiToday()
   const { data: run } = await svc.from("scheduled_job_runs").insert({ job: "service-monitor" }).select("id").single()
-  const { data: monitors } = await svc.from("service_monitors").select("*").eq("enabled", true)
-  const stats = { checked: 0, down: 0, opened: 0, resolved: 0 }
-
-  for (const m of (monitors ?? []) as Monitor[]) {
-    let res = await runCheck(m)
-    // One in-run retry so a single network blip does not page anyone.
-    if (res.status === "down" && (m.kind === "http" || m.kind === "auth" || m.kind === "database")) {
-      await new Promise((r) => setTimeout(r, 2000))
-      res = await runCheck(m)
-    }
-    stats.checked++
-    const nowIso = new Date().toISOString()
-    await svc.from("service_checks").insert({
-      monitor_id: m.id,
-      status: res.status,
-      latency_ms: res.latencyMs ?? null,
-      http_status: res.httpStatus ?? null,
-      error: res.error ?? null,
-    })
-    await svc
-      .from("service_monitors")
-      .update({
-        last_status: res.status,
-        last_checked_at: nowIso,
-        last_success_at: res.status === "down" ? undefined : nowIso,
-        last_error: res.error ?? null,
-        consecutive_failures: res.status === "down" ? m.consecutive_failures + 1 : 0,
-      })
-      .eq("id", m.id)
-
-    const { data: open } = await svc.from("service_incidents").select("id, cause").eq("monitor_id", m.id).is("resolved_at", null).maybeSingle()
-
-    if (res.status === "down") {
-      stats.down++
-      if (open) continue
-      let linked: SubscriptionLike | null = null
-      if (m.subscription_id) {
-        const { data } = await svc.from("subscriptions").select("*").eq("id", m.subscription_id).maybeSingle()
-        linked = data ? ({ ...data, amount: Number(data.amount), fx_rate_to_aed: Number(data.fx_rate_to_aed), vat_rate: Number(data.vat_rate) } as SubscriptionLike) : null
-      }
-      const cause = classifyFailure({ kind: m.kind, linkedSubscription: linked, today })
-      const summary = `${m.name}: ${res.error ?? "check failed"}`
-      await svc.from("service_incidents").insert({ monitor_id: m.id, cause, summary, notified_at: nowIso })
-      stats.opened++
-      await writeAudit({ action: "service_incident_opened", resourceType: "service_monitor", resourceId: m.id, detail: { cause, summary }, status: "error" })
-      await alertIncident(m, cause, summary, false)
-    } else if (open) {
-      await svc.from("service_incidents").update({ resolved_at: nowIso }).eq("id", open.id)
-      stats.resolved++
-      await writeAudit({ action: "service_incident_resolved", resourceType: "service_monitor", resourceId: m.id, detail: { incident: open.id } })
-      await alertIncident(m, open.cause as IncidentCause, "", true)
-    }
+  const { data: monitors } = await svc.from("service_monitors").select("*").eq("enabled", true).order("name")
+  const stats = emptyStats()
+  let fatal: string | null = null
+  try {
+    for (const m of (monitors ?? []) as Monitor[]) await checkAndRecord(m, today, stats)
+  } catch (e) {
+    fatal = (e as Error).message
   }
-
   await svc
     .from("scheduled_job_runs")
-    .update({ status: stats.down ? "partial" : "ok", finished_at: new Date().toISOString(), detail: stats })
+    .update({
+      status: fatal ? "failed" : stats.down ? "partial" : "ok",
+      finished_at: new Date().toISOString(),
+      detail: { ...stats, ...(fatal ? { error: fatal } : {}) },
+    })
     .eq("id", run?.id)
-  return stats
+  if (fatal) throw new Error(fatal)
+  const { results: _results, ...summary } = stats
+  return summary
+}
+
+/** Re-evaluates the monitors that track `job` right after it reports, so status never lags the job history. */
+export async function syncJobMonitors(job: string): Promise<void> {
+  const svc = createServiceClient()
+  const { data: monitors } = await svc.from("service_monitors").select("*").eq("enabled", true).eq("job_name", job)
+  const stats = emptyStats()
+  const today = dubaiToday()
+  for (const m of (monitors ?? []) as Monitor[]) await checkAndRecord(m, today, stats)
 }

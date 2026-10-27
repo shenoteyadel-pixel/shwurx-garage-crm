@@ -11,3 +11,5 @@ node_modules
 
 # Database file backups (contain real data — keep out of Git)
 /backups/
+.vercel
+.env*

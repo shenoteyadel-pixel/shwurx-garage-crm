@@ -100,6 +100,7 @@ export type Permission =
   | "website.manage"
   | "attendance.view_all" | "attendance.record" | "attendance.manage"
   | "gate_pass.release"
+  | "subscriptions.manage" | "subscriptions.approve" | "subscriptions.view_assigned" | "continuity.view"
   | "users.manage" | "permissions.manage" | "settings.manage" | "audit.view"
 
 export interface PermGroup {
@@ -221,6 +222,15 @@ export const PERMISSION_CATALOG: PermGroup[] = [
   {
     group: "Gate & Keys",
     perms: [{ key: "gate_pass.release", label: "See gate passes & release keys to paid customers" }],
+  },
+  {
+    group: "Subscriptions & Continuity",
+    perms: [
+      { key: "subscriptions.manage", label: "Manage subscriptions & record renewal payments" },
+      { key: "subscriptions.approve", label: "Confirm renewal payments & verify billing portals" },
+      { key: "subscriptions.view_assigned", label: "View subscriptions assigned to me only" },
+      { key: "continuity.view", label: "View critical services monitoring" },
+    ],
   },
   {
     group: "Administration",

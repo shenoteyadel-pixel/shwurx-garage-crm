@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { stripe, stripeLiveMode } from "@/lib/stripe"
+import { ensurePaymentMethodDomainsOnce } from "@/lib/stripe-domains"
 import { appBaseUrl } from "@/lib/account-links"
 import { sendEmail, invoiceLinkEmail } from "@/lib/email"
 import { waMeLink } from "@/lib/whatsapp"
@@ -183,6 +184,8 @@ export async function createInvoiceCheckoutSession(token: string): Promise<{ cli
   if (inv.status === "cancelled") return { clientSecret: null, error: "This invoice was cancelled" }
   if (inv.balance <= 0.01) return { clientSecret: null, error: "This invoice is already paid" }
   if (!inv.pay.cardEnabled) return { clientSecret: null, error: "Card payment is not available" }
+
+  await ensurePaymentMethodDomainsOnce()
 
   const amountInFils = Math.round(inv.balance * 100)
   const vehicle = inv.vehicle_desc ? ` · ${inv.vehicle_desc}` : ""

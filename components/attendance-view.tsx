@@ -33,6 +33,7 @@ import {
   checkIn,
   checkOut,
   deleteAttendanceRecord,
+  reportLocationFailure,
   saveAttendanceSettings,
   saveEmployeeSalary,
   saveManualRecord,
@@ -62,23 +63,51 @@ function StatusBadge({ status }: { status: AttendanceStatus | "in" | "out" | "no
   return <Badge className={cn("capitalize", m.cls)}>{m.label}</Badge>
 }
 
-type GeoResult = { ok: true; lat: number; lng: number; accuracy: number } | { ok: false; error: string }
+type GeoFailReason = "permission_denied" | "unavailable" | "timeout" | "unsupported" | "insecure"
+type GeoResult =
+  | { ok: true; lat: number; lng: number; accuracy: number }
+  | { ok: false; error: string; reason: GeoFailReason }
 
 const GPS_GOOD_ENOUGH_M = 40
 const GPS_WAIT_MS = 25000
+
+const NO_FIX_ERROR =
+  "Your phone did not give a location. On Android: Settings → Location → ON, Settings → Location → Google Location Accuracy → ON, and Settings → Apps → Chrome → Permissions → Location → Allow. Then reopen the app and try again."
+
+/** Last resort when GPS gives nothing: a Wi-Fi/cell based fix, which the server still validates against the accuracy limit. */
+function getNetworkPosition(): Promise<GeolocationCoordinates | null> {
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve(p.coords),
+      () => resolve(null),
+      { enableHighAccuracy: false, maximumAge: 120000, timeout: 10000 },
+    )
+  })
+}
 
 /**
  * Phones (Android especially) often return a coarse Wi-Fi/cell fix first and a precise GPS fix a few seconds later.
  * Watch the position, stop early on a precise fix, otherwise use the most precise reading seen.
  */
-function getPosition(): Promise<GeoResult> {
+async function getPosition(): Promise<GeoResult> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
-    return Promise.resolve({ ok: false, error: "This browser cannot read your location. Open the app in Chrome or Safari." })
+    return { ok: false, reason: "unsupported", error: "This browser cannot read your location. Open the app in Chrome or Safari." }
   }
+  if (typeof window !== "undefined" && !window.isSecureContext) {
+    return { ok: false, reason: "insecure", error: "Open the app from its https:// link to use location." }
+  }
+  const first = await watchBestPosition()
+  if (first.ok || first.reason === "permission_denied") return first
+  const coarse = await getNetworkPosition()
+  return coarse ? { ok: true, lat: coarse.latitude, lng: coarse.longitude, accuracy: coarse.accuracy } : first
+}
+
+function watchBestPosition(): Promise<GeoResult> {
   return new Promise((resolve) => {
     let best: GeolocationCoordinates | null = null
     let finished = false
     let watchId = 0
+    let lastReason: GeoFailReason = "timeout"
     const finish = (r: GeoResult) => {
       if (finished) return
       finished = true
@@ -89,11 +118,7 @@ function getPosition(): Promise<GeoResult> {
     const fromBest = (): GeoResult =>
       best
         ? { ok: true, lat: best.latitude, lng: best.longitude, accuracy: best.accuracy }
-        : {
-            ok: false,
-            error:
-              "Couldn't get your location. Turn on Location on your phone (set to High accuracy / Precise), step near a window and try again.",
-          }
+        : { ok: false, reason: lastReason, error: NO_FIX_ERROR }
     const timer = setTimeout(() => finish(fromBest()), GPS_WAIT_MS)
     watchId = navigator.geolocation.watchPosition(
       (p) => {
@@ -104,11 +129,13 @@ function getPosition(): Promise<GeoResult> {
         if (err.code === err.PERMISSION_DENIED) {
           finish({
             ok: false,
+            reason: "permission_denied",
             error:
-              "Location permission is blocked for this site. In Chrome tap the icon next to the address → Permissions → Location → Allow, then try again.",
+              "Location permission is blocked for this site. In Chrome tap the icon next to the address → Permissions → Location → Allow. Also check Settings → Apps → Chrome → Permissions → Location → Allow.",
           })
-        } else if (err.code === err.POSITION_UNAVAILABLE && !best) {
-          finish(fromBest())
+        } else if (!best) {
+          lastReason = err.code === err.TIMEOUT ? "timeout" : "unavailable"
+          if (err.code === err.POSITION_UNAVAILABLE) finish(fromBest())
         }
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: GPS_WAIT_MS },
@@ -238,7 +265,11 @@ function MyAttendance({
     start(async () => {
       setMsg({ ok: true, text: "Getting your location… keep this screen open." })
       const geo = await getPosition()
-      if (!geo.ok) return setMsg({ ok: false, text: geo.error })
+      if (!geo.ok) {
+        setMsg({ ok: false, text: geo.error })
+        await reportLocationFailure(kind === "in" ? "check_in" : "check_out", geo.reason, geo.error).catch(() => {})
+        return
+      }
       setMsg(null)
       const pos = { lat: geo.lat, lng: geo.lng, accuracy: geo.accuracy }
       let assertion = null

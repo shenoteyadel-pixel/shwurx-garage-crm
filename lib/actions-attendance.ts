@@ -68,6 +68,21 @@ async function logBlocked(
   await logAction(ctx, `attendance.${kind}_blocked`, "attendance", null, { error, ...(detail ?? { reason: "no_location" }) })
 }
 
+const CLIENT_GEO_REASONS = ["permission_denied", "unavailable", "timeout", "unsupported", "insecure"] as const
+
+/** The phone never returned a position, so the server check was never reached; record why for managers. */
+export async function reportLocationFailure(
+  kind: "check_in" | "check_out",
+  reason: string,
+  message: string,
+): Promise<void> {
+  const ctx = await requireStaff()
+  const safeReason = (CLIENT_GEO_REASONS as readonly string[]).includes(reason) ? reason : "unavailable"
+  await logBlocked(ctx, kind === "check_out" ? "check_out" : "check_in", String(message).slice(0, 300), {
+    reason: `phone_${safeReason}`,
+  })
+}
+
 export async function checkIn(coords: Coords, note?: string, faceId?: AuthenticationResponseJSON | null): Promise<Result> {
   const ctx = await requireStaff()
   if (ctx.role === "owner") return { ok: false, error: "The owner account is not tracked by attendance." }

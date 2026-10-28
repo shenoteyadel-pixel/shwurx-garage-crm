@@ -42,28 +42,46 @@ async function locationCheck(coords: Coords) {
   if (!c) {
     return { error: "Location is required. Turn on location (GPS) and allow this site to use it, then try again." }
   }
+  const distance = distanceMeters(c.lat, c.lng, settings.workshop_lat, settings.workshop_lng)
   if (c.accuracy != null && c.accuracy > settings.max_gps_accuracy_m) {
     return {
-      error: `Your GPS signal is too weak (±${c.accuracy} m). Step outside or near a window, wait a few seconds and try again.`,
+      error: `Your GPS signal is too weak (±${c.accuracy} m). Make sure Location is set to High accuracy / Precise, step near a door or window and try again.`,
+      detail: { reason: "weak_gps", accuracy_m: c.accuracy, distance_m: distance },
     }
   }
-  const distance = distanceMeters(c.lat, c.lng, settings.workshop_lat, settings.workshop_lng)
   if (distance > settings.geofence_radius_m) {
     return {
       error: `You are ${distance} m away from the workshop. Check-in/out is only allowed within ${settings.geofence_radius_m} m.`,
+      detail: { reason: "outside_geofence", accuracy_m: c.accuracy, distance_m: distance },
     }
   }
   return { svc, settings, c, distance }
+}
+
+/** Failed self check-ins are written to the audit log so managers can see why someone could not clock in. */
+async function logBlocked(
+  ctx: Awaited<ReturnType<typeof requireStaff>>,
+  kind: "check_in" | "check_out",
+  error: string,
+  detail?: Record<string, unknown>,
+) {
+  await logAction(ctx, `attendance.${kind}_blocked`, "attendance", null, { error, ...(detail ?? { reason: "no_location" }) })
 }
 
 export async function checkIn(coords: Coords, note?: string, faceId?: AuthenticationResponseJSON | null): Promise<Result> {
   const ctx = await requireStaff()
   if (ctx.role === "owner") return { ok: false, error: "The owner account is not tracked by attendance." }
   const chk = await locationCheck(coords)
-  if ("error" in chk) return { ok: false, error: chk.error as string }
+  if ("error" in chk) {
+    await logBlocked(ctx, "check_in", chk.error as string, "detail" in chk ? chk.detail : undefined)
+    return { ok: false, error: chk.error as string }
+  }
   const { svc, settings, c, distance } = chk
   const face = await verifyFaceIdForAttendance(ctx.userId, faceId)
-  if ("error" in face) return { ok: false, error: face.error }
+  if ("error" in face) {
+    await logBlocked(ctx, "check_in", face.error, { reason: "face_id" })
+    return { ok: false, error: face.error }
+  }
 
   const now = new Date()
   const today = localDate(now)
@@ -114,10 +132,16 @@ export async function checkIn(coords: Coords, note?: string, faceId?: Authentica
 export async function checkOut(coords: Coords, note?: string, faceId?: AuthenticationResponseJSON | null): Promise<Result> {
   const ctx = await requireStaff()
   const chk = await locationCheck(coords)
-  if ("error" in chk) return { ok: false, error: chk.error as string }
+  if ("error" in chk) {
+    await logBlocked(ctx, "check_out", chk.error as string, "detail" in chk ? chk.detail : undefined)
+    return { ok: false, error: chk.error as string }
+  }
   const { svc, c, distance } = chk
   const face = await verifyFaceIdForAttendance(ctx.userId, faceId)
-  if ("error" in face) return { ok: false, error: face.error }
+  if ("error" in face) {
+    await logBlocked(ctx, "check_out", face.error, { reason: "face_id" })
+    return { ok: false, error: face.error }
+  }
 
   const now = new Date()
   // Newest open shift within the last 20 hours, so a shift that runs past midnight can still be closed.

@@ -62,13 +62,56 @@ function StatusBadge({ status }: { status: AttendanceStatus | "in" | "out" | "no
   return <Badge className={cn("capitalize", m.cls)}>{m.label}</Badge>
 }
 
-function getPosition(): Promise<{ lat: number; lng: number; accuracy: number } | null> {
-  if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.resolve(null)
+type GeoResult = { ok: true; lat: number; lng: number; accuracy: number } | { ok: false; error: string }
+
+const GPS_GOOD_ENOUGH_M = 40
+const GPS_WAIT_MS = 25000
+
+/**
+ * Phones (Android especially) often return a coarse Wi-Fi/cell fix first and a precise GPS fix a few seconds later.
+ * Watch the position, stop early on a precise fix, otherwise use the most precise reading seen.
+ */
+function getPosition(): Promise<GeoResult> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return Promise.resolve({ ok: false, error: "This browser cannot read your location. Open the app in Chrome or Safari." })
+  }
   return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    let best: GeolocationCoordinates | null = null
+    let finished = false
+    let watchId = 0
+    const finish = (r: GeoResult) => {
+      if (finished) return
+      finished = true
+      navigator.geolocation.clearWatch(watchId)
+      clearTimeout(timer)
+      resolve(r)
+    }
+    const fromBest = (): GeoResult =>
+      best
+        ? { ok: true, lat: best.latitude, lng: best.longitude, accuracy: best.accuracy }
+        : {
+            ok: false,
+            error:
+              "Couldn't get your location. Turn on Location on your phone (set to High accuracy / Precise), step near a window and try again.",
+          }
+    const timer = setTimeout(() => finish(fromBest()), GPS_WAIT_MS)
+    watchId = navigator.geolocation.watchPosition(
+      (p) => {
+        if (!best || p.coords.accuracy < best.accuracy) best = p.coords
+        if (p.coords.accuracy <= GPS_GOOD_ENOUGH_M) finish(fromBest())
+      },
+      (err) => {
+        if (err.code === err.PERMISSION_DENIED) {
+          finish({
+            ok: false,
+            error:
+              "Location permission is blocked for this site. In Chrome tap the icon next to the address → Permissions → Location → Allow, then try again.",
+          })
+        } else if (err.code === err.POSITION_UNAVAILABLE && !best) {
+          finish(fromBest())
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: GPS_WAIT_MS },
     )
   })
 }
@@ -193,8 +236,11 @@ function MyAttendance({
 
   const act = (kind: "in" | "out") =>
     start(async () => {
+      setMsg({ ok: true, text: "Getting your location… keep this screen open." })
+      const geo = await getPosition()
+      if (!geo.ok) return setMsg({ ok: false, text: geo.error })
       setMsg(null)
-      const pos = await getPosition()
+      const pos = { lat: geo.lat, lng: geo.lng, accuracy: geo.accuracy }
       let assertion = null
       if (faceIdEnabled) {
         const opts = await startFaceIdCheck()

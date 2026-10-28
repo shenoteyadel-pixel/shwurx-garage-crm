@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { isCronAuthorized } from "@/lib/cron-auth"
 import { runServiceChecks } from "@/lib/service-monitor"
+import { ensurePaymentMethodDomainsOnce } from "@/lib/stripe-domains"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
@@ -11,7 +12,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
   try {
-    return NextResponse.json(await runServiceChecks())
+    const [checks, paymentDomains] = await Promise.all([runServiceChecks(), ensurePaymentMethodDomainsOnce()])
+    return NextResponse.json({ ...checks, paymentDomains })
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 })
   }

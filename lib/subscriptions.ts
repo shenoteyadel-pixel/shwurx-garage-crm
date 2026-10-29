@@ -469,7 +469,7 @@ export function csvTemplate(): string {
 
 // ---------------- Monitoring ----------------
 
-export type IncidentCause = "outage" | "suspected_unpaid" | "stale"
+export type IncidentCause = "outage" | "suspected_unpaid" | "stale" | "capacity"
 
 /**
  * Separates "the provider is down" from "we probably did not pay": a failing

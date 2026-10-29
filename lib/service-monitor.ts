@@ -14,7 +14,7 @@ const SLOW_MS = 5000
 interface Monitor {
   id: string
   name: string
-  kind: "http" | "database" | "auth" | "backup" | "scheduled_job"
+  kind: "http" | "database" | "auth" | "backup" | "scheduled_job" | "capacity"
   target_url: string | null
   job_name: string | null
   freshness_hours: number | null
@@ -75,6 +75,34 @@ async function checkAuth(): Promise<CheckResult> {
     const [res, ms] = await timed(() => fetch(`${base}/auth/v1/health`, { headers: { apikey: key }, cache: "no-store", signal: AbortSignal.timeout(10_000) }))
     if (!res.ok) return { status: "down", latencyMs: ms, httpStatus: res.status, error: `Auth health HTTP ${res.status}` }
     return { status: "up", latencyMs: ms, httpStatus: res.status }
+  } catch (e) {
+    return { status: "down", error: (e as Error).message }
+  }
+}
+
+const GB = 1024 ** 3
+// Supabase Pro included quotas; override per plan with env vars.
+const DB_LIMIT_GB = Number(process.env.SUPABASE_DB_LIMIT_GB) || 8
+const STORAGE_LIMIT_GB = Number(process.env.SUPABASE_STORAGE_LIMIT_GB) || 100
+const WARN_PCT = 80
+const WATCH_PCT = 70
+
+async function checkCapacity(): Promise<CheckResult> {
+  try {
+    const svc = createServiceClient()
+    const [{ data, error }, ms] = await timed(async () => svc.rpc("service_usage"))
+    if (error) return { status: "down", latencyMs: ms, error: `Could not read usage: ${error.message}` }
+    const row = (Array.isArray(data) ? data[0] : data) as { db_bytes: number; storage_bytes: number } | null
+    if (!row) return { status: "down", latencyMs: ms, error: "Usage function returned no data" }
+    const dbPct = (Number(row.db_bytes) / (DB_LIMIT_GB * GB)) * 100
+    const stPct = (Number(row.storage_bytes) / (STORAGE_LIMIT_GB * GB)) * 100
+    const text =
+      `Database ${(Number(row.db_bytes) / GB).toFixed(2)} of ${DB_LIMIT_GB} GB (${Math.round(dbPct)}%), ` +
+      `file storage ${(Number(row.storage_bytes) / GB).toFixed(2)} of ${STORAGE_LIMIT_GB} GB (${Math.round(stPct)}%)`
+    const worst = Math.max(dbPct, stPct)
+    if (worst >= WARN_PCT) return { status: "down", latencyMs: ms, error: `Near limit. ${text}` }
+    if (worst >= WATCH_PCT) return { status: "degraded", latencyMs: ms, error: text }
+    return { status: "up", latencyMs: ms, error: text }
   } catch (e) {
     return { status: "down", error: (e as Error).message }
   }
@@ -170,6 +198,8 @@ async function runCheck(m: Monitor): Promise<CheckResult> {
       return checkDatabase()
     case "auth":
       return checkAuth()
+    case "capacity":
+      return checkCapacity()
     default:
       return checkFreshness(m)
   }
@@ -182,6 +212,7 @@ const CAUSE_LABEL: Record<IncidentCause, string> = {
   outage: "Service outage",
   suspected_unpaid: "Suspected unpaid subscription",
   stale: "Job or backup is overdue",
+  capacity: "Early warning, usage limit approaching",
 }
 
 async function alertIncident(m: Monitor, cause: IncidentCause, summary: string, recovered: boolean, failedRun = false) {
@@ -192,9 +223,11 @@ async function alertIncident(m: Monitor, cause: IncidentCause, summary: string, 
     ? [`${m.name} is responding normally again.`]
     : [
         summary,
-        cause === "suspected_unpaid"
-          ? "The linked subscription is overdue. Check the provider billing before treating this as a technical outage."
-          : "This looks like a technical problem, not a billing issue.",
+        cause === "capacity"
+          ? "The CRM is still working. Act now so it does not stop when the limit is reached."
+          : cause === "suspected_unpaid"
+            ? "The linked subscription is overdue. Check the provider billing before treating this as a technical outage."
+            : "This looks like a technical problem, not a billing issue.",
         m.recovery_instructions ? `Recovery: ${m.recovery_instructions}` : "",
         m.escalation_contacts ? `Escalation contacts: ${m.escalation_contacts}` : "",
       ].filter(Boolean)
@@ -283,7 +316,7 @@ async function checkAndRecord(m: Monitor, today: string, stats: Stats) {
       const { data } = await svc.from("subscriptions").select("*").eq("id", m.subscription_id).maybeSingle()
       linked = data ? ({ ...data, amount: Number(data.amount), fx_rate_to_aed: Number(data.fx_rate_to_aed), vat_rate: Number(data.vat_rate) } as SubscriptionLike) : null
     }
-    const cause = classifyFailure({ kind: m.kind, linkedSubscription: linked, today })
+    const cause: IncidentCause = m.kind === "capacity" ? "capacity" : classifyFailure({ kind: m.kind, linkedSubscription: linked, today })
     await svc.from("service_incidents").insert({ monitor_id: m.id, cause, summary, notified_at: nowIso })
     stats.opened++
     await writeAudit({ action: "service_incident_opened", resourceType: "service_monitor", resourceId: m.id, detail: { cause, summary }, status: "error" })

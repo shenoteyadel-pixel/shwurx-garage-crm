@@ -25,7 +25,10 @@ async function trimTransparent(input: Buffer): Promise<Buffer> {
 // uniform. gpt-image-1 gives the best factory-correct body shape and a clean
 // pure-white studio background that cuts out crisply. The plain gateway id keeps
 // auth zero-config in v0 previews and on Vercel.
-const IMAGE_MODEL = "openai/gpt-image-1"
+// gpt-image-1 was retired from AI Gateway (calls failed with "model not found"
+// and every new car fell back to the cartoon). Try models in order so one
+// retirement never silently breaks the board again.
+const IMAGE_MODELS = ["openai/gpt-image-1.5", "openai/gpt-image-2"] as const
 const IMAGE_SIZE = "1536x1024" as const
 const PREFIX = "generated"
 
@@ -188,14 +191,26 @@ export async function generateVehicleImage(v: VehicleForImage): Promise<string |
 
   try {
     const key = cacheKey(year, make, model, color, trim, generation)
-    const { image } = await generateImage({
-      model: gateway.imageModel(IMAGE_MODEL),
-      prompt: buildPrompt(year, make, model, color, trim, body, generation),
-      size: IMAGE_SIZE,
-      providerOptions: { openai: { background: "opaque", quality: "medium", output_format: "png" } },
-      abortSignal: AbortSignal.timeout(110000),
-    })
-    const raw = Buffer.from(image.uint8Array)
+    const prompt = buildPrompt(year, make, model, color, trim, body, generation)
+    let raw: Buffer | null = null
+    let lastError = ""
+    for (const modelId of IMAGE_MODELS) {
+      try {
+        const { image } = await generateImage({
+          model: gateway.imageModel(modelId),
+          prompt,
+          size: IMAGE_SIZE,
+          providerOptions: { openai: { background: "opaque", quality: "medium", output_format: "png" } },
+          abortSignal: AbortSignal.timeout(110000),
+        })
+        raw = Buffer.from(image.uint8Array)
+        break
+      } catch (err) {
+        lastError = `${modelId}: ${(err as Error).message}`
+        console.log("[v0] generateVehicleImage model failed:", lastError)
+      }
+    }
+    if (!raw) throw new Error(lastError || "no image model succeeded")
     const keyed = await removeChromaKey(raw, keyFor(color))
     const trimmed = await trimTransparent(keyed)
     const url = await uploadVehiclePng(trimmed, PREFIX, key)

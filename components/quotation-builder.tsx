@@ -150,6 +150,7 @@ export function QuotationBuilder({
   printHref,
   locked,
   canEditLocked = false,
+  notifiesOwnerOnEdit = false,
   partCatalog = [],
 }: {
   jobId: string
@@ -162,6 +163,7 @@ export function QuotationBuilder({
   printHref: string
   locked: boolean
   canEditLocked?: boolean
+  notifiesOwnerOnEdit?: boolean
   partCatalog?: CatalogPart[]
 }) {
   const [open, setOpen] = React.useState(false)
@@ -195,8 +197,14 @@ export function QuotationBuilder({
             </Button>
           )}
           {locked && canEditLocked && hasQuotation && (
-            <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
-              <Pencil className="h-3.5 w-3.5" /> Owner edit
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setOpen(true)}
+              title={notifiesOwnerOnEdit ? "The owner is notified of every part you add or remove" : undefined}
+            >
+              <Pencil className="h-3.5 w-3.5" /> {notifiesOwnerOnEdit ? "Edit approved quote" : "Owner edit"}
             </Button>
           )}
         </div>

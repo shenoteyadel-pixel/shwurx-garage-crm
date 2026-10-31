@@ -614,7 +614,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                           hasQuotation={!!quotation}
                           printHref={`/jobs/${job.id}/quotation/print`}
                           locked={locked}
-                          canEditLocked={isOwner}
+                          canEditLocked={isOwner || sessionCtx?.role === "service_advisor"}
+                          notifiesOwnerOnEdit={!isOwner}
                           partCatalog={partCatalog}
                         />
                         {(sessionCtx?.permissions.has("quotations.edit") ?? false) && <SmartMergeParts jobId={job.id} />}

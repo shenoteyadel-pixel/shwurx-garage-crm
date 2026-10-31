@@ -17,7 +17,7 @@ import { sanitizeMileage } from "@/lib/utils"
 import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import { requireJobWork } from "@/lib/rbac/job-access"
 import type { Permission } from "@/lib/rbac/roles"
-import { notifyUser, notifyByPermission } from "@/lib/actions-notifications"
+import { notifyUser, notifyByPermission, notifyOwners } from "@/lib/actions-notifications"
 import { notifyActivity } from "@/lib/activity"
 import { notifyJobTechnicians, notifyPurchasers } from "@/lib/job-notify"
 import { issueGatePass } from "@/lib/gate-pass"
@@ -792,11 +792,29 @@ export async function saveQuotation(
   const subtotal = vatInclusive ? partsTotal + laborTotal : partsTotal + laborTotal - discountTotal
   const total = subtotal + vatAmount
 
-  // An approved quotation is locked; only the owner may correct it (e.g. to
-  // remove a part that was posted twice).
-  const { data: jobRow } = await supabase.from("jobs").select("approval_status").eq("id", jobId).maybeSingle()
-  if (jobRow?.approval_status === "approved" && ctx.role !== "owner") {
-    throw new Error("This quotation is approved and locked. Only the owner can edit it.")
+  // An approved quotation is locked; only the owner and service advisors may
+  // correct it, and the owner is told about every part change an advisor makes.
+  const { data: jobRow } = await supabase
+    .from("jobs")
+    .select("approval_status, job_number")
+    .eq("id", jobId)
+    .maybeSingle()
+  const editingApproved = jobRow?.approval_status === "approved"
+  if (editingApproved && !APPROVED_QUOTE_EDITORS.includes(ctx.role)) {
+    throw new Error("This quotation is approved and locked. Only the owner or a service advisor can edit it.")
+  }
+  let previousParts: PartSnapshot[] | null = null
+  if (editingApproved && ctx.role !== "owner") {
+    const { data: prevQuote } = await supabase
+      .from("quotations")
+      .select("quotation_items(kind, name, part_number, quantity)")
+      .eq("job_id", jobId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    previousParts = toPartSnapshots(
+      ((prevQuote?.quotation_items ?? []) as { kind: string; name: string | null; part_number: string | null; quantity: number | null }[]),
+    )
   }
 
   const header = {
@@ -891,9 +909,69 @@ export async function saveQuotation(
     // ignore
   }
 
+  if (previousParts) {
+    try {
+      const changes = describePartChanges(previousParts, toPartSnapshots(computed))
+      await notifyOwners({
+        title: `Approved job card edited${jobRow?.job_number ? ` — ${jobRow.job_number}` : ""}`,
+        body: `Service advisor ${changes || "edited the quotation (no part changes)"}`,
+        type: "warning",
+        link: `/jobs/${jobId}`,
+      })
+    } catch {
+      // notification is best-effort; the save itself succeeded
+    }
+  }
+
   await notifyActivity({ title: "Quotation saved", body: `${items.length} line item(s)`, link: `/jobs/${jobId}` })
   revalidatePath(`/jobs/${jobId}`)
   return { ok: true as const }
+}
+
+const APPROVED_QUOTE_EDITORS: string[] = ["owner", "service_advisor"]
+
+type PartSnapshot = { key: string; label: string; quantity: number }
+
+function toPartSnapshots(
+  rows: { kind: string; name?: string | null; part_number?: string | null; quantity?: number | null }[],
+): PartSnapshot[] {
+  return rows
+    .filter((r) => r.kind === "part")
+    .map((r) => {
+      const label = (r.name || r.part_number || "Part").trim()
+      return {
+        key: (r.part_number || r.name || "").trim().toLowerCase() || label.toLowerCase(),
+        label,
+        quantity: Number(r.quantity) || 0,
+      }
+    })
+}
+
+function describePartChanges(before: PartSnapshot[], after: PartSnapshot[]): string {
+  const tally = (list: PartSnapshot[]) => {
+    const map = new Map<string, { label: string; quantity: number }>()
+    for (const p of list) {
+      const cur = map.get(p.key)
+      map.set(p.key, { label: cur?.label ?? p.label, quantity: (cur?.quantity ?? 0) + p.quantity })
+    }
+    return map
+  }
+  const was = tally(before)
+  const now = tally(after)
+  const added: string[] = []
+  const removed: string[] = []
+  for (const [key, p] of now) {
+    const diff = p.quantity - (was.get(key)?.quantity ?? 0)
+    if (diff > 0) added.push(`${p.label} ×${diff}`)
+  }
+  for (const [key, p] of was) {
+    const diff = p.quantity - (now.get(key)?.quantity ?? 0)
+    if (diff > 0) removed.push(`${p.label} ×${diff}`)
+  }
+  const parts: string[] = []
+  if (added.length) parts.push(`added: ${added.join(", ")}`)
+  if (removed.length) parts.push(`removed: ${removed.join(", ")}`)
+  return parts.join("; ")
 }
 
 /* ---------------- Convert parts requests into the quotation ---------------- */

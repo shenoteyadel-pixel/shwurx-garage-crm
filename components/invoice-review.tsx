@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import useSWR from "swr"
 import { Card, Button, Input, Select, Label, Badge } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { suggestSalePrice, marginPct, type PricingMethod } from "@/lib/pricing"
@@ -13,6 +14,7 @@ import {
   deleteInvoiceDraft,
   assignInvoiceLineToJob,
   reextractInvoice,
+  getJobCardPartLines,
   type DraftLine,
   type ConfirmSummary,
 } from "@/lib/actions-invoices"
@@ -77,6 +79,7 @@ export type InvoiceItemRow = {
   inventory_item_id: string | null
   match_status: "new" | "matched" | "ignore" | "expense"
   job_id: string | null
+  job_line_link?: string | null
   parts_request_id: string | null
   suggested_job_label: string | null
   suggested_sale_price: number
@@ -132,6 +135,7 @@ export function InvoiceReview({
       match_status: it.match_status,
       id: it.id,
       job_id: it.job_id,
+      job_line_link: it.job_line_link ?? null,
       parts_request_id: it.parts_request_id,
       suggested_job_label: it.suggested_job_label,
       suggested_sale_price: it.suggested_sale_price,
@@ -235,6 +239,7 @@ export function InvoiceReview({
       inventory_item_id: l.inventory_item_id,
       match_status: l.match_status,
       job_id: l.job_id,
+      job_line_link: l.job_id ? (l.job_line_link ?? null) : null,
       parts_request_id: l.parts_request_id,
       suggested_sale_price: Number(l.suggested_sale_price),
       markup_pct: Number(l.markup_pct),
@@ -1049,7 +1054,9 @@ function LineRow({
               aria-label="Car or job card for this part"
               value={line.job_id ?? "__stock"}
               disabled={readOnly}
-              onChange={(e) => onChange({ job_id: e.target.value === "__stock" ? null : e.target.value })}
+              onChange={(e) =>
+                onChange({ job_id: e.target.value === "__stock" ? null : e.target.value, job_line_link: null })
+              }
               className="h-8 w-auto min-w-[220px] text-xs"
             >
               <option value="__stock">{line.match_status === "expense" ? "No car (general cost)" : "General Stock"}</option>
@@ -1062,6 +1069,14 @@ function LineRow({
               </optgroup>
             </Select>
           </div>
+          {line.job_id && line.match_status !== "expense" && (
+            <JobLinePicker
+              jobId={line.job_id}
+              value={line.job_line_link ?? null}
+              disabled={readOnly}
+              onChange={(v) => onChange({ job_line_link: v })}
+            />
+          )}
           {canReassign && !line.job_id && line.match_status === "matched" && line.id && (
             <MoveToCar itemId={line.id} jobs={jobs} />
           )}
@@ -1072,6 +1087,52 @@ function LineRow({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function JobLinePicker({
+  jobId,
+  value,
+  disabled,
+  onChange,
+}: {
+  jobId: string
+  value: string | null
+  disabled: boolean
+  onChange: (v: string | null) => void
+}) {
+  const { data: options, isLoading } = useSWR(["job-card-part-lines", jobId], () => getJobCardPartLines(jobId))
+  const chosen = value && value !== "new" ? options?.find((o) => o.id === value) : undefined
+  const missing = Boolean(value && value !== "new" && options && !chosen)
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Job card line</span>
+      <Select
+        aria-label="Job card line this purchase is for"
+        value={missing ? "" : (value ?? "")}
+        disabled={disabled || isLoading}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="h-8 w-auto min-w-[220px] max-w-full text-xs"
+      >
+        <option value="">{isLoading ? "Loading job card..." : "Automatic (match by name)"}</option>
+        {options && options.length > 0 && (
+          <optgroup label="Already on the job card">
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {`${o.name}${o.partNumber ? ` · ${o.partNumber}` : ""} · qty ${o.quantity}${o.linked === "bill" ? " (already bought)" : ""}`}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        <option value="new">Add as a new line</option>
+      </Select>
+      {chosen && (
+        <span className="text-[10px] text-emerald-300">Updates this line with the purchase cost, no duplicate.</span>
+      )}
+      {value === "new" && <span className="text-[10px] text-amber-300">Adds a separate line to the job card.</span>}
+      {missing && <span className="text-[10px] text-amber-300">The chosen line was removed, so matching is automatic.</span>}
     </div>
   )
 }

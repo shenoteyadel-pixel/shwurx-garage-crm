@@ -588,7 +588,7 @@ async function addPartToJobQuotation(
   jobId: string,
   part: { name: string; partNumber: string | null; quantity: number; unitPrice: number; detail: string },
   defaultVat: number,
-  opts: { keepCustomerPrice?: boolean } = {},
+  opts: { keepCustomerPrice?: boolean; targetItemId?: string | null } = {},
 ): Promise<"added" | "updated"> {
   const { data: existing } = await supabase
     .from("quotations")
@@ -652,11 +652,15 @@ async function addPartToJobQuotation(
         items.filter((i) => isPart(i) && isOpenFor(i) && pnCompatible(i)),
         (i) => i.name,
       )
-  const match = exactMatch ?? smartMatch
+  // The purchaser's explicit choice beats any name matching.
+  const target = opts.targetItemId ?? null
+  const chosen = target && target !== "new" ? items.find((i) => isPart(i) && i.id === target) : undefined
+  const match = target === "new" ? undefined : (chosen ?? exactMatch ?? smartMatch)
+  const openFor = (i: QuoteRow) => Boolean(chosen && i.id === chosen.id) || isOpenFor(i)
 
   // One estimate line covered by several purchases (qty 2 "Front lower arm"
   // bought as one RH + one LH): fulfil part of it and leave the rest open.
-  const split = Boolean(match?.id && isOpenFor(match) && part.quantity < (Number(match.quantity) || 0))
+  const split = Boolean(match?.id && openFor(match) && part.quantity < (Number(match.quantity) || 0))
   let outcome: "added" | "updated"
   if (match?.id && split) {
     const remaining = (Number(match.quantity) || 0) - part.quantity
@@ -684,7 +688,7 @@ async function addPartToJobQuotation(
     if (error) throw new Error(`Could not update "${part.name}" on the job card: ${error.message}`)
     return "updated"
   } else if (!split && match?.id) {
-    const takeInvoice = incomingDoc !== null && isOpenFor(match)
+    const takeInvoice = incomingDoc !== null && openFor(match)
     // Merging a purchase into a manual line: it is the same part at the same
     // cost, so keep whichever selling price earns more.
     const unitPrice = takeInvoice ? Math.max(Number(match.unit_price) || 0, part.unitPrice) : part.unitPrice
@@ -967,6 +971,8 @@ export type DraftLine = {
   parts_request_id: string | null
   suggested_sale_price: number
   markup_pct: number
+  /** Which job card line this purchase fulfils: null = auto match, "new" = always add a line, else a quotation_items id. */
+  job_line_link?: string | null
 }
 
 const MISSING_INVOICE_NUMBER =
@@ -1066,6 +1072,7 @@ async function applyDraft(
           parts_request_id: uuidOrNull(l.parts_request_id),
           suggested_sale_price: n(l.suggested_sale_price),
           markup_pct: n(l.markup_pct),
+          job_line_link: l.job_id ? (l.job_line_link === "new" ? "new" : uuidOrNull(l.job_line_link ?? null)) : null,
         }
       }),
     )
@@ -1292,6 +1299,7 @@ async function applyConfirm(
             detail: reference,
           },
           n(settings.vat_rate, 5),
+          { targetItemId: (it.job_line_link as string | null) ?? null },
         )
       }
       parts.push({
@@ -1507,7 +1515,7 @@ async function applyConfirm(
           detail: crmPartId && oemNumber ? `${crmPartId} · ${reference}` : reference,
         },
         n(settings.vat_rate, 5),
-        { keepCustomerPrice: Boolean(invoice.source_quote_id) },
+        { keepCustomerPrice: Boolean(invoice.source_quote_id), targetItemId: (it.job_line_link as string | null) ?? null },
       )
     }
 
@@ -1637,13 +1645,55 @@ async function reconcileJobs(jobIds: (string | null | undefined)[]) {
 }
 
 async function reconcileInvoiceJobs(invoiceId: string) {
-  const { data } = await createServiceClient().from("supplier_invoice_items").select("job_id").eq("invoice_id", invoiceId)
-  await reconcileJobs(((data as { job_id: string | null }[] | null) ?? []).map((r) => r.job_id))
+  const { data } = await createServiceClient()
+    .from("supplier_invoice_items")
+    .select("job_id, job_line_link")
+    .eq("invoice_id", invoiceId)
+  // Lines where the purchaser picked the job card line are already exact; the
+  // automatic merge must not second-guess those choices.
+  const rows = (data as { job_id: string | null; job_line_link: string | null }[] | null) ?? []
+  await reconcileJobs(rows.filter((r) => !r.job_line_link).map((r) => r.job_id))
   try {
     await ensureInvoicePartsOnQuotations(invoiceId)
   } catch (e) {
     console.error("[ensureInvoicePartsOnQuotations] failed", invoiceId, e)
   }
+}
+
+export type JobCardPartLine = {
+  id: string
+  name: string
+  partNumber: string | null
+  quantity: number
+  /** "bill" / "quote" when a purchase is already linked to this line. */
+  linked: "bill" | "quote" | null
+}
+
+/** Part lines on a car's current job card quotation, for the purchaser to link an invoice line to. */
+export async function getJobCardPartLines(jobId: string): Promise<JobCardPartLine[]> {
+  await guard()
+  if (!jobId) return []
+  const { data: quote } = await createServiceClient()
+    .from("quotations")
+    .select("id, quotation_items(id, kind, name, part_number, quantity, detail, sort_order)")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const items =
+    (quote?.quotation_items as
+      | { id: string; kind: string; name: string | null; part_number: string | null; quantity: number; detail: string | null; sort_order: number | null }[]
+      | null) ?? []
+  return items
+    .filter((i) => i.kind === "part")
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map((i) => ({
+      id: i.id,
+      name: String(i.name || "Part"),
+      partNumber: i.part_number,
+      quantity: n(i.quantity),
+      linked: partDocLink(i.detail),
+    }))
 }
 
 /**
@@ -1670,10 +1720,17 @@ async function ensureInvoicePartsOnQuotations(invoiceId: string) {
 
   const { data: lines } = await db
     .from("supplier_invoice_items")
-    .select("job_id, description, quantity, unit_cost, suggested_sale_price, markup_pct, oem_part_number, supplier_part_number, match_status")
+    .select("job_id, description, quantity, unit_cost, suggested_sale_price, markup_pct, oem_part_number, supplier_part_number, match_status, job_line_link")
     .eq("invoice_id", invoiceId)
     .not("job_id", "is", null)
-  const parts = (lines ?? []).filter((l) => l.match_status !== "ignore" && l.match_status !== "expense" && n(l.quantity) > 0)
+  const parts = (lines ?? []).filter(
+    (l) =>
+      l.match_status !== "ignore" &&
+      l.match_status !== "expense" &&
+      n(l.quantity) > 0 &&
+      // Posted onto a line the purchaser picked, so it sits on the job card under that line's name.
+      (!l.job_line_link || l.job_line_link === "new"),
+  )
   if (!parts.length) return
 
   const settings = await getSettings()

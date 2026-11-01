@@ -7,6 +7,7 @@ import { writeAudit } from "@/lib/rbac/context"
 import { staffWithPermission, alertEmailHtml } from "@/lib/subscription-notify"
 import { classifyFailure, dubaiToday, type IncidentCause, type SubscriptionLike } from "@/lib/subscriptions"
 import { confirmBackupManifest } from "@/lib/database-backup"
+import { AI_CREDIT_LOW_USD, PROVIDER_PAY_URL } from "@/lib/provider-billing"
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://swurxauto.com"
 const SLOW_MS = 5000
@@ -36,6 +37,8 @@ interface CheckResult {
   lastSuccessAt?: string
   /** The latest run actually failed, as opposed to simply being late. */
   failedRun?: boolean
+  /** The check already knows why it failed (e.g. credit balance), so skip guessing from subscriptions. */
+  cause?: IncidentCause
 }
 
 async function timed<T>(fn: () => Promise<T>): Promise<[T, number]> {
@@ -254,6 +257,21 @@ async function checkProvider(provider: string | null): Promise<CheckResult> {
     }
     case "carsxe":
       return need(["CARSXE_API_KEY"]) ?? { status: "up", error: "Key configured. Not called here because every lookup uses credits." }
+    case "ai_gateway": {
+      try {
+        const { gateway } = await import("ai")
+        const [credits, ms] = await timed(() => gateway.getCredits())
+        const balance = Number(credits.balance)
+        const text = `Balance USD ${balance.toFixed(2)} (used USD ${Number(credits.totalUsed).toFixed(2)})`
+        if (!(balance > 0))
+          return { status: "down", latencyMs: ms, cause: "suspected_unpaid", error: `AI credits are empty. ${text}. Invoice scanning and AI features are stopped until you top up.` }
+        if (balance < AI_CREDIT_LOW_USD)
+          return { status: "down", latencyMs: ms, cause: "capacity", error: `AI credits are low. ${text}. Top up before invoice scanning stops.` }
+        return { status: "up", latencyMs: ms, error: text }
+      } catch (e) {
+        return { status: "down", error: `AI Gateway: ${(e as Error).message}` }
+      }
+    }
     default:
       return { status: "down", error: `Unknown provider "${provider}"` }
   }
@@ -306,15 +324,22 @@ async function alertIncident(m: Monitor, cause: IncidentCause, summary: string, 
     people.map((p) => p.id),
     { title, body: lines.join(" "), type: recovered ? "info" : "alert", link: "/finance/continuity" },
   ).catch(() => {})
+  const payUrl = !recovered && cause !== "outage" && m.provider ? PROVIDER_PAY_URL[m.provider] : undefined
   for (const p of people) {
     if (p.email)
       await sendEmail({
         to: p.email,
         subject: title,
-        html: alertEmailHtml({ title, lines, ctaLabel: "Open Critical Services", ctaUrl: `${SITE}/finance/continuity`, tone: recovered ? "ok" : "danger" }),
+        html: alertEmailHtml({
+          title,
+          lines: payUrl ? [...lines, `Pay / top up: ${payUrl}`] : lines,
+          ctaLabel: payUrl ? "Pay now" : "Open Critical Services",
+          ctaUrl: payUrl ?? `${SITE}/finance/continuity`,
+          tone: recovered ? "ok" : "danger",
+        }),
       })
     if (!recovered && whatsAppConfigured() && p.phone && (m.criticality === "critical" || m.criticality === "high"))
-      await sendWhatsAppAlert(p.phone, `${title}. ${summary}`)
+      await sendWhatsAppAlert(p.phone, `${title}. ${summary}${payUrl ? ` Pay: ${payUrl}` : ""}`)
   }
 }
 
@@ -387,7 +412,7 @@ async function checkAndRecord(m: Monitor, today: string, stats: Stats) {
       const { data } = await svc.from("subscriptions").select("*").eq("id", m.subscription_id).maybeSingle()
       linked = data ? ({ ...data, amount: Number(data.amount), fx_rate_to_aed: Number(data.fx_rate_to_aed), vat_rate: Number(data.vat_rate) } as SubscriptionLike) : null
     }
-    const cause: IncidentCause = m.kind === "capacity" ? "capacity" : classifyFailure({ kind: m.kind, linkedSubscription: linked, today })
+    const cause: IncidentCause = res.cause ?? (m.kind === "capacity" ? "capacity" : null) ?? classifyFailure({ kind: m.kind, linkedSubscription: linked, today })
     await svc.from("service_incidents").insert({ monitor_id: m.id, cause, summary, notified_at: nowIso })
     stats.opened++
     await writeAudit({ action: "service_incident_opened", resourceType: "service_monitor", resourceId: m.id, detail: { cause, summary }, status: "error" })

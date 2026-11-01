@@ -23,6 +23,7 @@ export interface MonitorRow {
   escalation_contacts: string
   recovery_instructions: string
   links: { label: string; href: string; external: boolean }[]
+  pay_url: string | null
   subscription: {
     id: string
     name: string
@@ -298,6 +299,7 @@ export function ContinuityView({
                   </div>
                 </dl>
                 {m.last_error && m.last_status !== "up" ? <p className="text-xs text-red-300">{m.last_error}</p> : null}
+                {m.last_error && m.last_status === "up" && m.kind === "provider" ? <p className="text-xs text-muted-foreground">{m.last_error}</p> : null}
                 <div className="flex flex-col gap-2 rounded-md border border-border p-3 text-xs">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted-foreground">Payment required</span>
@@ -329,7 +331,7 @@ export function ContinuityView({
                     </>
                   )}
                 </div>
-                {m.links.length || m.subscription?.billing_portal_url ? (
+                {m.links.length || m.pay_url ? (
                   <div className="mt-auto flex flex-wrap gap-2">
                     {m.links.map((l) =>
                       l.external ? (
@@ -350,14 +352,14 @@ export function ContinuityView({
                         </a>
                       ),
                     )}
-                    {m.subscription?.billing_portal_url ? (
+                    {m.pay_url ? (
                       <a
-                        href={m.subscription.billing_portal_url}
+                        href={m.pay_url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:opacity-90"
                       >
-                        Pay / billing
+                        {m.kind === "provider" && m.target.includes("credits") ? "Top up now" : "Pay now"}
                         <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                         <span className="sr-only">(opens in new tab)</span>
                       </a>

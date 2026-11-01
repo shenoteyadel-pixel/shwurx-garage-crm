@@ -145,6 +145,19 @@ function ensureLines(x: ExtractedInvoice): ExtractedInvoice {
   }
 }
 
+const isOutOfCredits = (err: unknown) => {
+  const e = err as { statusCode?: number; message?: string } | null
+  return e?.statusCode === 402 || /credit balance|insufficient_funds/i.test(e?.message ?? "")
+}
+
+/** Plain-language reason shown to staff when the document reader can't run. */
+export function ocrFailureMessage(err: unknown): string {
+  if (isOutOfCredits(err)) {
+    return "Auto-read is paused: the AI Gateway credit balance is empty. Top up AI credits in Vercel (Team > AI Gateway), then tap Re-read document."
+  }
+  return "The document could not be read automatically. Tap Re-read document, or add the lines manually."
+}
+
 /**
  * One retry on malformed output, and one more read when the first pass found no
  * priced lines (common on fuel slips / phone photos). Best result wins.
@@ -154,6 +167,7 @@ export async function extractInvoice(data: Uint8Array, mediaType: string): Promi
   try {
     first = await runExtraction(data, mediaType)
   } catch (err) {
+    if (isOutOfCredits(err)) throw err
     console.error("[v0] invoice OCR attempt 1 failed, retrying:", err)
     return ensureLines(await runExtraction(data, mediaType))
   }

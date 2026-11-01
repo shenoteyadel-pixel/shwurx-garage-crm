@@ -43,6 +43,7 @@ import { findJobDuplicateParts } from "@/lib/part-costs"
 import { DuplicatePartsDialog } from "@/components/duplicate-parts-dialog"
 import { JobSectionTabs } from "@/components/job-section-tabs"
 import { JobBillingPanel, type JobInvoice, type JobPayment } from "@/components/job-billing-panel"
+import { JobDepositPanel, type JobDeposit } from "@/components/job-deposit-panel"
 import {
   ArrowLeft,
   Phone,
@@ -150,7 +151,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   // customer was sent, so staff are prompted to send a fresh approval version.
   const latestQuoteApproval = approvals.find((a) => a.kind === "quotation")
   let quoteChangedSinceSent = false
-  if (latestQuoteApproval && quotation) {
+  let quoteTotal = 0
+  if (quotation) {
     const rawItems = ((quotation.quotation_items as any[]) ?? [])
     const vr = Number(quotation.vat_rate ?? 5)
     const inc = Boolean(quotation.vat_inclusive)
@@ -176,9 +178,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       }
     }
     const currentTotal = round2(subtotal + vatAmount)
+    quoteTotal = currentTotal
     quoteChangedSinceSent =
-      rawItems.length !== latestQuoteApproval.itemCount ||
-      Math.abs(currentTotal - latestQuoteApproval.total) > 0.01
+      !!latestQuoteApproval &&
+      (rawItems.length !== latestQuoteApproval.itemCount ||
+        Math.abs(currentTotal - latestQuoteApproval.total) > 0.01)
   }
 
   const { data: parts } = await supabase
@@ -221,7 +225,25 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         .in("invoice_id", invoiceIds)
         .order("created_at", { ascending: false })
     : { data: [] as JobPayment[] }
+  const { data: jobDeposits } = await supabase
+    .from("payments")
+    .select("id, invoice_id, amount, method, reference, paid_at, created_at")
+    .eq("job_id", id)
+    .eq("is_deposit", true)
+    .order("created_at", { ascending: false })
   const sessionCtx = await getSessionContext()
+  const canTakeDeposit =
+    (sessionCtx?.permissions.has("payments.record") || sessionCtx?.permissions.has("quotations.edit")) ?? false
+  const hasActiveInvoice = (jobInvoices ?? []).some((i) => i.status !== "cancelled")
+  const depositPanel = (
+    <JobDepositPanel
+      jobId={id}
+      deposits={(jobDeposits ?? []) as JobDeposit[]}
+      quoteTotal={quoteTotal}
+      canTake={canTakeDeposit}
+      hasInvoice={hasActiveInvoice}
+    />
+  )
   const duplicateGroups = sessionCtx?.permissions.has("quotations.edit")
     ? await findJobDuplicateParts(supabase, id, quotation?.quotation_items as any[])
     : []
@@ -602,7 +624,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                   ...(canSeeQuotation ? [{
                     id: "quotation",
                     label: "Quotation",
-                    hint: "What the customer is quoted and approves. No purchasing or payments here.",
+                    hint: "What the customer is quoted and approves, plus any deposit taken up front.",
                     content: (
                       <>
                         <QuotationBuilder
@@ -629,6 +651,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                           />
                         )}
                         <AddonServices jobId={job.id} addons={addons} locked={locked} />
+                        {depositPanel}
                       </>
                     ),
                   }] : []),
@@ -686,11 +709,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                     badge: (jobInvoices ?? []).length,
                     hint: "Customer invoices for this job and the money received against them.",
                     content: (
-                      <JobBillingPanel
-                        jobId={job.id}
-                        invoices={(jobInvoices ?? []) as JobInvoice[]}
-                        payments={(jobPayments ?? []) as JobPayment[]}
-                      />
+                      <>
+                        {depositPanel}
+                        <JobBillingPanel
+                          jobId={job.id}
+                          invoices={(jobInvoices ?? []) as JobInvoice[]}
+                          payments={(jobPayments ?? []) as JobPayment[]}
+                        />
+                      </>
                     ),
                   },
                 ]}

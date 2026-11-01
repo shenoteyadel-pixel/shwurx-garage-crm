@@ -4,6 +4,7 @@ import { requirePageAccess, can } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
 import { ContinuityView, type MonitorRow, type IncidentRow, type JobRunRow, type OverdueRow } from "@/components/continuity-view"
 import { dubaiToday, grossCycleAED } from "@/lib/subscriptions"
+import { PROVIDER_PAY_URL } from "@/lib/provider-billing"
 
 export const metadata = { title: "Critical Services · SHWURX Auto Service Center" }
 
@@ -30,6 +31,7 @@ export default async function ContinuityPage() {
     const sub = m.subscription_id ? subs.get(m.subscription_id) : undefined
     return {
       links: monitorLinks(m.kind, m.target_url, sub?.service_url ?? null, m.provider),
+      pay_url: (sub?.billing_portal_url as string | null) || (m.provider ? PROVIDER_PAY_URL[m.provider] : null) || null,
       id: m.id,
       name: m.name,
       kind: m.kind,
@@ -100,6 +102,7 @@ export default async function ContinuityPage() {
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
+  ai_gateway: "Vercel AI Gateway credits",
   whatsapp: "360dialog API",
   resend: "Resend API",
   stripe: "Stripe API",
@@ -110,14 +113,11 @@ const PROVIDER_LABEL: Record<string, string> = {
 }
 
 const PROVIDER_LINKS: Record<string, MonitorRow["links"]> = {
-  whatsapp: [
-    { label: "360dialog hub", href: "https://hub.360dialog.com/", external: true },
-    { label: "Billing", href: "https://hub.360dialog.com/dashboard/billing", external: true },
-  ],
+  ai_gateway: [{ label: "AI usage", href: "https://vercel.com/d?to=%2F%5Bteam%5D%2F~%2Fai%2Fusage&title=AI+Gateway+usage", external: true }],
+  whatsapp: [{ label: "360dialog hub", href: "https://hub.360dialog.com/", external: true }],
   resend: [
     { label: "Resend dashboard", href: "https://resend.com/emails", external: true },
     { label: "Domains", href: "https://resend.com/domains", external: true },
-    { label: "Billing", href: "https://resend.com/settings/billing", external: true },
   ],
   stripe: [
     { label: "Stripe dashboard", href: "https://dashboard.stripe.com/", external: true },
@@ -127,11 +127,9 @@ const PROVIDER_LINKS: Record<string, MonitorRow["links"]> = {
   meta: [
     { label: "Ads Manager", href: "https://adsmanager.facebook.com/", external: true },
     { label: "Business settings", href: "https://business.facebook.com/settings", external: true },
-    { label: "Billing", href: "https://business.facebook.com/billing_hub", external: true },
   ],
   google_ads: [
     { label: "Google Ads", href: "https://ads.google.com/", external: true },
-    { label: "Billing", href: "https://ads.google.com/aw/billing/summary", external: true },
     { label: "AI Marketing Manager", href: "/ai-marketing", external: false },
   ],
   carsxe: [{ label: "CarsXE dashboard", href: "https://api.carsxe.com/dashboard", external: true }],

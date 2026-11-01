@@ -6,13 +6,11 @@ type LabourItem = { name: string | null; detail: string | null }
 type PartItem = { name: string | null; part_number: string | null; quantity: number }
 
 export function TechnicianJobCard({
-  complaint,
   approved,
   labour,
   parts,
   trade,
 }: {
-  complaint: string | null
   approved: boolean
   labour: LabourItem[]
   parts: PartItem[]
@@ -29,15 +27,6 @@ export function TechnicianJobCard({
           {trade ? `${tradeLabel(trade)} view` : "Technician view"} · no pricing
         </span>
       </div>
-
-      {complaint && (
-        <div className="mb-4 rounded-lg border border-border bg-background/40 p-4">
-          <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Customer complaint
-          </div>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{complaint}</p>
-        </div>
-      )}
 
       {!approved && (
         <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300">

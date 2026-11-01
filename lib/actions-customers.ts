@@ -108,15 +108,27 @@ export async function searchCustomers(query: string) {
 // Exact mobile match — used to warn about duplicates before creating.
 export async function findCustomerByMobile(mobile: string) {
   const { supabase } = await requireUser()
-  const m = mobile.trim()
-  if (!m) return null
+  return findByMobileKey(supabase, mobile)
+}
+
+// Matches on the last 9 digits so "+971 50…", "050…" and "97150…" are the same customer.
+function mobileKey(mobile: string | null | undefined) {
+  const digits = (mobile ?? "").replace(/\D/g, "")
+  return digits.length >= 9 ? digits.slice(-9) : null
+}
+
+async function findByMobileKey(
+  supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
+  mobile: string | null | undefined,
+) {
+  const key = mobileKey(mobile)
+  if (!key) return null
   const { data } = await supabase
     .from("customers")
     .select("id, full_name, mobile")
-    .eq("mobile", m)
-    .limit(1)
-    .maybeSingle()
-  return data
+    .ilike("mobile", `%${key.slice(-4)}`)
+    .limit(50)
+  return (data ?? []).find((c) => mobileKey(c.mobile) === key) ?? null
 }
 
 /* ---------------- Customer CRUD ---------------- */
@@ -140,11 +152,26 @@ export async function createCustomer(fd: FormData) {
   const payload: Record<string, unknown> = { created_by: user.id }
   for (const f of CUSTOMER_FIELDS) payload[f] = s(fd, f)
   payload.full_name = s(fd, "full_name") || "Unnamed Customer"
+  const redirectTo = String(fd.get("redirect_to") || "")
+
+  // One profile per mobile number: open the existing customer instead of creating a duplicate.
+  const existing = await findByMobileKey(supabase, payload.mobile as string | null)
+  if (existing) {
+    if (redirectTo) redirect(redirectTo)
+    redirect(`/customers/${existing.id}`)
+  }
+
   const { data, error } = await supabase.from("customers").insert(payload).select("id").single()
-  if (error) throw new Error(error.message)
+  if (error) {
+    // Double-tap race: the unique mobile index rejected the second insert.
+    if (error.code === "23505") {
+      const dup = await findByMobileKey(supabase, payload.mobile as string | null)
+      if (dup) redirect(redirectTo || `/customers/${dup.id}`)
+    }
+    throw new Error(error.message)
+  }
   await logCurrent("customer.create", "customer", data.id, { name: payload.full_name })
   revalidatePath("/customers")
-  const redirectTo = String(fd.get("redirect_to") || "")
   if (redirectTo) redirect(redirectTo)
   redirect(`/customers/${data.id}`)
 }

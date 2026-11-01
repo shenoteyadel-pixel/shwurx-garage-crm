@@ -5,7 +5,7 @@ import { logCurrent } from "@/lib/rbac/context"
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import { requirePermission, requireAnyPermission, logAction, type SessionContext } from "@/lib/rbac/context"
 import { notifyActivity } from "@/lib/activity"
 import { issueGatePass } from "@/lib/gate-pass"
 import type { Permission } from "@/lib/rbac/roles"
@@ -552,6 +552,7 @@ export async function createInvoice(payload: {
       })),
     )
   }
+  if (payload.jobId) await applyJobDeposits(supabase, payload.jobId, inv.id, t.total)
   await logAction(ctx, "invoice.create", "invoice", inv.id, { invoice_number: invNum, total: t.total })
   revalidatePath("/invoices")
   redirect(`/invoices/${inv.id}`)
@@ -606,6 +607,84 @@ export async function recordInvoicePayment(invoiceId: string, formData: FormData
   await logAction(ctx, "payment.record", "invoice", invoiceId, { amount })
   revalidatePath(`/invoices/${invoiceId}`)
   revalidatePath("/invoices")
+}
+
+const DEPOSIT_METHODS = new Set(["cash", "card", "bank", "cheque", "other"])
+
+/**
+ * Take a customer deposit on a job card / quotation before an invoice exists.
+ * Service advisors (quotations.edit) may take deposits as well as finance roles.
+ * Unapplied deposits are moved onto the job's invoice when it is created.
+ */
+export async function recordJobDeposit(
+  jobId: string,
+  formData: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await requireAnyPermission(["payments.record", "quotations.edit"])
+  const supabase = await createClient()
+  const amount = Math.round(num(formData.get("amount")) * 100) / 100
+  if (!(amount > 0)) return { ok: false, error: "Enter a deposit amount greater than zero." }
+  if (amount > 1_000_000) return { ok: false, error: "Deposit amount is too large." }
+  const methodRaw = String(formData.get("method") || "cash")
+  const method = DEPOSIT_METHODS.has(methodRaw) ? methodRaw : "cash"
+
+  const { data: job } = await supabase.from("jobs").select("id, job_number").eq("id", jobId).maybeSingle()
+  if (!job) return { ok: false, error: "Job not found." }
+  const { data: quotation } = await supabase
+    .from("quotations")
+    .select("id")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const { data: invoice } = await supabase
+    .from("invoices")
+    .select("id")
+    .eq("job_id", jobId)
+    .neq("status", "cancelled")
+    .limit(1)
+    .maybeSingle()
+  if (invoice) {
+    return { ok: false, error: "This job already has an invoice. Record the payment on the invoice instead." }
+  }
+
+  const { error } = await supabase.from("payments").insert({
+    direction: "in",
+    job_id: jobId,
+    quotation_id: quotation?.id ?? null,
+    is_deposit: true,
+    amount,
+    method,
+    reference: str(formData.get("reference"))?.slice(0, 200) ?? null,
+    note: str(formData.get("note"))?.slice(0, 500) ?? null,
+    created_by: ctx.userId,
+  })
+  if (error) return { ok: false, error: error.message }
+
+  await logAction(ctx, "payment.deposit", "job", jobId, { amount, method })
+  await notifyActivity({ title: `Deposit ${amount.toFixed(2)} AED taken on ${job.job_number}`, link: `/jobs/${jobId}` })
+  revalidatePath(`/jobs/${jobId}`)
+  return { ok: true }
+}
+
+/** Moves a job's unapplied deposits onto its new invoice and updates the paid amount. */
+async function applyJobDeposits(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  jobId: string,
+  invoiceId: string,
+  total: number,
+) {
+  const { data: deposits } = await supabase
+    .from("payments")
+    .select("id, amount")
+    .eq("job_id", jobId)
+    .eq("is_deposit", true)
+    .is("invoice_id", null)
+  if (!deposits?.length) return
+  const paid = deposits.reduce((s, d) => s + (Number(d.amount) || 0), 0)
+  await supabase.from("payments").update({ invoice_id: invoiceId }).in("id", deposits.map((d) => d.id))
+  const status = paid >= total - 0.01 ? "paid" : paid > 0 ? "partial" : "unpaid"
+  await supabase.from("invoices").update({ amount_paid: paid, status }).eq("id", invoiceId)
 }
 
 export async function cancelInvoice(invoiceId: string) {

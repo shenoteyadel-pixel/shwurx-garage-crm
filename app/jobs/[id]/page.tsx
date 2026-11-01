@@ -56,6 +56,7 @@ import {
   FileText,
   ShoppingCart,
   FolderOpen,
+  MessageSquareWarning,
 } from "lucide-react"
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -580,6 +581,23 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         <StageStepper jobId={job.id} stage={job.stage as Stage} />
       </Card>
 
+      <section
+        aria-labelledby="customer-complaint-heading"
+        className="mb-6 rounded-xl border border-primary/40 bg-primary/5 p-4 sm:p-5"
+      >
+        <h2
+          id="customer-complaint-heading"
+          className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary"
+        >
+          <MessageSquareWarning className="h-4 w-4" /> Customer complaint
+        </h2>
+        {job.complaint ? (
+          <p className="whitespace-pre-wrap text-pretty text-base leading-relaxed text-foreground">{job.complaint}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">No complaint recorded for this job.</p>
+        )}
+      </section>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           {showPrices ? (
@@ -726,7 +744,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             <>
               {isInspectionOnly && fullInspectionPanel}
               <TechnicianJobCard
-                complaint={job.complaint}
                 approved={locked}
                 labour={techLabour}
                 parts={techParts}
@@ -827,14 +844,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 </span>
               )}
             </div>
-            {job.complaint && (
-              <div className="mt-4 border-t border-border pt-4">
-                <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Customer complaint
-                </div>
-                <p className="whitespace-pre-wrap text-sm text-muted-foreground">{job.complaint}</p>
-              </div>
-            )}
             {job.notes && (
               <div className="mt-4 border-t border-border pt-4">
                 <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</div>

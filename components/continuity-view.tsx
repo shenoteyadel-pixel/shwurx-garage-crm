@@ -3,10 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Activity, AlertTriangle, BellRing, DatabaseBackup, RefreshCw } from "lucide-react"
+import { Activity, AlertTriangle, BellRing, DatabaseBackup, ExternalLink, RefreshCw } from "lucide-react"
 import { Badge, Button, Card } from "@/components/ui"
 import { CRIT_TONE } from "@/components/subscription-labels"
-import { runBackupNow, runChecksNow, runRemindersNow } from "@/lib/actions-continuity"
+import { linkMonitorSubscription, runBackupNow, runChecksNow, runRemindersNow } from "@/lib/actions-continuity"
 
 export interface MonitorRow {
   id: string
@@ -22,7 +22,68 @@ export interface MonitorRow {
   consecutive_failures: number
   escalation_contacts: string
   recovery_instructions: string
-  subscription: { id: string; name: string; next_due_date: string } | null
+  links: { label: string; href: string; external: boolean }[]
+  subscription: {
+    id: string
+    name: string
+    next_due_date: string
+    amount: number
+    currency: string
+    amount_aed: number
+    billing_cycle: string
+    custom_cycle_days: number | null
+    billing_portal_url: string | null
+    overdue: boolean
+  } | null
+}
+
+const money = (n: number, currency: string) =>
+  `${currency} ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const cycleLabel = (cycle: string, days: number | null) =>
+  cycle === "monthly" ? "month" : cycle === "quarterly" ? "quarter" : cycle === "yearly" ? "year" : `${days ?? 30} days`
+
+function LinkSubscription({ monitorId, options }: { monitorId: string; options: { id: string; name: string }[] }) {
+  const router = useRouter()
+  const [pending, start] = React.useTransition()
+  const [error, setError] = React.useState("")
+  if (!options.length) {
+    return (
+      <Link href="/finance/subscriptions" className="text-xs text-foreground underline underline-offset-4">
+        Add the subscription first
+      </Link>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="sr-only" htmlFor={`link-${monitorId}`}>
+        Link a subscription
+      </label>
+      <select
+        id={`link-${monitorId}`}
+        defaultValue=""
+        disabled={pending}
+        onChange={(e) => {
+          const value = e.target.value
+          if (!value) return
+          setError("")
+          start(async () => {
+            const res = await linkMonitorSubscription(monitorId, value)
+            if (!res.ok) setError(res.error)
+            else router.refresh()
+          })
+        }}
+        className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+      >
+        <option value="">{pending ? "Linking..." : "Link a subscription..."}</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+      {error ? <p className="text-xs text-red-300">{error}</p> : null}
+    </div>
+  )
 }
 
 export interface IncidentRow {
@@ -71,12 +132,14 @@ export function ContinuityView({
   runs,
   overdue,
   canApprove,
+  subscriptionOptions = [],
 }: {
   monitors: MonitorRow[]
   incidents: IncidentRow[]
   runs: JobRunRow[]
   overdue: OverdueRow[]
   canApprove: boolean
+  subscriptionOptions?: { id: string; name: string }[]
 }) {
   const router = useRouter()
   const [busy, setBusy] = React.useState<"checks" | "reminders" | "backup" | null>(null)
@@ -235,14 +298,71 @@ export function ContinuityView({
                   </div>
                 </dl>
                 {m.last_error && m.last_status !== "up" ? <p className="text-xs text-red-300">{m.last_error}</p> : null}
-                {m.subscription ? (
-                  <p className="text-xs text-muted-foreground">
-                    Paid via{" "}
-                    <Link href={`/finance/subscriptions/${m.subscription.id}`} className="text-foreground underline-offset-4 hover:underline">
-                      {m.subscription.name}
-                    </Link>
-                    , next due {m.subscription.next_due_date}
-                  </p>
+                <div className="flex flex-col gap-2 rounded-md border border-border p-3 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Payment required</span>
+                    {m.subscription?.overdue ? <Badge className="bg-red-500/15 text-red-300">Overdue</Badge> : null}
+                  </div>
+                  {m.subscription ? (
+                    <>
+                      <p className="text-base font-semibold text-foreground">
+                        {money(m.subscription.amount_aed, "AED")}
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {" "}
+                          / {cycleLabel(m.subscription.billing_cycle, m.subscription.custom_cycle_days)} incl. VAT
+                        </span>
+                      </p>
+                      {m.subscription.currency !== "AED" ? (
+                        <p className="text-muted-foreground">Billed as {money(m.subscription.amount, m.subscription.currency)}</p>
+                      ) : null}
+                      <p className="text-muted-foreground">
+                        Due {m.subscription.next_due_date} ·{" "}
+                        <Link href={`/finance/subscriptions/${m.subscription.id}`} className="text-foreground underline-offset-4 hover:underline">
+                          {m.subscription.name}
+                        </Link>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-muted-foreground">No payment linked to this service yet.</p>
+                      {canApprove ? <LinkSubscription monitorId={m.id} options={subscriptionOptions} /> : null}
+                    </>
+                  )}
+                </div>
+                {m.links.length || m.subscription?.billing_portal_url ? (
+                  <div className="mt-auto flex flex-wrap gap-2">
+                    {m.links.map((l) =>
+                      l.external ? (
+                        <a
+                          key={l.href}
+                          href={l.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs text-foreground hover:bg-muted"
+                        >
+                          {l.label}
+                          <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                          <span className="sr-only">(opens in new tab)</span>
+                        </a>
+                      ) : (
+                        <a key={l.href} href={l.href} className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs text-foreground hover:bg-muted">
+                          {l.label}
+                        </a>
+                      ),
+                    )}
+                    {m.subscription?.billing_portal_url ? (
+                      <a
+                        href={m.subscription.billing_portal_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:opacity-90"
+                      >
+                        Pay / billing
+                        <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                        <span className="sr-only">(opens in new tab)</span>
+                      </a>
+                    ) : null}
+                  </div>
                 ) : null}
                 {m.recovery_instructions && m.last_status !== "up" ? (
                   <details className="text-xs" open={m.last_status === "down"}>

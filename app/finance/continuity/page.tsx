@@ -3,7 +3,7 @@ import { getShellUser } from "@/lib/shell-user"
 import { requirePageAccess, can } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
 import { ContinuityView, type MonitorRow, type IncidentRow, type JobRunRow, type OverdueRow } from "@/components/continuity-view"
-import { dubaiToday } from "@/lib/subscriptions"
+import { dubaiToday, grossCycleAED } from "@/lib/subscriptions"
 
 export const metadata = { title: "Critical Services · SHWURX Auto Service Center" }
 
@@ -19,13 +19,17 @@ export default async function ContinuityPage() {
       .order("name"),
     supabase.from("service_incidents").select("id, monitor_id, cause, summary, opened_at, resolved_at").order("opened_at", { ascending: false }).limit(30),
     supabase.from("scheduled_job_runs").select("id, job, status, started_at, finished_at, detail").order("started_at", { ascending: false }).limit(30),
-    supabase.from("subscriptions").select("id, service_name, next_due_date, status, criticality"),
+    supabase
+      .from("subscriptions")
+      .select("id, service_name, next_due_date, status, criticality, amount, currency, fx_rate_to_aed, vat_rate, amount_includes_vat, billing_cycle, custom_cycle_days, service_url, billing_portal_url")
+      .order("service_name"),
   ])
 
   const subs = new Map((subRes.data ?? []).map((s) => [s.id as string, s]))
   const monitors: MonitorRow[] = (monRes.data ?? []).map((m) => {
     const sub = m.subscription_id ? subs.get(m.subscription_id) : undefined
     return {
+      links: monitorLinks(m.kind, m.target_url, sub?.service_url ?? null),
       id: m.id,
       name: m.name,
       kind: m.kind,
@@ -39,9 +43,30 @@ export default async function ContinuityPage() {
       consecutive_failures: m.consecutive_failures ?? 0,
       escalation_contacts: m.escalation_contacts ?? "",
       recovery_instructions: m.recovery_instructions ?? "",
-      subscription: sub ? { id: sub.id as string, name: sub.service_name as string, next_due_date: String(sub.next_due_date).slice(0, 10) } : null,
+      subscription: sub
+        ? {
+            id: sub.id as string,
+            name: sub.service_name as string,
+            next_due_date: String(sub.next_due_date).slice(0, 10),
+            amount: Number(sub.amount ?? 0),
+            currency: (sub.currency as string) || "AED",
+            amount_aed: grossCycleAED({
+              amount: Number(sub.amount ?? 0),
+              fx_rate_to_aed: Number(sub.fx_rate_to_aed ?? 1),
+              vat_rate: Number(sub.vat_rate ?? 0),
+              amount_includes_vat: !!sub.amount_includes_vat,
+            }),
+            billing_cycle: sub.billing_cycle as string,
+            custom_cycle_days: (sub.custom_cycle_days as number | null) ?? null,
+            billing_portal_url: (sub.billing_portal_url as string | null) ?? null,
+            overdue: ["active", "pending_verification"].includes(sub.status as string) && String(sub.next_due_date).slice(0, 10) < dubaiToday(),
+          }
+        : null,
     }
   })
+  const subscriptionOptions = (subRes.data ?? [])
+    .filter((s) => s.status !== "cancelled")
+    .map((s) => ({ id: s.id as string, name: s.service_name as string }))
   const names = new Map(monitors.map((m) => [m.id, m.name]))
   const incidents: IncidentRow[] = (incRes.data ?? []).map((i) => ({
     id: i.id,
@@ -68,10 +93,42 @@ export default async function ContinuityPage() {
   return (
     <AppShell user={shellUser}>
       <div className="mx-auto max-w-6xl">
-        <ContinuityView monitors={monitors} incidents={incidents} runs={runs} overdue={overdue} canApprove={canApprove} />
+        <ContinuityView monitors={monitors} incidents={incidents} runs={runs} overdue={overdue} canApprove={canApprove} subscriptionOptions={subscriptionOptions} />
       </div>
     </AppShell>
   )
+}
+
+/** Where staff go to inspect or fix each monitored system. */
+function monitorLinks(kind: string, targetUrl: string | null, serviceUrl: string | null): MonitorRow["links"] {
+  const ref = /^https:\/\/([a-z0-9]+)\.supabase\.co/i.exec(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")?.[1] ?? "_"
+  const sb = `https://supabase.com/dashboard/project/${ref}`
+  const links: MonitorRow["links"] = []
+  switch (kind) {
+    case "http":
+      if (targetUrl) links.push({ label: "Open site", href: targetUrl, external: true })
+      break
+    case "auth":
+      links.push({ label: "Users & sign-in", href: `${sb}/auth/users`, external: true })
+      break
+    case "database":
+      links.push({ label: "Database", href: `${sb}/database/tables`, external: true })
+      break
+    case "backup":
+      links.push({ label: "Backup runs", href: "#runs-h", external: false })
+      links.push({ label: "Supabase backups", href: `${sb}/database/backups/scheduled`, external: true })
+      break
+    case "capacity":
+      links.push({ label: "Usage & limits", href: "https://supabase.com/dashboard/org/_/usage", external: true })
+      break
+    case "scheduled_job":
+      links.push({ label: "Run history", href: "#runs-h", external: false })
+      break
+  }
+  if (serviceUrl && /^https?:\/\//i.test(serviceUrl) && !links.some((l) => l.href === serviceUrl)) {
+    links.push({ label: "Service dashboard", href: serviceUrl, external: true })
+  }
+  return links
 }
 
 const LOG_KEYS: Record<string, string> = {

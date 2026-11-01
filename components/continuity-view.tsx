@@ -120,7 +120,7 @@ const STATUS_TONE: Record<string, string> = {
 }
 const STATUS_LABEL: Record<string, string> = { up: "Operational", degraded: "Degraded", down: "Down", unknown: "Not checked yet" }
 const CAUSE_LABEL: Record<string, string> = { outage: "Outage", suspected_unpaid: "Possibly unpaid", stale: "Stale", capacity: "Near limit" }
-const KIND_LABEL: Record<string, string> = { http: "Website", database: "Database", auth: "Sign-in", backup: "Backup", scheduled_job: "Scheduled job", capacity: "Usage limits" }
+const KIND_LABEL: Record<string, string> = { http: "Website", database: "Database", auth: "Sign-in", backup: "Backup", scheduled_job: "Scheduled job", capacity: "Usage limits", provider: "Provider" }
 const RUN_TONE: Record<string, string> = { ok: "text-emerald-300", partial: "text-amber-300", failed: "text-red-300", running: "text-muted-foreground" }
 
 const fmt = (iso: string | null) =>

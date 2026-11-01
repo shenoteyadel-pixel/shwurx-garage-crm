@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { QcMark } from "@/components/qc-mark"
 import { notFound } from "next/navigation"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { getShellUser } from "@/lib/shell-user"
@@ -46,7 +47,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       .order("created_at", { ascending: false }),
     supabase
       .from("jobs")
-      .select("id, job_number, stage, vehicle_make, vehicle_model, plate_number, created_at, vehicle_id")
+      .select("id, job_number, stage, qc_status, vehicle_make, vehicle_model, plate_number, created_at, vehicle_id")
       .eq("customer_id", id)
       .order("created_at", { ascending: false }),
   ])
@@ -103,7 +104,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">{customer.full_name}</h1>
+              <h1 className="text-2xl font-bold tracking-tight">{customer.full_name}<QcMark passed={jobs?.[0]?.qc_status === "passed"} /></h1>
               {customer.status === "inactive" ? (
                 <Badge className="bg-muted text-muted-foreground">Inactive</Badge>
               ) : null}
@@ -266,7 +267,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                 <Link key={j.id} href={`/jobs/${j.id}`}>
                   <Card className="flex items-center justify-between gap-4 p-3.5 transition-colors hover:border-primary/50">
                     <div className="min-w-0">
-                      <span className="font-medium text-foreground">{j.job_number}</span>
+                      <span className="font-medium text-foreground">{j.job_number}<QcMark passed={j.qc_status === "passed"} /></span>
                       <span className="ml-3 text-sm text-muted-foreground">
                         {[j.vehicle_make, j.vehicle_model].filter(Boolean).join(" ")}
                       </span>

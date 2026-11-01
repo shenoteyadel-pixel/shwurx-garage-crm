@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { QcMark } from "@/components/qc-mark"
 import { notFound } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { getShellUser } from "@/lib/shell-user"
@@ -32,7 +33,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
       : Promise.resolve({ data: null } as any),
     supabase
       .from("jobs")
-      .select("id, job_number, stage, created_at, complaint, mileage")
+      .select("id, job_number, stage, qc_status, created_at, complaint, mileage")
       .eq("vehicle_id", id)
       .order("created_at", { ascending: false }),
     supabase.from("customers").select("id, full_name, mobile").order("full_name"),
@@ -110,7 +111,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
             <div className="flex items-start gap-3">
               <BrandLogo make={vehicle.make} size={48} />
               <div>
-                <h1 className="text-2xl font-bold tracking-tight text-balance">{title}</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-balance">{title}<QcMark passed={jobs?.[0]?.qc_status === "passed"} /></h1>
                 <p className="font-mono text-sm text-muted-foreground">{plateStr(vehicle)}</p>
               </div>
             </div>
@@ -159,6 +160,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <Link href={`/jobs/${j.id}`} className="font-medium hover:underline">
                             {j.job_number}
+                            <QcMark passed={j.qc_status === "passed"} />
                           </Link>
                           <span className="text-xs text-muted-foreground">{formatDate(j.created_at)}</span>
                         </div>

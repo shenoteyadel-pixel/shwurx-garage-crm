@@ -41,7 +41,8 @@ export default async function LoyaltyCardsPage({
   searchParams: Promise<{ q?: string; tier?: string; status?: string }>
 }) {
   const user = await getShellUser()
-  if (user.role !== "owner") redirect("/denied?from=Loyalty%20Cards")
+  if (user.role !== "owner" && user.role !== "service_advisor") redirect("/denied?from=Loyalty%20Cards")
+  const isOwner = user.role === "owner"
 
   const { q = "", tier = "", status = "" } = await searchParams
   const svc = createServiceClient()
@@ -84,7 +85,9 @@ export default async function LoyaltyCardsPage({
           <div className="flex flex-col gap-1">
             <h1 className="text-2xl font-bold tracking-tight">Loyalty Cards</h1>
             <p className="text-sm text-muted-foreground text-pretty">
-              Every customer loyalty card. Open a card to change its tier, status or points.
+              {isOwner
+                ? "Every customer loyalty card. Open a card to change its tier, status or points."
+                : "Add a loyalty card for a customer and share the join link with them."}
               {rulesRes.data && !rulesRes.data.program_enabled ? " The program is currently switched off." : ""}
             </p>
           </div>
@@ -92,7 +95,7 @@ export default async function LoyaltyCardsPage({
         </header>
 
         <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {stats.map((s) => (
+          {(isOwner ? stats : stats.slice(0, 3)).map((s) => (
             <div key={s.label} className="flex flex-col gap-1 rounded-xl border border-border bg-card p-4">
               <dt className="text-xs text-muted-foreground">{s.label}</dt>
               <dd className="text-xl font-semibold tabular-nums">{s.value}</dd>

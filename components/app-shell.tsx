@@ -96,7 +96,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/leads", label: "Leads", icon: Inbox, anyOf: ["leads.view"] },
       { href: "/customers", label: "Customers", icon: Users, anyOf: ["customers.view"] },
-      { href: "/loyalty/cards", label: "Loyalty Cards", icon: CreditCard, ownerOnly: true },
+      { href: "/loyalty/cards", label: "Loyalty Cards", icon: CreditCard, roles: ["owner", "service_advisor"] },
       { href: "/invoices", label: "Invoices", icon: FileText, anyOf: ["invoices.view"] },
       { href: "/marketing", label: "Website Control Center", icon: Megaphone, anyOf: ["marketing.view", "marketing.manage", "website.manage"] },
     ],
@@ -147,14 +147,15 @@ export function AppShell({
   const has = (anyOf?: readonly string[]) => !anyOf || anyOf.some((p) => perms.has(p))
   const isOwner = user.role === "owner"
   const canCreateJob = perms.has("jobs.create")
-  const canSee = (item: { anyOf?: readonly string[]; ownerOnly?: boolean }) =>
-    item.ownerOnly ? isOwner : has(item.anyOf)
+  type NavRule = { anyOf?: readonly string[]; ownerOnly?: boolean; roles?: readonly string[] }
+  const canSee = (item: NavRule) =>
+    item.roles ? item.roles.includes(user.role) : item.ownerOnly ? isOwner : has(item.anyOf)
 
   // Keep only groups (and items) the current user may see; drop empty groups so
   // no heading renders without links beneath it.
   const visibleGroups = NAV_GROUPS.map((group) => ({
     label: group.label,
-    items: group.items.filter((item) => canSee(item as { anyOf?: readonly string[]; ownerOnly?: boolean })),
+    items: group.items.filter((item) => canSee(item as NavRule)),
   })).filter((group) => group.items.length > 0)
 
   // The active item is the one whose href is the longest prefix of the current

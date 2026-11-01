@@ -17,6 +17,13 @@ async function ownerGuard(): Promise<string | null> {
   return user.role === "owner" ? null : "Only the owner can manage loyalty cards."
 }
 
+const CARD_ISSUER_ROLES = ["owner", "service_advisor"]
+
+async function issuerGuard(): Promise<string | null> {
+  const user = await getShellUser()
+  return CARD_ISSUER_ROLES.includes(user.role) ? null : "Only the owner or a service advisor can add loyalty cards."
+}
+
 function friendly(message: string | undefined) {
   if (!message) return "Something went wrong. Please try again."
   if (message.includes("insufficient") || message.includes("balance")) return "The customer does not have enough points for this deduction."
@@ -117,7 +124,7 @@ export async function unlockCard(membershipId: string): Promise<Result> {
 export type CustomerMatch = { id: string; name: string; mobile: string | null; hasCard: boolean }
 
 export async function searchCustomersForCard(query: string): Promise<Result<CustomerMatch[]>> {
-  const denied = await ownerGuard()
+  const denied = await issuerGuard()
   if (denied) return { ok: false, error: denied }
   const q = String(query ?? "").trim().replace(/[%,()*]/g, "").slice(0, 60)
   if (q.length < 2) return { ok: true, data: [] }
@@ -144,7 +151,7 @@ export async function searchCustomersForCard(query: string): Promise<Result<Cust
 }
 
 export async function createCardForCustomer(customerId: string): Promise<Result<string>> {
-  const denied = await ownerGuard()
+  const denied = await issuerGuard()
   if (denied) return { ok: false, error: denied }
   if (!UUID.test(customerId)) return { ok: false, error: "Invalid customer." }
   const supabase = await createClient()

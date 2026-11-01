@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation"
+import { QcMark } from "@/components/qc-mark"
 import Link from "next/link"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { reconcileJobParts } from "@/lib/job-parts-reconcile"
@@ -487,10 +488,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               <BrandLogo make={job.vehicle_make} size={36} />
               {job.vehicle_id ? (
                 <Link href={`/vehicles/${job.vehicle_id}`}>
-                  <h1 className="text-2xl font-bold tracking-tight hover:underline">{vehicle}</h1>
+                  <h1 className="text-2xl font-bold tracking-tight hover:underline">{vehicle}<QcMark passed={job.qc_status === "passed"} /></h1>
                 </Link>
               ) : (
-                <h1 className="text-2xl font-bold tracking-tight">{vehicle}</h1>
+                <h1 className="text-2xl font-bold tracking-tight">{vehicle}<QcMark passed={job.qc_status === "passed"} /></h1>
               )}
               <Badge className={stageMeta.chip}>
                 <span className={`h-1.5 w-1.5 rounded-full ${stageMeta.dot}`} />

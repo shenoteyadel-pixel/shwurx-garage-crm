@@ -12,7 +12,7 @@ import { requireAnyPermission, logAction, ForbiddenError, type SessionContext } 
 import type { Permission } from "@/lib/rbac/roles"
 import { getSettings } from "@/lib/settings"
 import { notifyActivity } from "@/lib/activity"
-import { extractInvoice } from "@/lib/invoice-ocr"
+import { extractInvoice, ocrFailureMessage } from "@/lib/invoice-ocr"
 import { suggestSalePrice } from "@/lib/pricing"
 import { isInvoiceLinked } from "@/lib/quote-duplicates"
 import { linkInvoiceToOpenQuote, getJobApprovals, samePart } from "@/lib/quote-invoice"
@@ -389,7 +389,7 @@ export async function reextractInvoice(id: string): Promise<InvoiceActionResult 
       extracted = await extractInvoice(bytes, contentType)
     } catch (e) {
       console.error("[v0] invoice re-extract failed:", e)
-      return { ok: false, error: "The document still could not be read. Add the lines manually." }
+      return { ok: false, error: ocrFailureMessage(e) }
     }
     const lines = extracted.line_items ?? []
     if (!lines.length) return { ok: false, error: "No part lines were found on this document." }
@@ -468,10 +468,12 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
 
   // OCR is best-effort: a failure still yields an editable draft with the file.
   let extracted: Awaited<ReturnType<typeof extractInvoice>> | null = null
+  let ocrError: string | null = null
   try {
     extracted = await extractInvoice(bytes, contentType)
   } catch (e) {
     console.error("[v0] invoice OCR failed:", e)
+    ocrError = ocrFailureMessage(e)
   }
 
   // Try to match the supplier by name.
@@ -522,6 +524,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
       file_type: contentType || null,
       ocr_confidence: extracted?.confidence ?? null,
       ocr_raw: extracted ? (extracted as unknown as Record<string, unknown>) : null,
+      notes: ocrError,
       created_by: userId,
     })
     .select("id")

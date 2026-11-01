@@ -1,10 +1,13 @@
-/** Direct billing / top-up page for each monitored provider. Vercel links use /d?to= so they resolve to the signed-in team. */
+/** Vercel team that owns this project. Direct team URLs avoid the team picker that /d?to= deep links show. */
+export const VERCEL_TEAM_URL = "https://vercel.com/wurx1"
+
+/** Direct billing / top-up page for each monitored provider. */
 export const PROVIDER_PAY_URL: Record<string, string> = {
-  ai_gateway: "https://vercel.com/d?to=%2F%5Bteam%5D%2F~%2Fai&title=Top+up+AI+Gateway+credits",
+  ai_gateway: `${VERCEL_TEAM_URL}/~/ai`,
   whatsapp: "https://hub.360dialog.com/dashboard/billing",
   resend: "https://resend.com/settings/billing",
   stripe: "https://dashboard.stripe.com/settings/billing",
-  blob: "https://vercel.com/d?to=%2F%5Bteam%5D%2F~%2Fsettings%2Fbilling&title=Vercel+billing",
+  blob: `${VERCEL_TEAM_URL}/~/settings/billing`,
   meta: "https://business.facebook.com/billing_hub",
   google_ads: "https://ads.google.com/aw/billing/summary",
   carsxe: "https://api.carsxe.com/dashboard",

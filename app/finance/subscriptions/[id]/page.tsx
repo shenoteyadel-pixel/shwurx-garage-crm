@@ -81,6 +81,7 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
       renewal_type: s.renewal_type,
       auto_renew: !!s.auto_renew,
       payment_method_label: s.payment_method_label ?? "",
+      login_method: s.login_method ?? "",
       owner_id: s.owner_id ?? "",
       viewer_ids: (s.viewer_ids as string[]) ?? [],
       department: s.department ?? "",

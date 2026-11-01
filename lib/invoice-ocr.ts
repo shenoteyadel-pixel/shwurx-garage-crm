@@ -66,6 +66,8 @@ export type ExtractedLine = z.infer<typeof lineItemSchema>
 
 // Fast, cheap, strong at document understanding and multi-page PDFs.
 const MODEL = "google/gemini-2.5-flash"
+// Used only when the fast pass returns no priced lines (handwriting, chat screenshots).
+const FALLBACK_MODEL = "google/gemini-2.5-pro"
 
 const PROMPT = [
   "You are an accounts-payable clerk for a UAE automotive workshop.",
@@ -81,14 +83,18 @@ const PROMPT = [
   "Every document that shows any amount MUST return at least one line item — never an empty line_items array when a price or total is printed.",
   "Read the table row by row: Description, Brand, Qty, Rate, Tax %, Tax, Amount. 'Rate' is the ex-VAT unit price; 'Amount' is usually the ex-VAT line total (Qty x Rate).",
   "Fuel station / POS receipts (ENOC, ADNOC, Emarat etc.): the product (e.g. DIESEL, SUPER 98) is the line item; litres is the quantity (unit ltr), price per litre is unit_cost (ex-VAT), and the receipt number is the invoice_number. If only a card-payment amount is printed, treat it as the VAT-inclusive total and still return one line for the product.",
+  "INFORMAL QUOTES: the document is often NOT a printed invoice but a WhatsApp/SMS message, a handwritten note, a whiteboard, or a typed list such as 'front shock = KYB 250 X2 / 155 X2 AFTER MARKET' or 'Lower arm = 210 X2'. These ARE priced quotes and must produce line items.",
+  "In informal quotes: the text before '=' / ':' / '-' is the part description. A bare number is the ex-VAT unit price in AED. 'X2', 'x 2', '*2', '2pcs', '2 nos' is the quantity (so '250 X2' = unit_cost 250, quantity 2, line_total 500). A word next to a price (KYB, Genuine, OEM, Aftermarket, Original, Used, Monroe, etc.) is the brand.",
+  "Options separated by '/' or 'or' are alternative brands for the SAME part: return one line item per option with the same description. In 'front shock = KYB 250 X2 / 155 X2 AFTER MARKET' that is two lines: 'Front shock' brand KYB, qty 2, unit 250; and 'Front shock' brand Aftermarket, qty 2, unit 155. A brand written on its own line under a price (e.g. 'AFTER MARKET') belongs to the option just before it.",
+  "A part with a price but no brand still gets a line with brand null. Never return an empty line_items array when any number that looks like a price is visible.",
   "Summary totals (subtotal / VAT / total) may be absent on quotations; return null for them rather than inventing values.",
   "If a value is missing or unreadable, return null rather than guessing. UAE standard VAT is 5%.",
   "Set a realistic confidence (0..1) per line, for the OEM-vs-supplier classification, and overall so a human knows what to double-check.",
 ].join(" ")
 
-async function runExtraction(data: Uint8Array, mediaType: string): Promise<ExtractedInvoice> {
+async function runExtraction(data: Uint8Array, mediaType: string, model = MODEL): Promise<ExtractedInvoice> {
   const { object } = await generateObject({
-    model: MODEL,
+    model,
     schema: invoiceSchema,
     messages: [
       {
@@ -153,7 +159,7 @@ export async function extractInvoice(data: Uint8Array, mediaType: string): Promi
   }
   if (hasPricedLine(first)) return first
   try {
-    const second = await runExtraction(data, mediaType)
+    const second = await runExtraction(data, mediaType, FALLBACK_MODEL)
     if (hasPricedLine(second)) return second
   } catch (err) {
     console.error("[v0] invoice OCR re-read failed:", err)

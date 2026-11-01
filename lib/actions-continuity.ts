@@ -49,6 +49,19 @@ export async function runBackupNow(): Promise<Result<{ tables: number; totalRows
   return { ok: true, tables: res.tables, totalRows: res.totalRows }
 }
 
+export async function linkMonitorSubscription(monitorId: string, subscriptionId: string | null): Promise<Result> {
+  const ctx = await requireSession()
+  if (!ctx.isStaff || !ctxCan(ctx, "subscriptions.approve")) return { ok: false, error: "You do not have permission to do this." }
+  if (!UUID.test(monitorId)) return { ok: false, error: "Invalid monitor." }
+  if (subscriptionId && !UUID.test(subscriptionId)) return { ok: false, error: "Invalid subscription." }
+  const svc = createServiceClient()
+  const { error } = await svc.from("service_monitors").update({ subscription_id: subscriptionId || null }).eq("id", monitorId)
+  if (error) return { ok: false, error: error.message }
+  await writeAudit({ actorId: ctx.userId, actorName: ctx.name, actorRole: ctx.role, action: "service_monitor_subscription_linked", resourceType: "service_monitor", resourceId: monitorId, detail: { subscription: subscriptionId } })
+  revalidatePath("/finance/continuity")
+  return { ok: true }
+}
+
 export async function saveMonitor(id: string | null, fd: FormData): Promise<Result> {
   const ctx = await requireSession()
   if (!ctx.isStaff || !ctxCan(ctx, "subscriptions.approve")) return { ok: false, error: "You do not have permission to do this." }

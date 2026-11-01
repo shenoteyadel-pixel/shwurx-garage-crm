@@ -4,7 +4,7 @@ import { requirePageAccess, can } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
 import { ContinuityView, type MonitorRow, type IncidentRow, type JobRunRow, type OverdueRow } from "@/components/continuity-view"
 import { dubaiToday, grossCycleAED } from "@/lib/subscriptions"
-import { PROVIDER_PAY_URL } from "@/lib/provider-billing"
+import { PROVIDER_PAY_URL, VERCEL_TEAM_URL } from "@/lib/provider-billing"
 
 export const metadata = { title: "Critical Services · SHWURX Auto Service Center" }
 
@@ -113,7 +113,10 @@ const PROVIDER_LABEL: Record<string, string> = {
 }
 
 const PROVIDER_LINKS: Record<string, MonitorRow["links"]> = {
-  ai_gateway: [{ label: "AI usage", href: "https://vercel.com/d?to=%2F%5Bteam%5D%2F~%2Fai%2Fusage&title=AI+Gateway+usage", external: true }],
+  ai_gateway: [
+    { label: "AI Gateway", href: `${VERCEL_TEAM_URL}/~/ai`, external: true },
+    { label: "Vercel billing", href: `${VERCEL_TEAM_URL}/~/settings/billing`, external: true },
+  ],
   whatsapp: [{ label: "360dialog hub", href: "https://hub.360dialog.com/", external: true }],
   resend: [
     { label: "Resend dashboard", href: "https://resend.com/emails", external: true },
@@ -123,7 +126,7 @@ const PROVIDER_LINKS: Record<string, MonitorRow["links"]> = {
     { label: "Stripe dashboard", href: "https://dashboard.stripe.com/", external: true },
     { label: "API keys", href: "https://dashboard.stripe.com/apikeys", external: true },
   ],
-  blob: [{ label: "Vercel Storage", href: "https://vercel.com/dashboard/stores", external: true }],
+  blob: [{ label: "Vercel Storage", href: `${VERCEL_TEAM_URL}/~/stores`, external: true }],
   meta: [
     { label: "Ads Manager", href: "https://adsmanager.facebook.com/", external: true },
     { label: "Business settings", href: "https://business.facebook.com/settings", external: true },

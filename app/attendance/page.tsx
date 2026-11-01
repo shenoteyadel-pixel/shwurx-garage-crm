@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { getShellUser } from "@/lib/shell-user"
 import { getSettings } from "@/lib/settings"
@@ -21,6 +22,8 @@ export const metadata = { title: "Attendance · SHWURX Auto Service Center" }
 export default async function AttendancePage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const sp = await searchParams
   const ctx = await requireStaff()
+  // Marketing / Agency users are freelancers and are not tracked by attendance.
+  if (ctx.role === "marketing") redirect("/marketing")
   const today = localDate()
   const month = sp.month && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : today.slice(0, 7)
   const { from, to, days } = monthRange(month)
@@ -40,7 +43,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
           .from("profiles")
           .select("id, full_name, role, created_at")
           .eq("is_active", true)
-          .not("role", "in", "(customer,owner)")
+          .not("role", "in", "(customer,owner,marketing)")
           .order("full_name")
       : supabase.from("profiles").select("id, full_name, role, created_at").eq("id", ctx.userId),
     (() => {

@@ -41,7 +41,7 @@ export async function buildDailyReport(svc: SupabaseClient, date: string, now = 
       .from("profiles")
       .select("id, full_name, role, created_at")
       .eq("is_active", true)
-      .not("role", "in", "(customer,owner)")
+      .not("role", "in", "(customer,owner,marketing)")
       .order("full_name"),
     svc.from("attendance").select(RECORD_COLUMNS).eq("work_date", date),
   ])

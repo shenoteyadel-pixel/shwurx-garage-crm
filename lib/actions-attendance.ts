@@ -86,6 +86,7 @@ export async function reportLocationFailure(
 export async function checkIn(coords: Coords, note?: string, faceId?: AuthenticationResponseJSON | null): Promise<Result> {
   const ctx = await requireStaff()
   if (ctx.role === "owner") return { ok: false, error: "The owner account is not tracked by attendance." }
+  if (ctx.role === "marketing") return { ok: false, error: "Marketing / Agency freelancers are not tracked by attendance." }
   const chk = await locationCheck(coords)
   if ("error" in chk) {
     await logBlocked(ctx, "check_in", chk.error as string, "detail" in chk ? chk.detail : undefined)
@@ -233,6 +234,7 @@ export async function saveManualRecord(input: ManualRecordInput): Promise<Result
   const { data: staff } = await svc.from("profiles").select("id, role").eq("id", input.userId).maybeSingle()
   if (!staff || staff.role === "customer") return { ok: false, error: "Employee not found." }
   if (staff.role === "owner") return { ok: false, error: "The owner account is not tracked by attendance." }
+  if (staff.role === "marketing") return { ok: false, error: "Marketing / Agency freelancers are not tracked by attendance." }
 
   const checkInIso = works && input.checkIn ? localToIso(input.workDate, input.checkIn) : null
   let checkOutIso = works && input.checkOut ? localToIso(input.workDate, input.checkOut) : null

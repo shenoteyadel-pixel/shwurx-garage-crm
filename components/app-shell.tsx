@@ -64,7 +64,7 @@ const NAV_GROUPS = [
     label: null,
     items: [
       { href: "/crm", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/attendance", label: "Check In / Out", icon: Fingerprint },
+      { href: "/attendance", label: "Check In / Out", icon: Fingerprint, exceptRoles: ["marketing"] },
       { href: "/gate-pass", label: "Gate Pass & Keys", icon: KeySquare, anyOf: ["gate_pass.release"] },
       { href: "/control-center", label: "AI Control Center", icon: Sparkles, ownerOnly: true },
       { href: "/ai-marketing", label: "AI Marketing Manager", icon: Megaphone, ownerOnly: true },
@@ -147,9 +147,15 @@ export function AppShell({
   const has = (anyOf?: readonly string[]) => !anyOf || anyOf.some((p) => perms.has(p))
   const isOwner = user.role === "owner"
   const canCreateJob = perms.has("jobs.create")
-  type NavRule = { anyOf?: readonly string[]; ownerOnly?: boolean; roles?: readonly string[] }
+  type NavRule = { anyOf?: readonly string[]; ownerOnly?: boolean; roles?: readonly string[]; exceptRoles?: readonly string[] }
   const canSee = (item: NavRule) =>
-    item.roles ? item.roles.includes(user.role) : item.ownerOnly ? isOwner : has(item.anyOf)
+    item.exceptRoles?.includes(user.role)
+      ? false
+      : item.roles
+        ? item.roles.includes(user.role)
+        : item.ownerOnly
+          ? isOwner
+          : has(item.anyOf)
 
   // Keep only groups (and items) the current user may see; drop empty groups so
   // no heading renders without links beneath it.

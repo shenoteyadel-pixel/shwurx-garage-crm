@@ -15,7 +15,7 @@ export default async function ContinuityPage() {
     can("subscriptions.approve"),
     supabase
       .from("service_monitors")
-      .select("id, name, kind, target_url, job_name, freshness_hours, criticality, subscription_id, escalation_contacts, recovery_instructions, enabled, last_status, last_checked_at, last_success_at, last_error, consecutive_failures")
+      .select("id, name, kind, provider, target_url, job_name, freshness_hours, criticality, subscription_id, escalation_contacts, recovery_instructions, enabled, last_status, last_checked_at, last_success_at, last_error, consecutive_failures")
       .order("name"),
     supabase.from("service_incidents").select("id, monitor_id, cause, summary, opened_at, resolved_at").order("opened_at", { ascending: false }).limit(30),
     supabase.from("scheduled_job_runs").select("id, job, status, started_at, finished_at, detail").order("started_at", { ascending: false }).limit(30),
@@ -29,11 +29,11 @@ export default async function ContinuityPage() {
   const monitors: MonitorRow[] = (monRes.data ?? []).map((m) => {
     const sub = m.subscription_id ? subs.get(m.subscription_id) : undefined
     return {
-      links: monitorLinks(m.kind, m.target_url, sub?.service_url ?? null),
+      links: monitorLinks(m.kind, m.target_url, sub?.service_url ?? null, m.provider),
       id: m.id,
       name: m.name,
       kind: m.kind,
-      target: m.target_url ?? m.job_name ?? "",
+      target: m.target_url ?? m.job_name ?? (m.provider ? PROVIDER_LABEL[m.provider] ?? m.provider : ""),
       criticality: m.criticality,
       enabled: !!m.enabled,
       last_status: m.last_status,
@@ -99,8 +99,46 @@ export default async function ContinuityPage() {
   )
 }
 
+const PROVIDER_LABEL: Record<string, string> = {
+  whatsapp: "360dialog API",
+  resend: "Resend API",
+  stripe: "Stripe API",
+  blob: "Vercel Blob",
+  meta: "Meta Marketing API",
+  google_ads: "Google Ads API",
+  carsxe: "CarsXE API",
+}
+
+const PROVIDER_LINKS: Record<string, MonitorRow["links"]> = {
+  whatsapp: [
+    { label: "360dialog hub", href: "https://hub.360dialog.com/", external: true },
+    { label: "Billing", href: "https://hub.360dialog.com/dashboard/billing", external: true },
+  ],
+  resend: [
+    { label: "Resend dashboard", href: "https://resend.com/emails", external: true },
+    { label: "Domains", href: "https://resend.com/domains", external: true },
+    { label: "Billing", href: "https://resend.com/settings/billing", external: true },
+  ],
+  stripe: [
+    { label: "Stripe dashboard", href: "https://dashboard.stripe.com/", external: true },
+    { label: "API keys", href: "https://dashboard.stripe.com/apikeys", external: true },
+  ],
+  blob: [{ label: "Vercel Storage", href: "https://vercel.com/dashboard/stores", external: true }],
+  meta: [
+    { label: "Ads Manager", href: "https://adsmanager.facebook.com/", external: true },
+    { label: "Business settings", href: "https://business.facebook.com/settings", external: true },
+    { label: "Billing", href: "https://business.facebook.com/billing_hub", external: true },
+  ],
+  google_ads: [
+    { label: "Google Ads", href: "https://ads.google.com/", external: true },
+    { label: "Billing", href: "https://ads.google.com/aw/billing/summary", external: true },
+    { label: "AI Marketing Manager", href: "/ai-marketing", external: false },
+  ],
+  carsxe: [{ label: "CarsXE dashboard", href: "https://api.carsxe.com/dashboard", external: true }],
+}
+
 /** Where staff go to inspect or fix each monitored system. */
-function monitorLinks(kind: string, targetUrl: string | null, serviceUrl: string | null): MonitorRow["links"] {
+function monitorLinks(kind: string, targetUrl: string | null, serviceUrl: string | null, provider: string | null): MonitorRow["links"] {
   const ref = /^https:\/\/([a-z0-9]+)\.supabase\.co/i.exec(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")?.[1] ?? "_"
   const sb = `https://supabase.com/dashboard/project/${ref}`
   const links: MonitorRow["links"] = []
@@ -123,6 +161,9 @@ function monitorLinks(kind: string, targetUrl: string | null, serviceUrl: string
       break
     case "scheduled_job":
       links.push({ label: "Run history", href: "#runs-h", external: false })
+      break
+    case "provider":
+      links.push(...(PROVIDER_LINKS[provider ?? ""] ?? []))
       break
   }
   if (serviceUrl && /^https?:\/\//i.test(serviceUrl) && !links.some((l) => l.href === serviceUrl)) {

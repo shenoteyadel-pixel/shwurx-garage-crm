@@ -14,7 +14,8 @@ const SLOW_MS = 5000
 interface Monitor {
   id: string
   name: string
-  kind: "http" | "database" | "auth" | "backup" | "scheduled_job" | "capacity"
+  kind: "http" | "database" | "auth" | "backup" | "scheduled_job" | "capacity" | "provider"
+  provider: string | null
   target_url: string | null
   job_name: string | null
   freshness_hours: number | null
@@ -190,8 +191,78 @@ async function checkFreshness(m: Monitor): Promise<CheckResult> {
   }
 }
 
+const missing = (keys: string[]) => keys.filter((k) => !process.env[k])
+
+async function probe(url: string, init: RequestInit, label: string): Promise<CheckResult> {
+  try {
+    const [res, ms] = await timed(() => fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(15_000) }))
+    if (res.status === 401 || res.status === 403) return { status: "down", latencyMs: ms, httpStatus: res.status, error: `${label} rejected the API key (HTTP ${res.status})` }
+    if (res.status === 402) return { status: "down", latencyMs: ms, httpStatus: res.status, error: `${label} reports payment required (HTTP 402)` }
+    if (res.status >= 500) return { status: "down", latencyMs: ms, httpStatus: res.status, error: `${label} HTTP ${res.status}` }
+    if (!res.ok) return { status: "degraded", latencyMs: ms, httpStatus: res.status, error: `${label} HTTP ${res.status}` }
+    return { status: ms > SLOW_MS ? "degraded" : "up", latencyMs: ms, httpStatus: res.status, error: ms > SLOW_MS ? "Slow response" : undefined }
+  } catch (e) {
+    return { status: "down", error: `${label}: ${(e as Error).message}` }
+  }
+}
+
+/** Lightweight, read-only calls that prove each third-party key still works. None of them send messages or spend credits. */
+async function checkProvider(provider: string | null): Promise<CheckResult> {
+  const need = (keys: string[]): CheckResult | null => {
+    const gap = missing(keys)
+    return gap.length ? { status: "down", error: `Not configured: ${gap.join(", ")}` } : null
+  }
+  switch (provider) {
+    case "whatsapp":
+      return need(["D360_API_KEY"]) ?? probe("https://waba-v2.360dialog.io/v1/configs/webhook", { headers: { "D360-API-KEY": process.env.D360_API_KEY! } }, "360dialog")
+    case "resend":
+      return need(["RESEND_API_KEY"]) ?? probe("https://api.resend.com/domains", { headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` } }, "Resend")
+    case "stripe":
+      return need(["STRIPE_SECRET_KEY"]) ?? probe("https://api.stripe.com/v1/balance", { headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}` } }, "Stripe")
+    case "blob": {
+      const gap = need(["BLOB_READ_WRITE_TOKEN"])
+      if (gap) return gap
+      try {
+        const { list } = await import("@vercel/blob")
+        const [, ms] = await timed(() => list({ limit: 1 }))
+        return { status: ms > SLOW_MS ? "degraded" : "up", latencyMs: ms }
+      } catch (e) {
+        return { status: "down", error: `Blob: ${(e as Error).message}` }
+      }
+    }
+    case "meta": {
+      const gap = need(["META_ACCESS_TOKEN", "META_AD_ACCOUNT_ID"])
+      if (gap) return gap
+      const account = process.env.META_AD_ACCOUNT_ID!.trim().replace(/^act_/, "")
+      const url = `https://graph.facebook.com/v21.0/act_${account}?fields=account_status&access_token=${encodeURIComponent(process.env.META_ACCESS_TOKEN!)}`
+      try {
+        const [res, ms] = await timed(() => fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15_000) }))
+        const body = (await res.json().catch(() => ({}))) as { account_status?: number; error?: { message?: string } }
+        if (!res.ok) return { status: "down", latencyMs: ms, httpStatus: res.status, error: `Meta: ${body.error?.message ?? `HTTP ${res.status}`}` }
+        if (body.account_status !== 1) return { status: "down", latencyMs: ms, error: `Ad account is not active (status ${body.account_status}). Check billing in Meta.` }
+        return { status: "up", latencyMs: ms }
+      } catch (e) {
+        return { status: "down", error: `Meta: ${(e as Error).message}` }
+      }
+    }
+    case "google_ads": {
+      const id = process.env.GOOGLE_ADS_CLIENT_ID || process.env.GOOGLE_ADS_CLINET_ID
+      const gap = missing(["GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID"])
+      if (!id) gap.unshift("GOOGLE_ADS_CLIENT_ID")
+      if (gap.length) return { status: "down", error: `Not configured: ${gap.join(", ")}` }
+      return { status: "up", error: "Credentials configured. Live status is shown in AI Marketing Manager." }
+    }
+    case "carsxe":
+      return need(["CARSXE_API_KEY"]) ?? { status: "up", error: "Key configured. Not called here because every lookup uses credits." }
+    default:
+      return { status: "down", error: `Unknown provider "${provider}"` }
+  }
+}
+
 async function runCheck(m: Monitor): Promise<CheckResult> {
   switch (m.kind) {
+    case "provider":
+      return checkProvider(m.provider)
     case "http":
       return checkHttp(m.target_url!)
     case "database":
@@ -205,7 +276,7 @@ async function runCheck(m: Monitor): Promise<CheckResult> {
   }
 }
 
-const isLive = (m: Monitor) => m.kind === "http" || m.kind === "auth" || m.kind === "database"
+const isLive = (m: Monitor) => m.kind === "http" || m.kind === "auth" || m.kind === "database" || m.kind === "provider"
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 const CAUSE_LABEL: Record<IncidentCause, string> = {

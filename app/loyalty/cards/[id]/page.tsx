@@ -22,7 +22,8 @@ const KIND_LABEL: Record<string, string> = {
 
 export default async function LoyaltyCardPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getShellUser()
-  if (user.role !== "owner") redirect("/denied?from=Loyalty%20Cards")
+  if (user.role !== "owner" && user.role !== "service_advisor") redirect("/denied?from=Loyalty%20Cards")
+  const isOwner = user.role === "owner"
 
   const { id } = await params
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound()
@@ -137,6 +138,30 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ id
             ) : null}
           </div>
 
+          {!isOwner ? (
+            <div className="flex h-fit flex-col gap-3 rounded-2xl border border-border bg-card p-5">
+              <h2 className="text-lg font-semibold">Card ready</h2>
+              {card.status === "invited" ? (
+                <>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    Send this link to the customer so they can join and start collecting points.
+                  </p>
+                  <a
+                    href={loyaltyJoinUrl(card.enroll_token)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="break-all rounded-lg border border-border bg-background p-3 font-mono text-xs text-primary hover:underline"
+                  >
+                    {loyaltyJoinUrl(card.enroll_token)}
+                  </a>
+                </>
+              ) : (
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  The customer has joined. Tier, status and points changes are handled by the owner.
+                </p>
+              )}
+            </div>
+          ) : (
           <LoyaltyCardManager
             membershipId={card.id}
             status={card.status}
@@ -150,6 +175,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ id
               vip: Number(rulesRes.data?.vip_threshold_aed ?? 30000),
             }}
           />
+          )}
         </div>
 
         <section className="flex flex-col gap-3" aria-labelledby="history-heading">

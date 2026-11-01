@@ -4,7 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Button, Field, Input, Select, Textarea } from "@/components/ui"
 import { saveSubscription } from "@/lib/actions-subscriptions"
-import { BILLING_CYCLES, CRITICALITY, SUBSCRIPTION_CATEGORIES, portalMatchesVendor } from "@/lib/subscriptions"
+import { BILLING_CYCLES, CRITICALITY, LOGIN_METHODS, LOGIN_METHOD_LABEL, SUBSCRIPTION_CATEGORIES, portalMatchesVendor } from "@/lib/subscriptions"
 import { CATEGORY_LABEL, CYCLE_LABEL } from "@/components/subscription-labels"
 
 export interface StaffOption {
@@ -31,6 +31,7 @@ export interface SubscriptionFormValues {
   renewal_type: string
   auto_renew: boolean
   payment_method_label: string
+  login_method: string
   owner_id: string
   viewer_ids: string[]
   department: string
@@ -57,6 +58,7 @@ export const EMPTY_SUBSCRIPTION: SubscriptionFormValues = {
   renewal_type: "manual",
   auto_renew: false,
   payment_method_label: "",
+  login_method: "",
   owner_id: "",
   viewer_ids: [],
   department: "",
@@ -120,6 +122,16 @@ export function SubscriptionForm({
         </Field>
         <Field label="Account or workspace reference" htmlFor={id("acct")} hint="Team name, project ID or account email. Never a password.">
           <Input id={id("acct")} name="account_reference" maxLength={200} value={v.account_reference} onChange={(e) => set("account_reference", e.target.value)} />
+        </Field>
+        <Field label="Login with" htmlFor={id("login")} hint="Which account you use to sign in to this service.">
+          <Select id={id("login")} name="login_method" value={v.login_method} onChange={(e) => set("login_method", e.target.value)}>
+            <option value="">Not set</option>
+            {LOGIN_METHODS.map((m) => (
+              <option key={m} value={m}>
+                {LOGIN_METHOD_LABEL[m]}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Service URL" htmlFor={id("surl")}>
           <Input id={id("surl")} name="service_url" type="url" placeholder="https://" value={v.service_url} onChange={(e) => set("service_url", e.target.value)} />

@@ -273,9 +273,19 @@ export interface SubscriptionInput {
   renewal_type: "auto" | "manual"
   auto_renew: boolean
   payment_method_label: string | null
+  login_method: LoginMethod | null
   department: string | null
   criticality: Criticality
   notes: string | null
+}
+
+export const LOGIN_METHODS = ["email", "github", "wurx_email", "shenoteyadel_email"] as const
+export type LoginMethod = (typeof LOGIN_METHODS)[number]
+export const LOGIN_METHOD_LABEL: Record<LoginMethod, string> = {
+  email: "Email",
+  github: "GitHub",
+  wurx_email: "Wurx email",
+  shenoteyadel_email: "Shenoteyadel email",
 }
 
 export const CSV_COLUMNS: (keyof SubscriptionInput)[] = [
@@ -296,6 +306,7 @@ export const CSV_COLUMNS: (keyof SubscriptionInput)[] = [
   "renewal_type",
   "auto_renew",
   "payment_method_label",
+  "login_method",
   "department",
   "criticality",
   "notes",
@@ -411,6 +422,14 @@ export function normalizeSubscriptionInput(
     if (containsSensitiveData(value)) errors.push(`${label} looks like it contains a card number, CVV or password. Remove it.`)
   }
 
+  const loginRaw = (str(raw.login_method, 40) ?? "").toLowerCase().replace(/[\s-]+/g, "_")
+  const login_method = loginRaw
+    ? (LOGIN_METHODS as readonly string[]).includes(loginRaw)
+      ? (loginRaw as LoginMethod)
+      : null
+    : null
+  if (loginRaw && !login_method) errors.push(`Unknown login method "${loginRaw}".`)
+
   if (errors.length) return { ok: false, errors }
   return {
     ok: true,
@@ -432,6 +451,7 @@ export function normalizeSubscriptionInput(
       renewal_type,
       auto_renew: bool(raw.auto_renew) || renewal_type === "auto",
       payment_method_label,
+      login_method,
       department: str(raw.department, 80),
       criticality: criticality!,
       notes,

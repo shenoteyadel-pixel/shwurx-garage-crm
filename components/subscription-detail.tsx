@@ -18,6 +18,7 @@ import {
   verifyBillingPortal,
 } from "@/lib/actions-subscriptions"
 import {
+  LOGIN_METHOD_LABEL,
   PAYMENT_METHODS,
   daysBetween,
   dubaiToday,
@@ -26,6 +27,7 @@ import {
   portalMatchesVendor,
   type SubscriptionLike,
   type SubscriptionCategory,
+  type LoginMethod,
 } from "@/lib/subscriptions"
 
 export interface DetailData {
@@ -167,6 +169,9 @@ export function SubscriptionDetail({
             {CATEGORY_LABEL[sub.category]}
             {sub.vendor ? ` · ${sub.vendor}` : ""} · {CYCLE_LABEL[sub.billing_cycle]} · {sub.renewal_type === "auto" ? "Auto-renews" : "Manual renewal"}
             {sub.owner ? ` · Owner: ${sub.owner}` : " · No owner assigned"}
+            {data.form.login_method
+              ? ` · Login with ${LOGIN_METHOD_LABEL[data.form.login_method as LoginMethod] ?? data.form.login_method}`
+              : " · Login not set"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

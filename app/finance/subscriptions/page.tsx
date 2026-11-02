@@ -3,6 +3,7 @@ import { getShellUser } from "@/lib/shell-user"
 import { requirePageAccess, can } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
 import { SubscriptionsView, type SubscriptionRow } from "@/components/subscriptions-view"
+import { LOGIN_METHODS, safeHttpsUrl, urlHost, type LoginMethod } from "@/lib/subscriptions"
 
 export const metadata = { title: "Subscriptions & Renewals · SHWURX Auto Service Center" }
 
@@ -16,7 +17,7 @@ export default async function SubscriptionsPage() {
     supabase
       .from("subscriptions")
       .select(
-        "id, service_name, category, vendor, billing_cycle, custom_cycle_days, amount, currency, fx_rate_to_aed, vat_rate, amount_includes_vat, next_due_date, renewal_type, owner_id, criticality, status, resolved_due_date, billing_portal_url, portal_verified_at",
+        "id, service_name, category, vendor, billing_cycle, custom_cycle_days, amount, currency, fx_rate_to_aed, vat_rate, amount_includes_vat, next_due_date, renewal_type, owner_id, criticality, status, resolved_due_date, billing_portal_url, portal_verified_at, service_url, login_method, payment_method_label",
       )
       .order("next_due_date"),
     supabase.from("profiles").select("id, full_name").eq("is_active", true).neq("role", "customer").order("full_name"),
@@ -47,6 +48,10 @@ export default async function SubscriptionsPage() {
     resolved_due_date: s.resolved_due_date ? String(s.resolved_due_date).slice(0, 10) : null,
     portalReady: !!(s.billing_portal_url && s.portal_verified_at),
     pendingPayment: pending.has(s.id),
+    service_url: safeHttpsUrl(s.service_url),
+    billingHost: urlHost(s.billing_portal_url),
+    login_method: (LOGIN_METHODS as readonly string[]).includes(s.login_method) ? (s.login_method as LoginMethod) : null,
+    payment_method_label: s.payment_method_label ?? null,
   }))
 
   return (

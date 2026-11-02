@@ -13,6 +13,7 @@ import { PartsManager } from "@/components/parts-manager"
 import { ManualPurchasePart } from "@/components/manual-purchase-part"
 import { SendPartsToPurchaser } from "@/components/send-parts-to-purchaser"
 import { getSettings } from "@/lib/settings"
+import { getActiveLabourTypes } from "@/lib/labour-types"
 import { AddonServices } from "@/components/addon-services"
 import { getJobAddons } from "@/lib/actions-addons"
 import { ApprovalsPanel } from "@/components/approvals-panel"
@@ -102,7 +103,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const addons = await getJobAddons(id)
 
-  const [{ data: inventoryParts }, { data: pastQuoteParts }] = await Promise.all([
+  const [{ data: inventoryParts }, { data: pastQuoteParts }, labourTypes] = await Promise.all([
     supabase
       .from("inventory_items")
       .select("name, sku, oem_part_number, sale_price, category, brand")
@@ -115,6 +116,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       .eq("kind", "part")
       .not("name", "is", null)
       .limit(2000),
+    getActiveLabourTypes(),
   ])
   const catalogMap = new Map<string, CatalogPart>()
   for (const r of pastQuoteParts ?? []) {
@@ -658,6 +660,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                           canEditLocked={isOwner || sessionCtx?.role === "service_advisor"}
                           notifiesOwnerOnEdit={!isOwner}
                           partCatalog={partCatalog}
+                          labourTypes={labourTypes.map((l) => ({
+                            name: l.name,
+                            rate: l.rate,
+                            category: l.category ?? "",
+                            rate_type: l.rate_type,
+                            default_hours: l.default_hours,
+                          }))}
                         />
                         {(sessionCtx?.permissions.has("quotations.edit") ?? false) && <SmartMergeParts jobId={job.id} />}
                         {duplicateGroups.length > 0 && (

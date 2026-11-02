@@ -712,6 +712,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                                 <ManualPurchasePart
                                   jobId={job.id}
                                   defaultMarkup={Number(financialSettings.default_markup_pct ?? 0)}
+                                  usedMarkup={Number(financialSettings.used_parts_markup_pct ?? 20)}
                                 />
                               )}
                               <CarExpensesManager
@@ -872,7 +873,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           />
 
           {!showPrices && (canManageExpenses || isOwner) && (
-            <ManualPurchasePart jobId={job.id} defaultMarkup={Number(financialSettings.default_markup_pct ?? 0)} />
+            <ManualPurchasePart
+              jobId={job.id}
+              defaultMarkup={Number(financialSettings.default_markup_pct ?? 0)}
+              usedMarkup={Number(financialSettings.used_parts_markup_pct ?? 20)}
+            />
           )}
 
           {job.customer_id && (

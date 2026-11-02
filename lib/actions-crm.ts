@@ -62,6 +62,7 @@ export async function saveSettings(formData: FormData) {
     quotation_validity_days: num(formData.get("quotation_validity_days"), 14),
     tracking_expire_after_delivery_days: Math.max(0, num(formData.get("tracking_expire_after_delivery_days"), 30)),
     default_markup_pct: Math.max(0, num(formData.get("default_markup_pct"), 35)),
+    used_parts_markup_pct: Math.max(0, num(formData.get("used_parts_markup_pct"), 20)),
     pricing_method: String(formData.get("pricing_method") || "markup") === "margin" ? "margin" : "markup",
     vat_rate: Math.max(0, num(formData.get("vat_rate"), 5)),
     parts_release_mode: String(formData.get("parts_release_mode") || "auto") === "advisor" ? "advisor" : "auto",

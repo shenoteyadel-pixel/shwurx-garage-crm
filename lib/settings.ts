@@ -18,6 +18,8 @@ export type Settings = {
   tracking_expire_after_delivery_days: number
   /** Default parts pricing markup percentage applied to cost (e.g. 35 = cost x 1.35). */
   default_markup_pct: number
+  /** Markup / margin % for used (second-hand) parts. */
+  used_parts_markup_pct: number
   /** How suggested sale price is derived: "markup" (cost + %) or "margin" (target profit %). */
   pricing_method: "markup" | "margin"
   /** Standard VAT rate percentage (UAE = 5). */
@@ -63,6 +65,7 @@ const DEFAULTS: Settings = {
   quotation_validity_days: 14,
   tracking_expire_after_delivery_days: 30,
   default_markup_pct: 35,
+  used_parts_markup_pct: 20,
   pricing_method: "markup",
   vat_rate: 5,
   parts_release_mode: "auto",

@@ -88,10 +88,35 @@ async function exportTable(table: string, orderBy: string[]): Promise<unknown[]>
   return rows
 }
 
+const RETRY_DELAYS_MS = [1000, 3000, 8000]
+
+/** Blob storage occasionally returns transient 5xx errors; retry before failing the backup. */
+async function withRetry<T>(fn: (attempt: number) => Promise<T>): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn(attempt)
+    } catch (e) {
+      lastError = e
+      if (attempt < RETRY_DELAYS_MS.length) await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]))
+    }
+  }
+  throw lastError
+}
+
+/** Each run writes to a fresh timestamped folder, so overwriting on a retry only replaces this run's partial upload. */
+function putWithRetry(pathname: string, body: Buffer | string, contentType: string) {
+  return withRetry((attempt) =>
+    put(pathname, body, { access: "private", addRandomSuffix: false, allowOverwrite: attempt > 0, contentType }),
+  )
+}
+
 async function readBlob(pathname: string): Promise<Buffer> {
-  const result = await get(pathname, { access: "private" })
-  if (!result || result.statusCode !== 200 || !result.stream) throw new Error("not found in storage")
-  return Buffer.from(await new Response(result.stream).arrayBuffer())
+  return withRetry(async () => {
+    const result = await get(pathname, { access: "private" })
+    if (!result || result.statusCode !== 200 || !result.stream) throw new Error("not found in storage")
+    return Buffer.from(await new Response(result.stream).arrayBuffer())
+  })
 }
 
 /** Re-downloads a stored table file and proves it is intact and restorable. */
@@ -141,12 +166,7 @@ export async function runDatabaseBackup(): Promise<BackupOutcome> {
         pathname: `${folder}/${name}.json.gz`,
         liveCountAtStart: before,
       }
-      await put(result.pathname, body, {
-        access: "private",
-        addRandomSuffix: false,
-        allowOverwrite: false,
-        contentType: "application/gzip",
-      })
+      await putWithRetry(result.pathname, body, "application/gzip")
       await verifyTable(result)
       if (before !== null && Math.abs(before - rows.length) > Math.max(5, before * 0.05)) {
         warnings.push(`${name}: ${rows.length} rows exported vs ${before} live at start`)
@@ -181,12 +201,7 @@ export async function runDatabaseBackup(): Promise<BackupOutcome> {
     }
     const pathname = `${folder}/_manifest.json`
     try {
-      await put(pathname, JSON.stringify(manifest, null, 2), {
-        access: "private",
-        addRandomSuffix: false,
-        allowOverwrite: false,
-        contentType: "application/json",
-      })
+      await putWithRetry(pathname, JSON.stringify(manifest, null, 2), "application/json")
       const stored = JSON.parse((await readBlob(pathname)).toString("utf8")) as BackupManifest
       if (stored.verified !== true || stored.tables.length !== results.length) throw new Error("manifest verification failed")
       outcome.ok = true

@@ -20,7 +20,9 @@ export default async function LabourPage() {
             and fill in the name, rate and default hours. Prices on quotes already sent are not changed.
           </p>
         </header>
-        <LabourTypesClient types={types} canEdit={ctx.permissions.has("settings.manage")} />
+        <LabourTypesClient types={types} canEdit={ctx.permissions.has("settings.manage")}
+          isOwner={ctx.role === "owner"}
+        />
       </div>
     </AppShell>
   )

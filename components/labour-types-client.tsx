@@ -5,13 +5,15 @@ import { useRouter } from "next/navigation"
 import { Button, Card, Input, Label, Select, Badge, Textarea } from "@/components/ui"
 import { formatCurrency } from "@/lib/utils"
 import {
+  bulkUpdateLabourRates,
   createLabourType,
   setLabourTypeActive,
   updateLabourType,
+  type BulkLabourInput,
   type LabourInput,
 } from "@/lib/actions-labour"
 import type { LabourType } from "@/lib/labour-types"
-import { Plus, Pencil, Search, Clock, X } from "lucide-react"
+import { Plus, Pencil, Search, Clock, X, Layers } from "lucide-react"
 
 const EMPTY: LabourInput = {
   name: "",
@@ -44,7 +46,147 @@ function estimate(t: Pick<LabourType, "rate_type" | "rate" | "default_hours">) {
   return t.rate_type === "fixed" ? t.rate : t.rate * t.default_hours
 }
 
-export function LabourTypesClient({ types, canEdit }: { types: LabourType[]; canEdit: boolean }) {
+function BulkRatePanel({ types, categories }: { types: LabourType[]; categories: string[] }) {
+  const router = useRouter()
+  const [open, setOpen] = React.useState(false)
+  const [mode, setMode] = React.useState<BulkLabourInput["mode"]>("percent")
+  const [value, setValue] = React.useState("")
+  const [applyTo, setApplyTo] = React.useState<BulkLabourInput["applyTo"]>("hourly")
+  const [category, setCategory] = React.useState("")
+  const [pending, startTransition] = React.useTransition()
+  const [message, setMessage] = React.useState<{ ok: boolean; text: string } | null>(null)
+
+  const num = Number(value)
+  const valid = value.trim() !== "" && Number.isFinite(num)
+  const affected = types.filter(
+    (t) => t.active && (applyTo === "all" || t.rate_type === applyTo) && (!category || t.category === category),
+  )
+  const preview = affected.slice(0, 4).map((t) => {
+    const next = mode === "set" ? num : mode === "percent" ? t.rate * (1 + num / 100) : t.rate + num
+    return { t, next: Math.min(100000, Math.max(0, Math.round(next * 100) / 100)) }
+  })
+
+  function submit() {
+    if (!valid || affected.length === 0) return
+    const label = mode === "set" ? `set to ${formatCurrency(num)}` : mode === "percent" ? `changed by ${num}%` : `changed by ${formatCurrency(num)}`
+    if (!window.confirm(`Update ${affected.length} labour rate(s), ${label}? Quotes already sent are not changed.`)) return
+    setMessage(null)
+    startTransition(async () => {
+      const res = await bulkUpdateLabourRates({ mode, value: num, applyTo, category })
+      if (res.ok) {
+        setMessage({ ok: true, text: `${res.updated} labour rate(s) updated.` })
+        setValue("")
+        router.refresh()
+      } else {
+        setMessage({ ok: false, text: res.error })
+      }
+    })
+  }
+
+  if (!open) {
+    return (
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="flex flex-col gap-0.5">
+          <p className="text-sm font-medium">Change all rates at once</p>
+          <p className="text-xs text-muted-foreground">Owner only. Update every labour rate for all cars in one step.</p>
+        </div>
+        <Button type="button" variant="outline" onClick={() => setOpen(true)}>
+          <Layers className="h-4 w-4" /> Bulk update
+        </Button>
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="flex flex-col gap-4 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-0.5">
+          <p className="text-sm font-medium">Change all rates at once</p>
+          <p className="text-xs text-muted-foreground">
+            Applies to active labour types for all cars. New quotes use the new rates; sent quotes stay the same.
+          </p>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)} aria-label="Close bulk update">
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="bulk-mode">How</Label>
+          <Select id="bulk-mode" value={mode} onChange={(e) => setMode(e.target.value as BulkLabourInput["mode"])}>
+            <option value="percent">Increase / decrease by %</option>
+            <option value="amount">Add / subtract AED</option>
+            <option value="set">Set exact rate (AED)</option>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="bulk-value">{mode === "percent" ? "Percent (e.g. 10 or -5)" : mode === "amount" ? "AED (e.g. 20 or -10)" : "New rate (AED)"}</Label>
+          <Input id="bulk-value" type="number" inputMode="decimal" step="0.01" value={value} onChange={(e) => setValue(e.target.value)} />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="bulk-apply">Apply to</Label>
+          <Select id="bulk-apply" value={applyTo} onChange={(e) => setApplyTo(e.target.value as BulkLabourInput["applyTo"])}>
+            <option value="hourly">Hourly rates</option>
+            <option value="fixed">Fixed prices</option>
+            <option value="all">All labour types</option>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="bulk-category">Category</Label>
+          <Select id="bulk-category" value={category} onChange={(e) => setCategory(e.target.value)}>
+            <option value="">All categories</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5 rounded-md border border-border p-3 text-sm">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {affected.length} labour type(s) will change
+        </p>
+        {valid &&
+          preview.map(({ t, next }) => (
+            <p key={t.id} className="flex justify-between gap-3">
+              <span className="truncate">{t.name}</span>
+              <span className="tabular-nums text-muted-foreground">
+                {formatCurrency(t.rate)} {"→"} <span className="text-foreground">{formatCurrency(next)}</span>
+              </span>
+            </p>
+          ))}
+        {valid && affected.length > preview.length && (
+          <p className="text-xs text-muted-foreground">and {affected.length - preview.length} more</p>
+        )}
+      </div>
+
+      {message && (
+        <p role="status" className={message.ok ? "text-sm text-primary" : "text-sm text-destructive"}>
+          {message.text}
+        </p>
+      )}
+
+      <div className="flex justify-end">
+        <Button type="button" onClick={submit} disabled={!valid || affected.length === 0 || pending}>
+          {pending ? "Updating..." : `Apply to ${affected.length}`}
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
+export function LabourTypesClient({
+  types,
+  canEdit,
+  isOwner = false,
+}: {
+  types: LabourType[]
+  canEdit: boolean
+  isOwner?: boolean
+}) {
   const [query, setQuery] = React.useState("")
   const [showInactive, setShowInactive] = React.useState(false)
   const [editing, setEditing] = React.useState<LabourType | "new" | null>(null)
@@ -88,6 +230,8 @@ export function LabourTypesClient({ types, canEdit }: { types: LabourType[]; can
           </Button>
         )}
       </div>
+
+      {isOwner && <BulkRatePanel types={types} categories={categories} />}
 
       {editing && (
         <LabourForm

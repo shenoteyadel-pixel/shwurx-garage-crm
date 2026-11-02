@@ -55,14 +55,23 @@ export const RECOMMENDATIONS: { value: Recommendation; label: string; chip: stri
   { value: "optional", label: "Optional", chip: "border-sky-500/30 bg-sky-500/10 text-sky-300" },
 ]
 
-// Fixed per-labour-type rates. Selecting a type fills the line name + rate
-// as a flat labour charge (hours left at 0). Rates stay editable afterwards.
-export const LABOUR_PRESETS: { name: string; rate: number; category: string }[] = [
+export type LabourPreset = {
+  name: string
+  rate: number
+  category: string
+  rate_type?: "hourly" | "fixed"
+  default_hours?: number
+}
+
+// Fallback when the Labour & Hours list can't be loaded; the managed list lives in the labour_types table.
+export const LABOUR_PRESETS: LabourPreset[] = [
   { name: "Mechanic Labour", rate: 170, category: "Engine" },
   { name: "Electric Labour", rate: 270, category: "Electrical" },
   { name: "Paint", rate: 150, category: "Body & Paint" },
   { name: "Dent", rate: 180, category: "Body & Paint" },
 ]
+
+const LabourPresetsContext = React.createContext<LabourPreset[]>(LABOUR_PRESETS)
 
 export const CATEGORY_SUGGESTIONS = [
   "Engine",
@@ -152,6 +161,7 @@ export function QuotationBuilder({
   canEditLocked = false,
   notifiesOwnerOnEdit = false,
   partCatalog = [],
+  labourTypes,
 }: {
   jobId: string
   initialItems: Item[]
@@ -165,7 +175,9 @@ export function QuotationBuilder({
   canEditLocked?: boolean
   notifiesOwnerOnEdit?: boolean
   partCatalog?: CatalogPart[]
+  labourTypes?: LabourPreset[]
 }) {
+  const presets = labourTypes && labourTypes.length > 0 ? labourTypes : LABOUR_PRESETS
   const [open, setOpen] = React.useState(false)
   const vat = initialVat || VAT_RATE
   const inclusive = initialVatInclusive
@@ -277,16 +289,18 @@ export function QuotationBuilder({
       )}
 
       {open && (
-        <QuotationEditor
-          jobId={jobId}
-          initialItems={initialItems}
-          initialVat={vat}
-          initialVatInclusive={inclusive}
-          initialDescription={initialDescription}
-          initialInternalNotes={initialInternalNotes}
-          partCatalog={partCatalog}
-          onClose={() => setOpen(false)}
-        />
+        <LabourPresetsContext.Provider value={presets}>
+          <QuotationEditor
+            jobId={jobId}
+            initialItems={initialItems}
+            initialVat={vat}
+            initialVatInclusive={inclusive}
+            initialDescription={initialDescription}
+            initialInternalNotes={initialInternalNotes}
+            partCatalog={partCatalog}
+            onClose={() => setOpen(false)}
+          />
+        </LabourPresetsContext.Provider>
       )}
     </Card>
   )
@@ -998,7 +1012,8 @@ function LabourRow({
   onRemove: () => void
 }) {
   const { vat: lineVat, total } = lineParts(it, vat, inclusive)
-  const activePreset = LABOUR_PRESETS.find((p) => p.name === it.name && p.rate === it.labour_rate)
+  const presets = React.useContext(LabourPresetsContext)
+  const activePreset = presets.find((p) => p.name === it.name && p.rate === it.labour_rate)
   return (
     <div className="rounded-xl border border-border bg-card/60 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -1022,8 +1037,9 @@ function LabourRow({
       <div className="mb-3">
         <Label>Labour type (rate / hour)</Label>
         <div className="flex flex-wrap gap-2">
-          {LABOUR_PRESETS.map((p) => {
+          {presets.map((p) => {
             const active = activePreset?.name === p.name
+            const fixed = p.rate_type === "fixed"
             return (
               <button
                 key={p.name}
@@ -1032,7 +1048,13 @@ function LabourRow({
                   onChange({
                     name: p.name,
                     labour_rate: p.rate,
-                    labour_hours: it.labour_hours && it.labour_hours > 0 ? it.labour_hours : 1,
+                    labour_hours: fixed
+                      ? 1
+                      : it.labour_hours && it.labour_hours > 0
+                        ? it.labour_hours
+                        : p.default_hours && p.default_hours > 0
+                          ? p.default_hours
+                          : 1,
                     category: it.category?.trim() ? it.category : p.category,
                   })
                 }
@@ -1043,7 +1065,10 @@ function LabourRow({
                 }`}
               >
                 {p.name}
-                <span className="tabular-nums opacity-70">{formatCurrency(p.rate)}/hr</span>
+                <span className="tabular-nums opacity-70">
+                  {formatCurrency(p.rate)}
+                  {fixed ? " fixed" : "/hr"}
+                </span>
               </button>
             )
           })}

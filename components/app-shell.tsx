@@ -106,6 +106,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/parts", label: "Parts", icon: Package, anyOf: ["parts.view"] },
       { href: "/pricing", label: "Price Catalog", icon: Tag, anyOf: ["quotations.edit", "settings.manage"] },
+      { href: "/labour", label: "Labour & Hours", icon: Clock, anyOf: ["quotations.edit", "settings.manage"] },
       { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, anyOf: ["purchase_orders.manage", "parts.view"] },
       { href: "/purchasing/invoices", label: "Scan Invoice", icon: ScanLine, anyOf: ["purchase_orders.manage", "parts.view"] },
       { href: "/inventory", label: "Store / Inventory", icon: Warehouse, anyOf: ["parts.view"] },

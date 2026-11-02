@@ -6,8 +6,17 @@ import { Button, Card, Input } from "@/components/ui"
 import { formatCurrency, cn } from "@/lib/utils"
 import { Loader2, PackagePlus, Plus } from "lucide-react"
 
-export function ManualPurchasePart({ jobId, defaultMarkup }: { jobId: string; defaultMarkup: number }) {
+export function ManualPurchasePart({
+  jobId,
+  defaultMarkup,
+  usedMarkup,
+}: {
+  jobId: string
+  defaultMarkup: number
+  usedMarkup: number
+}) {
   const [open, setOpen] = React.useState(false)
+  const [isUsed, setIsUsed] = React.useState(false)
   const [pending, setPending] = React.useState(false)
   const [feedback, setFeedback] = React.useState<{ tone: "error" | "ok"; text: string } | null>(null)
   const formRef = React.useRef<HTMLFormElement>(null)
@@ -81,9 +90,19 @@ export function ManualPurchasePart({ jobId, defaultMarkup }: { jobId: string; de
               min="0"
               step="0.1"
               aria-label="Markup percent"
-              placeholder={`Markup ${defaultMarkup}%`}
+              placeholder={`Markup ${isUsed ? usedMarkup : defaultMarkup}%`}
             />
           </div>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              name="is_used"
+              checked={isUsed}
+              onChange={(e) => setIsUsed(e.target.checked)}
+              className="h-4 w-4 accent-primary"
+            />
+            Used part (applies {usedMarkup}% used-parts markup)
+          </label>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
               Cancel

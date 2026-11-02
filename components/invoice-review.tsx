@@ -21,6 +21,7 @@ import {
 import Link from "next/link"
 import { PaymentReceiptField, methodNeedsProof } from "@/components/payment-receipt-field"
 import { ReopenInvoiceButton } from "@/components/invoice-owner-actions"
+import { cn } from "@/lib/utils"
 import { Loader2, Save, CheckCircle2, Trash2, AlertTriangle, Plus, FileText, RefreshCw } from "lucide-react"
 
 type SupplierOpt = { id: string; name: string }
@@ -105,7 +106,7 @@ export function InvoiceReview({
   suppliers: SupplierOpt[]
   inventory: InventoryOpt[]
   jobs: JobOpt[]
-  pricing: { method: PricingMethod; markup: number; vat: number }
+  pricing: { method: PricingMethod; markup: number; usedMarkup?: number; vat: number }
   payments: { id: string; amount: number; method: string; reference: string | null; paid_at: string; receipt_path?: string | null }[]
 }) {
   const router = useRouter()
@@ -554,6 +555,8 @@ export function InvoiceReview({
                 canReassign={invoice.status === "confirmed"}
                 inventory={inventory}
                 jobs={jobs}
+                newMarkup={pricing.markup}
+                usedMarkup={pricing.usedMarkup ?? 20}
                 onChange={(patch) => patchLine(l.key, patch)}
                 onRemove={() => setLines((prev) => prev.filter((x) => x.key !== l.key))}
               />
@@ -859,6 +862,8 @@ function LineRow({
   canReassign,
   inventory,
   jobs,
+  newMarkup,
+  usedMarkup,
   onChange,
   onRemove,
 }: {
@@ -867,6 +872,8 @@ function LineRow({
   canReassign: boolean
   inventory: InventoryOpt[]
   jobs: JobOpt[]
+  newMarkup: number
+  usedMarkup: number
   onChange: (patch: Partial<Line>) => void
   onRemove: () => void
 }) {
@@ -1038,6 +1045,30 @@ function LineRow({
             line.match_status !== "ignore" && (
               <span className="text-[10px] text-muted-foreground">{margin}% margin</span>
             )
+          )}
+          {!readOnly && line.match_status !== "ignore" && line.match_status !== "expense" && (
+            <div role="group" aria-label="Markup preset" className="flex overflow-hidden rounded-md border border-input">
+              {[
+                { label: "New", value: newMarkup },
+                { label: "Used", value: usedMarkup },
+              ].map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  aria-pressed={Number(line.markup_pct) === Number(p.value)}
+                  title={`Apply ${p.label.toLowerCase()} parts markup (${p.value}%)`}
+                  onClick={() => onChange({ markup_pct: Number(p.value) })}
+                  className={cn(
+                    "px-2 py-0.5 text-[10px] font-medium",
+                    Number(line.markup_pct) === Number(p.value)
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           )}
           {line.confidence !== null && line.confidence < 0.6 && (
             <Badge className="border-amber-500/30 bg-amber-500/15 text-amber-300">check</Badge>

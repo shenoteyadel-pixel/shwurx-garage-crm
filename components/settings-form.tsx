@@ -158,7 +158,8 @@ export function SettingsForm({ settings, stripeLive = false }: { settings: Setti
               <option value="margin">Target margin</option>
             </select>
           </div>
-          <Field label="Default markup / margin %" name="default_markup_pct" type="number" defaultValue={settings.default_markup_pct} />
+          <Field label="New parts markup / margin %" name="default_markup_pct" type="number" defaultValue={settings.default_markup_pct} />
+          <Field label="Used parts markup / margin %" name="used_parts_markup_pct" type="number" defaultValue={settings.used_parts_markup_pct} />
           <Field label="VAT rate %" name="vat_rate" type="number" defaultValue={settings.vat_rate} />
           <div className="sm:col-span-2">
             <Label htmlFor="parts_release_mode">After the customer approves parts</Label>

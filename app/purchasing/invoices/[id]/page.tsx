@@ -220,7 +220,7 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
           suppliers={suppliers ?? []}
           inventory={inventory ?? []}
           jobs={jobs}
-          pricing={{ method: settings.pricing_method, markup: settings.default_markup_pct, vat: settings.vat_rate }}
+          pricing={{ method: settings.pricing_method, markup: settings.default_markup_pct, usedMarkup: settings.used_parts_markup_pct, vat: settings.vat_rate }}
           payments={payments ?? []}
           canReopen={user.role === "owner" && !invoice.deleted_at}
         />

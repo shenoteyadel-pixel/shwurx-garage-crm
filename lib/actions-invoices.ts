@@ -802,7 +802,13 @@ export async function addManualPurchasedPart(
     const markupRaw = String(formData.get("markup_pct") || "").trim()
 
     const settings = await getSettings()
-    const markup = markupRaw !== "" && n(markupRaw, -1) >= 0 ? n(markupRaw) : settings.default_markup_pct
+    const isUsed = String(formData.get("is_used") || "") === "on"
+    const markup =
+      markupRaw !== "" && n(markupRaw, -1) >= 0
+        ? n(markupRaw)
+        : isUsed
+          ? n(settings.used_parts_markup_pct, 20)
+          : settings.default_markup_pct
     const salePrice = Math.round(suggestSalePrice(unitCost, settings.pricing_method, markup) * 100) / 100
     const partNumber = oem ?? genManualPartNumber()
 
@@ -821,7 +827,13 @@ export async function addManualPurchasedPart(
     await addPartToJobQuotation(
       createServiceClient(),
       jobId,
-      { name, partNumber, quantity, unitPrice: salePrice, detail: "Manual purchase (no invoice)" },
+      {
+        name,
+        partNumber,
+        quantity,
+        unitPrice: salePrice,
+        detail: isUsed ? "Used part · manual purchase (no invoice)" : "Manual purchase (no invoice)",
+      },
       n(settings.vat_rate, 5),
     )
     await reconcileJobs([jobId])

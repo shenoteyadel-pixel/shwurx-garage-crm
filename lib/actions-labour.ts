@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createServiceClient } from "@/lib/supabase/server"
-import { requirePermission, logAction } from "@/lib/rbac/context"
+import { requirePermission, requireSession, logAction } from "@/lib/rbac/context"
 import { LABOUR_COLUMNS, toLabourType, type LabourType } from "@/lib/labour-types"
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string }
@@ -92,6 +92,51 @@ export async function updateLabourType(id: string, input: LabourInput): Promise<
   await logAction(ctx, "labour_type.update", "labour_types", id, parsed.row)
   refresh()
   return { ok: true }
+}
+
+export type BulkLabourInput = {
+  mode: "set" | "percent" | "amount"
+  value: number
+  applyTo: "hourly" | "fixed" | "all"
+  category: string
+}
+
+/** Owner-only: change the rate of many labour types in one go. */
+export async function bulkUpdateLabourRates(input: BulkLabourInput): Promise<Result<{ updated: number }>> {
+  const ctx = await requireSession()
+  if (ctx.role !== "owner") return { ok: false, error: "Only the owner can change all labour rates at once." }
+
+  const mode = input.mode
+  if (mode !== "set" && mode !== "percent" && mode !== "amount") return { ok: false, error: "Choose how to change the rates." }
+  const value = Number(input.value)
+  if (!Number.isFinite(value)) return { ok: false, error: "Enter a valid number." }
+  if (mode === "set" && (value < 0 || value > 100000)) return { ok: false, error: "Rate must be between 0 and 100,000 AED." }
+  if (mode === "percent" && (value < -90 || value > 500)) return { ok: false, error: "Percentage must be between -90% and 500%." }
+  if (mode === "amount" && Math.abs(value) > 100000) return { ok: false, error: "Amount is too large." }
+
+  const svc = createServiceClient()
+  let query = svc.from("labour_types").select("id, rate, rate_type").eq("active", true)
+  if (input.applyTo === "hourly" || input.applyTo === "fixed") query = query.eq("rate_type", input.applyTo)
+  const category = String(input.category ?? "").trim()
+  if (category) query = query.eq("category", category)
+  const { data, error } = await query
+  if (error) return { ok: false, error: error.message }
+
+  const now = new Date().toISOString()
+  let updated = 0
+  for (const row of data ?? []) {
+    const current = Number(row.rate) || 0
+    const next = mode === "set" ? value : mode === "percent" ? current * (1 + value / 100) : current + value
+    const rate = Math.min(100000, Math.max(0, Math.round(next * 100) / 100))
+    if (rate === current) continue
+    const { error: updateError } = await svc.from("labour_types").update({ rate, updated_at: now }).eq("id", row.id)
+    if (updateError) return { ok: false, error: `Stopped after ${updated} updates: ${updateError.message}` }
+    updated++
+  }
+
+  await logAction(ctx, "labour_type.bulk_update", "labour_types", undefined, { ...input, updated })
+  refresh()
+  return { ok: true, updated }
 }
 
 export async function setLabourTypeActive(id: string, active: boolean): Promise<Result> {

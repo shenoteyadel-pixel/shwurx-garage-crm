@@ -288,6 +288,62 @@ export const LOGIN_METHOD_LABEL: Record<LoginMethod, string> = {
   shenoteyadel_email: "Shenoteyadel email",
 }
 
+export function safeHttpsUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  try {
+    const url = new URL(raw.trim())
+    return url.protocol === "https:" && !url.username && !url.password ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
+export function urlHost(raw: string | null | undefined): string | null {
+  const safe = safeHttpsUrl(raw)
+  return safe ? new URL(safe).hostname.replace(/^www\./, "") : null
+}
+
+const LOGIN_STEP: Record<LoginMethod, string> = {
+  email: "Sign in with the account email and password.",
+  github: 'Choose "Continue with GitHub" and approve with the company GitHub account.',
+  wurx_email: "Sign in with the Wurx company email.",
+  shenoteyadel_email: "Sign in with the Shenoteyadel email.",
+}
+
+export interface RenewalGuideInput {
+  service_name: string
+  vendor: string
+  login_method: LoginMethod | null
+  service_url: string | null
+  billingHost: string | null
+  portalReady: boolean
+  renewal_type: string
+  payment_method_label: string | null
+  next_due_date: string
+  amountLabel: string
+}
+
+/** Step-by-step renewal instructions built from the subscription's own details. */
+export function renewalGuide(s: RenewalGuideInput): string[] {
+  const where = s.portalReady && s.billingHost
+    ? `Press "Pay now" to open the verified billing page (${s.billingHost}).`
+    : s.service_url
+      ? `Open ${urlHost(s.service_url) ?? s.service_name} with "Open service", then go to Billing.`
+      : `Open the ${s.vendor || s.service_name} website and go to Billing. Add the billing link to this subscription so the next renewal is one click.`
+  const login = s.login_method ? LOGIN_STEP[s.login_method] : "Login method not set. Edit the subscription and choose how you sign in."
+  const card = s.payment_method_label ? ` using ${s.payment_method_label}` : ""
+  const pay = s.renewal_type === "auto"
+    ? `It renews automatically on ${s.next_due_date}${card}. Check the payment method is valid and has funds for ${s.amountLabel}.`
+    : `Pay ${s.amountLabel}${card} before ${s.next_due_date}.`
+  return [
+    where,
+    login,
+    pay,
+    "Download the invoice or receipt from the provider.",
+    "Open this subscription in the CRM, record the payment and attach the receipt so an approver can confirm it.",
+  ]
+}
+
 export const CSV_COLUMNS: (keyof SubscriptionInput)[] = [
   "service_name",
   "category",

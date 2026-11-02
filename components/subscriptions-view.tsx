@@ -3,14 +3,18 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Download, ExternalLink, Plus, Upload, X } from "lucide-react"
+import { BookOpen, ChevronDown, Download, ExternalLink, Globe, KeyRound, Plus, Upload, X } from "lucide-react"
 import { Button, Card, Input, Select } from "@/components/ui"
 import { SubscriptionForm, EMPTY_SUBSCRIPTION, type StaffOption } from "@/components/subscription-form"
 import { CATEGORY_LABEL, CRIT_TONE, CYCLE_LABEL, DUE_LABEL, DUE_TONE, money } from "@/components/subscription-labels"
 import { importSubscriptions, openBillingPortal } from "@/lib/actions-subscriptions"
 import {
   CSV_COLUMNS,
+  LOGIN_METHOD_LABEL,
   SUBSCRIPTION_CATEGORIES,
+  renewalGuide,
+  urlHost,
+  type LoginMethod,
   cashRequirementAED,
   daysBetween,
   dubaiToday,
@@ -35,6 +39,10 @@ export interface SubscriptionRow extends SubscriptionLike {
   owner: string
   portalReady: boolean
   pendingPayment: boolean
+  service_url: string | null
+  billingHost: string | null
+  login_method: LoginMethod | null
+  payment_method_label: string | null
   billing_cycle: BillingCycle
   criticality: Criticality
   status: SubscriptionStatus
@@ -197,7 +205,7 @@ function SubscriptionItem({ r, today, canPay }: { r: SubscriptionRow & { due: Du
   }
 
   return (
-    <li className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+    <li className="flex flex-col gap-3 p-4 md:flex-row md:flex-wrap md:items-center md:justify-between">
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
           <Link href={`/finance/subscriptions/${r.id}`} className="truncate font-medium text-foreground hover:underline">
@@ -225,12 +233,82 @@ function SubscriptionItem({ r, today, canPay }: { r: SubscriptionRow & { due: Du
           </Button>
         ) : null}
       </div>
+      <AccessRow r={r} />
       {err ? (
         <p role="alert" className="text-xs text-red-300 md:basis-full">
           {err}
         </p>
       ) : null}
     </li>
+  )
+}
+
+function AccessRow({ r }: { r: SubscriptionRow }) {
+  const [open, setOpen] = React.useState(false)
+  const guideId = `guide-${r.id}`
+  const serviceHost = urlHost(r.service_url)
+  const steps = renewalGuide({
+    service_name: r.service_name,
+    vendor: r.vendor,
+    login_method: r.login_method,
+    service_url: r.service_url,
+    billingHost: r.billingHost,
+    portalReady: r.portalReady,
+    renewal_type: r.renewal_type,
+    payment_method_label: r.payment_method_label,
+    next_due_date: r.next_due_date,
+    amountLabel: money(r.amount, r.currency),
+  })
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-background/40 p-3 md:basis-full">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+          <KeyRound className="size-3.5" aria-hidden />
+          Login:
+          <span className={r.login_method ? "font-medium text-foreground" : "text-amber-300"}>{r.login_method ? LOGIN_METHOD_LABEL[r.login_method] : "Not set"}</span>
+        </span>
+        <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          <Globe className="size-3.5" aria-hidden />
+          Service:
+          {r.service_url ? (
+            <a href={r.service_url} target="_blank" rel="noopener noreferrer" className="truncate font-medium text-foreground underline-offset-2 hover:underline">
+              {serviceHost}
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          ) : (
+            <span className="text-amber-300">No link</span>
+          )}
+        </span>
+        <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          <ExternalLink className="size-3.5" aria-hidden />
+          Billing:
+          <span className={r.billingHost ? "truncate font-medium text-foreground" : "text-amber-300"}>
+            {r.billingHost ? `${r.billingHost}${r.portalReady ? "" : " (not verified)"}` : "No link"}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={guideId}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-medium text-primary hover:bg-accent"
+        >
+          <BookOpen className="size-3.5" aria-hidden />
+          Renewal guide
+          <ChevronDown className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+        </button>
+      </div>
+      {open ? (
+        <ol id={guideId} className="flex list-decimal flex-col gap-1.5 pl-5 text-sm leading-relaxed text-foreground">
+          {steps.map((s, i) => (
+            <li key={i} className="text-pretty">
+              {s}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
   )
 }
 

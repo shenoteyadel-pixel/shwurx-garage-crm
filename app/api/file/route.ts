@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
   if (!pathname) return NextResponse.json({ error: "Missing pathname" }, { status: 400 })
   // Database backups hold every table; they are never downloadable through the app.
   if (pathname.replace(/^\/+/, "").startsWith(BACKUP_PREFIX)) return new NextResponse("Not found", { status: 404 })
+  // Technician media is served by /api/technician-media, which enforces job access.
+  if (pathname.replace(/^\/+/, "").startsWith("technician-media/")) return new NextResponse("Not found", { status: 404 })
 
   try {
     const result = await get(pathname, {

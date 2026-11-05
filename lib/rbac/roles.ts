@@ -84,7 +84,7 @@ export function roleHome(role: string | null | undefined): string {
 export type Permission =
   | "customers.view" | "customers.create" | "customers.edit" | "customers.delete"
   | "vehicles.view" | "vehicles.create" | "vehicles.edit" | "vehicles.transfer" | "vehicles.delete"
-  | "jobs.view_all" | "jobs.view_assigned" | "jobs.create" | "jobs.edit" | "jobs.update_status" | "jobs.assign" | "jobs.delete"
+  | "jobs.view_all" | "jobs.view_assigned" | "jobs.create" | "jobs.edit" | "jobs.update_status" | "jobs.assign" | "jobs.delete" | "jobs.qc_approve"
   | "inspection.manage" | "diagnostics.manage" | "parts.request"
   | "quotations.view" | "quotations.create" | "quotations.edit" | "quotations.approve"
   | "invoices.view" | "invoices.create" | "invoices.edit"
@@ -138,6 +138,7 @@ export const PERMISSION_CATALOG: PermGroup[] = [
       { key: "jobs.edit", label: "Edit job cards" },
       { key: "jobs.update_status", label: "Update job status" },
       { key: "jobs.assign", label: "Assign technicians" },
+      { key: "jobs.qc_approve", label: "Approve or reject technician work (QC)" },
       { key: "jobs.delete", label: "Delete job cards" },
     ],
   },

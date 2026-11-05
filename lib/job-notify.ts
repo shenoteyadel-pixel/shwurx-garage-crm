@@ -38,20 +38,36 @@ async function usersWithAnyPermission(permissions: string[]) {
 
 async function jobInfo(jobId: string) {
   const svc = createServiceClient()
-  const [{ data: job }, { data: team }] = await Promise.all([
+  const [{ data: job }, { data: team }, { data: tasks }] = await Promise.all([
     svc.from("jobs").select("job_number, advisor_id, technician_id").eq("id", jobId).maybeSingle(),
     svc.from("job_technicians").select("user_id").eq("job_id", jobId),
+    svc.from("technician_tasks").select("technician_id").eq("job_id", jobId),
   ])
   return {
     label: (job?.job_number as string | null) ?? jobId.slice(0, 8),
     advisorId: (job?.advisor_id as string | null) ?? null,
-    technicianIds: [job?.technician_id as string | null, ...(team ?? []).map((t) => t.user_id as string)],
+    technicianIds: [
+      job?.technician_id as string | null,
+      ...(team ?? []).map((t) => t.user_id as string),
+      ...(tasks ?? []).map((t) => t.technician_id as string),
+    ],
   }
 }
 
 /** Purchasing team (parts staff + purchase-order managers), each notified once. */
 export async function notifyPurchasers(payload: Payload) {
   await deliver(await usersWithAnyPermission(["parts.manage", "purchase_orders.manage"]), payload)
+}
+
+/** Everyone holding any of the given permissions, minus the actor, each notified once. */
+export async function notifyPermissionHolders(permissions: string[], payload: Payload, excludeUserId?: string) {
+  const ids = await usersWithAnyPermission(permissions)
+  await deliver(ids.filter((id) => id !== excludeUserId), payload)
+}
+
+/** Specific users (e.g. the technician assigned a task). */
+export async function notifyUserIds(userIds: string[], payload: Payload) {
+  await deliver(userIds, payload)
 }
 
 /** Every technician on the job (lead + team) — e.g. parts arrived, ready to fit. */

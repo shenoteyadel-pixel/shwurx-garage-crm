@@ -36,6 +36,7 @@ import { ComebackBanner, CreateComebackButton, type ComebackInfo } from "@/compo
 import { normalizeChecklist, type JobType } from "@/lib/full-inspection-config"
 import { TechnicianJobCard } from "@/components/technician-job-card"
 import { TechPartsRequest } from "@/components/tech-parts-request"
+import { AssignTaskPanel, type JobTask } from "@/components/technician/assign-task-panel"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { RefreshVehicleImageButton } from "@/components/refresh-vehicle-image"
 import { STAGE_MAP, QC_STATUSES, canViewPrices, type Stage } from "@/lib/constants"
@@ -423,6 +424,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const viewerTrade: Trade =
     jobTechs.find((t) => t.user_id === viewerId)?.trade ?? tradeFromTitle(viewerProfile?.job_title)
   const canAssign = sessionCtx?.permissions.has("jobs.assign") ?? false
+  const { data: taskRows } = await supabase
+    .from("technician_tasks")
+    .select("id, title, status, priority, deadline, worked_seconds, timer_started_at, technician_id")
+    .eq("job_id", id)
+    .order("created_at")
+  const jobTasks: JobTask[] = (taskRows ?? []).map((t) => ({
+    ...t,
+    technician_name: uploaderNames[t.technician_id] ?? "Technician",
+  }))
 
   const stageMeta = STAGE_MAP[job.stage as Stage]
   const vehicle =
@@ -870,6 +880,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             technicians={jobTechs}
             canAssign={canAssign}
             canChangeAdvisor={isOwner}
+          />
+
+          <AssignTaskPanel
+            jobId={job.id}
+            tasks={jobTasks}
+            technicians={(staff ?? []).filter((s) => s.role === "technician" || s.role === "workshop_supervisor")}
+            canAssign={canAssign}
           />
 
           {!showPrices && (canManageExpenses || isOwner) && (

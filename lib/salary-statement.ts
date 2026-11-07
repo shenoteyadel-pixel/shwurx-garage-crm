@@ -21,8 +21,20 @@ export interface StaffAttendance {
   absentDays: number
   lateDays: number
   lateMinutes: number
+  lateFee: number
   leaveDays: number
   overtimeMinutes: number
+}
+
+export type TargetKind = "purchase" | "sales" | "technician"
+
+export interface TargetLine {
+  kind: TargetKind
+  target: number
+  achieved: number
+  count: number
+  percent: number
+  commission: number
 }
 
 export interface SalaryStaff {
@@ -32,20 +44,29 @@ export interface SalaryStaff {
   title: string
   employeeId: string
   payment: SalaryPayment | null
+  /** Full monthly contract salary (before proration). */
   suggestedBase: number
   suggestedAllowances: number
   attendance?: StaffAttendance | null
+  startDate?: string | null
+  daysInMonth?: number
+  daysEmployed?: number
+  targets?: TargetLine[]
 }
 
 export interface PayrollRules {
   basisDays: number
-  shiftMinutes: number
   absenceFactor: number
   lateEnabled: boolean
+  lateFeePerHour: number
+  lateFeeUnderHalf: number
 }
 
 export interface Statement {
   base: number
+  fullSalary: number
+  daysEmployed: number
+  daysInMonth: number
   allowances: number
   overtime: number
   commission: number
@@ -62,20 +83,30 @@ export interface Statement {
 
 export const r2 = (n: number) => Math.round(n * 100) / 100
 
-export function attendanceDeductions(base: number, absentDays: number, lateMinutes: number, rules: PayrollRules) {
-  const daily = base / Math.max(1, rules.basisDays)
-  return {
-    absence: r2(absentDays * rules.absenceFactor * daily),
-    late: rules.lateEnabled ? r2((lateMinutes / rules.shiftMinutes) * daily) : 0,
-  }
+/** Commission is paid only once the target is passed, as a percentage of the amount above the target. */
+export function targetCommission(target: number, achieved: number, percent: number) {
+  return target > 0 && percent > 0 && achieved > target ? r2(((achieved - target) * percent) / 100) : 0
 }
 
-// Paid months use the saved payslip; unpaid months are an estimate from contract salary and attendance.
+export function proratedBase(fullSalary: number, daysEmployed: number, daysInMonth: number) {
+  return daysEmployed >= daysInMonth ? fullSalary : r2((fullSalary * Math.max(0, daysEmployed)) / Math.max(1, daysInMonth))
+}
+
+export function absenceDeduction(fullSalary: number, absentDays: number, rules: PayrollRules) {
+  return r2(absentDays * rules.absenceFactor * (fullSalary / Math.max(1, rules.basisDays)))
+}
+
+// Paid months use the saved payslip; unpaid months are an estimate from contract salary, start date, attendance and targets.
 export function statementFor(s: SalaryStaff, rules: PayrollRules): Statement {
+  const daysInMonth = s.daysInMonth ?? 30
+  const daysEmployed = s.daysEmployed ?? daysInMonth
   const p = s.payment
   if (p) {
     return {
       base: p.base,
+      fullSalary: s.suggestedBase,
+      daysEmployed,
+      daysInMonth,
       allowances: p.allowances,
       overtime: p.overtime,
       commission: p.commission,
@@ -92,19 +123,25 @@ export function statementFor(s: SalaryStaff, rules: PayrollRules): Statement {
   }
   const absentDays = s.attendance?.absentDays ?? 0
   const lateMinutes = s.attendance?.lateMinutes ?? 0
-  const d = attendanceDeductions(s.suggestedBase, absentDays, lateMinutes, rules)
-  const gross = r2(s.suggestedBase + s.suggestedAllowances)
-  const deductions = Math.min(gross, r2(d.absence + d.late))
+  const base = proratedBase(s.suggestedBase, daysEmployed, daysInMonth)
+  const commission = r2((s.targets ?? []).reduce((t, x) => t + x.commission, 0))
+  const absence = absenceDeduction(s.suggestedBase, absentDays, rules)
+  const late = rules.lateEnabled ? r2(s.attendance?.lateFee ?? 0) : 0
+  const gross = r2(base + s.suggestedAllowances + commission)
+  const deductions = Math.min(gross, r2(absence + late))
   return {
-    base: s.suggestedBase,
+    base,
+    fullSalary: s.suggestedBase,
+    daysEmployed,
+    daysInMonth,
     allowances: s.suggestedAllowances,
     overtime: 0,
-    commission: 0,
+    commission,
     gross,
     absentDays,
-    absence: d.absence,
+    absence,
     lateMinutes,
-    late: d.late,
+    late,
     other: 0,
     deductions,
     final: r2(gross - deductions),

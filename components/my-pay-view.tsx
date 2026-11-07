@@ -4,15 +4,9 @@ import { useRouter } from "next/navigation"
 import { Printer } from "lucide-react"
 import { useI18n } from "@/lib/i18n/provider"
 import { Button, Card, Badge, Input } from "@/components/ui"
-import type { TargetKind } from "@/lib/actions-targets"
-import type { SalaryPayment, StaffAttendance, Statement } from "@/lib/salary-statement"
+import type { SalaryPayment, StaffAttendance, Statement, TargetKind, TargetLine } from "@/lib/salary-statement"
 
-export interface MyTarget {
-  kind: TargetKind
-  target: number
-  achieved: number
-  count: number
-}
+export type MyTarget = TargetLine
 
 export interface MyPayslip {
   month: string
@@ -36,10 +30,14 @@ const TEXT = {
     remaining: "Remaining",
     reached: "Target reached",
     invoices: "{n} invoices",
+    commissionRule: "{p}% commission on everything above the target",
+    commissionEarned: "Commission earned",
+    noCommission: "No commission set for this target",
+    prorated: "{d} of {n} days (started {s})",
     salary: "My salary",
     paid: "Paid",
     estimate: "Estimate",
-    estimateHint: "Not paid yet. This is an estimate from your contract salary and attendance so far. Commission and other items are added when payroll pays you.",
+    estimateHint: "Not paid yet. This is an estimate from your contract salary, start date, attendance and target commission so far.",
     paidHint: "Paid on {d} by {m}.",
     earnings: "Earnings",
     deductionsTitle: "Deductions",
@@ -79,10 +77,14 @@ const TEXT = {
     remaining: "المتبقي",
     reached: "تم تحقيق الهدف",
     invoices: "{n} فاتورة",
+    commissionRule: "عمولة {p}% على كل ما يزيد عن الهدف",
+    commissionEarned: "العمولة المستحقة",
+    noCommission: "لا توجد عمولة لهذا الهدف",
+    prorated: "{d} من {n} يوم (بدأ {s})",
     salary: "راتبي",
     paid: "مدفوع",
     estimate: "تقديري",
-    estimateHint: "لم يدفع بعد. هذا تقدير من راتبك التعاقدي وحضورك حتى الآن. تضاف العمولة والبنود الأخرى عند الدفع.",
+    estimateHint: "لم يدفع بعد. هذا تقدير من راتبك التعاقدي وتاريخ بدايتك وحضورك وعمولة الهدف حتى الآن.",
     paidHint: "دفع بتاريخ {d} عن طريق {m}.",
     earnings: "المستحقات",
     deductionsTitle: "الخصومات",
@@ -129,7 +131,9 @@ export function MyPayView({
   payment,
   targets,
   history,
+  startDate,
 }: {
+  startDate?: string | null
   month: string
   name: string
   title: string
@@ -211,6 +215,16 @@ export function MyPayView({
                     <Stat label={t.target} value={money(tg.target, L)} />
                     <Stat label={t.remaining} value={money(Math.max(0, tg.target - tg.achieved), L)} />
                   </dl>
+                  {tg.percent > 0 ? (
+                    <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-border pt-2 text-xs">
+                      <span className="text-muted-foreground">{t.commissionRule.replace("{p}", String(tg.percent))}</span>
+                      <span className={tg.commission > 0 ? "font-semibold text-primary tabular-nums" : "text-muted-foreground tabular-nums"}>
+                        {t.commissionEarned}: {money(tg.commission, L)}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="border-t border-border pt-2 text-xs text-muted-foreground">{t.noCommission}</p>
+                  )}
                 </Card>
               )
             })}
@@ -234,7 +248,18 @@ export function MyPayView({
           <div className="grid gap-5 md:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t.earnings}</span>
-              <Row label={t.base} value={money(st.base, L)} />
+              <Row
+                label={t.base}
+                hint={
+                  startDate && st.daysEmployed < st.daysInMonth
+                    ? t.prorated
+                        .replace("{d}", String(st.daysEmployed))
+                        .replace("{n}", String(st.daysInMonth))
+                        .replace("{s}", startDate)
+                    : undefined
+                }
+                value={money(st.base, L)}
+              />
               <Row label={t.allowances} value={money(st.allowances, L)} />
               <Row label={t.overtime} value={money(st.overtime, L)} />
               <Row label={t.commission} value={money(st.commission, L)} />

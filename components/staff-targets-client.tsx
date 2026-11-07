@@ -11,6 +11,7 @@ import {
   removeStaffTarget,
   saveStaffTarget,
   saveStaffTargets,
+  saveTargetCommission,
   suggestStaffTargets,
   type SuggestionMap,
   type TargetKind,
@@ -24,6 +25,7 @@ export type TargetRow = {
   total: number
   count: number
   target: number
+  commission: number
 }
 
 type Staff = { id: string; name: string }
@@ -223,6 +225,7 @@ function TargetSection({
       userId: id,
       name: staffById.get(id)?.name ?? "Unnamed",
       title: "",
+      commission: 0,
       total: 0,
       count: 0,
       target: 0,
@@ -284,6 +287,7 @@ function TargetSection({
                 <th className="px-4 py-2 text-right font-medium">{countLabel}</th>
                 <th className="px-4 py-2 text-right font-medium">Total</th>
                 <th className="px-4 py-2 font-medium">Monthly target</th>
+                <th className="px-4 py-2 font-medium">Commission %</th>
                 {suggestions && <th className="min-w-56 px-4 py-2 font-medium">AI reference</th>}
                 <th className="min-w-44 px-4 py-2 font-medium">Progress</th>
               </tr>
@@ -324,6 +328,72 @@ function TargetSection({
         </div>
       )}
     </Card>
+  )
+}
+
+function CommissionInput({ row, kind }: { row: TargetRow; kind: TargetKind }) {
+  const router = useRouter()
+  const [value, setValue] = useState(row.commission ? String(row.commission) : "")
+  const [status, setStatus] = useState<"idle" | "saved" | "error">("idle")
+  const [error, setError] = useState<string | null>(null)
+  const [pending, start] = useTransition()
+  const extra = row.target > 0 ? Math.max(0, row.total - row.target) : 0
+  const earned = (extra * row.commission) / 100
+
+  function save() {
+    const next = Number(value || 0)
+    if (next === row.commission) return
+    setError(null)
+    start(async () => {
+      const res = await saveTargetCommission(row.userId, kind, next)
+      if (!res.ok) {
+        setStatus("error")
+        setError(res.error)
+        return
+      }
+      setStatus("saved")
+      setTimeout(() => setStatus("idle"), 2000)
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <label htmlFor={`c-${kind}-${row.userId}`} className="sr-only">
+          Commission percent above target for {row.name}
+        </label>
+        <input
+          id={`c-${kind}-${row.userId}`}
+          type="number"
+          min={0}
+          max={100}
+          step="0.1"
+          inputMode="decimal"
+          placeholder="0"
+          disabled={row.target <= 0 || pending}
+          title={row.target <= 0 ? "Set a target first" : "Commission % paid on sales above the target"}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+              e.preventDefault()
+              save()
+            }
+          }}
+          className="w-20 rounded-md border border-border bg-background px-2 py-1 text-right text-sm tabular-nums disabled:opacity-50"
+        />
+        <span className="text-xs text-muted-foreground">%</span>
+        {status === "saved" && <Check className="size-4 text-primary" aria-label="Saved" />}
+      </div>
+      {row.commission > 0 && (
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {extra > 0 ? `Earned ${money(earned)}` : "Not above target yet"}
+        </span>
+      )}
+      {error && <span className="text-xs text-destructive">{error}</span>}
+    </div>
   )
 }
 
@@ -421,6 +491,9 @@ function Row({
           ) : null}
         </form>
         {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+      </td>
+      <td className="px-4 py-3">
+        <CommissionInput row={row} kind={kind} />
       </td>
       {showSuggestion && (
         <td className="px-4 py-3">

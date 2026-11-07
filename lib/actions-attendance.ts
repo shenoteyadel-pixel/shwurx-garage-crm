@@ -309,6 +309,8 @@ export interface AttendanceSettingsInput {
   dayBasis: "30" | "calendar" | "working"
   absenceDeductionDays: number
   lateDeduction: boolean
+  lateFeePerHour: number
+  lateFeeUnderHalf: number
 }
 
 export async function saveAttendanceSettings(input: AttendanceSettingsInput): Promise<Result> {
@@ -340,6 +342,8 @@ export async function saveAttendanceSettings(input: AttendanceSettingsInput): Pr
     payroll_day_basis: input.dayBasis,
     absence_deduction_days: Math.max(0, Math.min(3, Math.round((input.absenceDeductionDays || 0) * 100) / 100)),
     late_deduction_enabled: input.lateDeduction,
+    late_fee_per_hour: Math.max(0, Math.min(10_000, Math.round((input.lateFeePerHour || 0) * 100) / 100)),
+    late_fee_under_half: Math.max(0, Math.min(10_000, Math.round((input.lateFeeUnderHalf || 0) * 100) / 100)),
   }
   const svc = createServiceClient()
   const { error } = await svc.from("settings").update(update).eq("id", 1)
@@ -368,4 +372,31 @@ export async function saveEmployeeSalary(userId: string, monthlySalary: number):
   })
   revalidatePath("/attendance")
   return { ok: true, message: "Salary saved" }
+}
+
+/** Owner sets the day an employee started work; salary is prorated and absences counted only from that date. */
+export async function saveEmployeeStartDate(userId: string, startDate: string | null): Promise<Result> {
+  const ctx = await requireStaff()
+  if (!ctxCan(ctx, "attendance.manage")) return { ok: false, error: "You don't have permission to edit employees." }
+  if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return { ok: false, error: "Invalid start date." }
+  const svc = createServiceClient()
+  const { data: staff } = await svc.from("profiles").select("id, role").eq("id", userId).maybeSingle()
+  if (!staff || staff.role === "customer") return { ok: false, error: "Employee not found." }
+  const { data: before } = await svc.from("employee_salaries").select("start_date, monthly_salary").eq("user_id", userId).maybeSingle()
+  const { error } = await svc.from("employee_salaries").upsert({
+    user_id: userId,
+    monthly_salary: before?.monthly_salary ?? 0,
+    start_date: startDate || null,
+    updated_by: ctx.userId,
+    updated_at: new Date().toISOString(),
+  })
+  if (error) return { ok: false, error: error.message }
+  await logAction(ctx, "payroll.start_date_update", "employee_salaries", userId, {
+    before: before?.start_date ?? null,
+    after: startDate || null,
+  })
+  revalidatePath("/attendance")
+  revalidatePath("/finance/expenses")
+  revalidatePath("/me")
+  return { ok: true, message: "Start date saved" }
 }

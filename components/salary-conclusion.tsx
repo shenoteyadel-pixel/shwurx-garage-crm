@@ -10,7 +10,7 @@ import { recordSalaryPayment, deleteSalaryPayment } from "@/lib/actions-business
 
 import {
   r2,
-  attendanceDeductions,
+  absenceDeduction,
   statementFor,
   type PayrollRules,
   type SalaryStaff,
@@ -373,19 +373,21 @@ function SalaryForm({
 }) {
   const router = useRouter()
   const p = s.payment
+  const est = statementFor({ ...s, payment: null }, rules)
   const [vals, setVals] = React.useState({
-    base: p?.base ?? s.suggestedBase,
+    base: p?.base ?? est.base,
     allowances: p?.allowances ?? s.suggestedAllowances,
     overtime: p?.overtime ?? 0,
-    commission: p?.commission ?? 0,
+    commission: p?.commission ?? est.commission,
     absentDays: p?.absentDays ?? s.attendance?.absentDays ?? 0,
     lateMinutes: p?.lateMinutes ?? s.attendance?.lateMinutes ?? 0,
+    lateDeduction: p?.lateDeduction ?? est.late,
     otherDeductions: p?.otherDeductions ?? 0,
   })
   const [error, setError] = React.useState<string | null>(null)
   const [pending, startTransition] = React.useTransition()
 
-  const d = attendanceDeductions(vals.base, vals.absentDays, vals.lateMinutes, rules)
+  const d = { absence: absenceDeduction(s.suggestedBase || vals.base, vals.absentDays, rules), late: vals.lateDeduction }
   const gross = r2(vals.base + vals.allowances + vals.overtime + vals.commission)
   const deductions = r2(d.absence + d.late + vals.otherDeductions)
   const net = r2(gross - deductions)
@@ -401,7 +403,14 @@ function SalaryForm({
   })
 
   const resetFromAttendance = () =>
-    setVals((v) => ({ ...v, absentDays: s.attendance?.absentDays ?? 0, lateMinutes: s.attendance?.lateMinutes ?? 0 }))
+    setVals((v) => ({
+      ...v,
+      base: est.base,
+      commission: est.commission,
+      absentDays: s.attendance?.absentDays ?? 0,
+      lateMinutes: s.attendance?.lateMinutes ?? 0,
+      lateDeduction: est.late,
+    }))
 
   const submit = (ev: React.FormEvent<HTMLFormElement>) => {
     ev.preventDefault()
@@ -470,6 +479,9 @@ function SalaryForm({
           </Field>
           <Field label={t.lateMinutes}>
             <Input {...num("lateMinutes", "late_minutes", "1")} />
+          </Field>
+          <Field label={t.late}>
+            <Input {...num("lateDeduction", "late_fee_input")} />
           </Field>
           <Field label={t.other}>
             <Input {...num("otherDeductions", "other_deductions")} />

@@ -48,7 +48,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
       .gte("issue_date", from)
       .lte("issue_date", to),
     svc.from("profiles").select("id, full_name, role, job_title, is_active").neq("role", "customer"),
-    svc.from("staff_targets").select("user_id, kind, monthly_target"),
+    svc.from("staff_targets").select("user_id, kind, monthly_target, commission_percent"),
   ])
 
   const { data: workshopRows } = await svc
@@ -95,8 +95,14 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
     sales: new Map(),
     technician: new Map(),
   }
+  const commissions: Record<TargetKind, Map<string, number>> = {
+    purchase: new Map(),
+    sales: new Map(),
+    technician: new Map(),
+  }
   for (const t of targetsRes.data ?? []) {
     targets[t.kind as TargetKind]?.set(t.user_id, Number(t.monthly_target) || 0)
+    commissions[t.kind as TargetKind]?.set(t.user_id, Number(t.commission_percent) || 0)
   }
 
   function rows(kind: TargetKind, totals: Map<string, Acc>): TargetRow[] {
@@ -111,6 +117,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
           total: totals.get(id)?.total ?? 0,
           count: totals.get(id)?.count ?? 0,
           target: targets[kind].get(id) ?? 0,
+          commission: commissions[kind].get(id) ?? 0,
         }
       })
       .sort((a, b) => b.total - a.total)

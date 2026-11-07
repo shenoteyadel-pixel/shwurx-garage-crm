@@ -30,6 +30,8 @@ export interface PayrollLine {
   name: string
   role: string
   salary: number
+  fullSalary: number
+  startDate: string | null
   basisDays: number
   dailyRate: number
   absentDays: number
@@ -298,6 +300,8 @@ export function buildPayroll(
       name: sum.name,
       role: sum.role,
       salary,
+      fullSalary,
+      startDate: startDates.get(sum.userId) ?? null,
       basisDays,
       dailyRate: round2(dailyRate),
       absentDays: sum.absent,

@@ -3,6 +3,16 @@ import { getShellUser } from "@/lib/shell-user"
 import { requirePageAccess, can } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
 import { ExpensesPayrollView, type BizExpense, type StaffPay } from "@/components/expenses-payroll-view"
+import {
+  RECORD_COLUMNS,
+  basisDaysFor,
+  buildSummaries,
+  loadAttendanceSettings,
+  localDate,
+  monthRange,
+  shiftMinutes,
+  type AttendanceRecord,
+} from "@/lib/attendance"
 
 export const metadata = { title: "Expenses & Salaries · SHWURX Auto Service Center" }
 
@@ -17,7 +27,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   const to = `${month}-${String(new Date(y, mo, 0).getDate()).padStart(2, "0")}`
 
   const supabase = await createClient()
-  const [shellUser, canExpenses, canPayroll, expRes, staffRes, payRes, lastPayRes] = await Promise.all([
+  const [shellUser, canExpenses, canPayroll, expRes, staffRes, payRes, lastPayRes, attSettings, attRes, salaryRes] = await Promise.all([
     getShellUser(),
     can("expenses.manage"),
     can("payroll.manage"),
@@ -26,10 +36,17 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       .select("id, category, description, vendor, amount, vat_amount, expense_date, bill_month, payment_method, reference, has_invoice, receipt_path")
       .or(`and(expense_date.gte.${from},expense_date.lte.${to}),bill_month.eq.${from}`)
       .order("expense_date", { ascending: false }),
-    supabase.from("profiles").select("id, full_name, role, job_title, employee_id").eq("is_active", true).neq("role", "customer").order("full_name"),
+    supabase
+      .from("profiles")
+      .select("id, full_name, role, job_title, employee_id, created_at")
+      .eq("is_active", true)
+      .neq("role", "customer")
+      .order("full_name"),
     supabase
       .from("salary_payments")
-      .select("id, user_id, base_salary, allowances, overtime, deductions, net_amount, payment_method, reference, paid_on")
+      .select(
+        "id, user_id, base_salary, allowances, overtime, commission, absent_days, absence_deduction, late_minutes, late_deduction, other_deductions, deductions, net_amount, payment_method, reference, paid_on",
+      )
       .eq("period_month", from),
     supabase
       .from("salary_payments")
@@ -37,7 +54,23 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       .lt("period_month", from)
       .order("period_month", { ascending: false })
       .limit(500),
+    loadAttendanceSettings(supabase),
+    supabase.from("attendance").select(RECORD_COLUMNS).gte("work_date", from).lte("work_date", to),
+    supabase.from("employee_salaries").select("user_id, monthly_salary"),
   ])
+
+  const { days } = monthRange(month)
+  const tracked = (staffRes.data ?? []).filter((s: any) => !["owner", "marketing"].includes(s.role))
+  const summaries = new Map(
+    buildSummaries(tracked, (attRes.data ?? []) as AttendanceRecord[], attSettings, days, localDate()).map((s) => [s.userId, s]),
+  )
+  const contractSalary = new Map((salaryRes.data ?? []).map((s: any) => [s.user_id as string, Number(s.monthly_salary) || 0]))
+  const rules = {
+    basisDays: basisDaysFor(attSettings, days),
+    shiftMinutes: Math.max(1, shiftMinutes(attSettings)),
+    absenceFactor: attSettings.absence_deduction_days,
+    lateEnabled: attSettings.late_deduction_enabled,
+  }
 
   const expenses: BizExpense[] = (expRes.data ?? []).map((e: any) => ({
     id: e.id,
@@ -61,6 +94,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   const staff: StaffPay[] = (staffRes.data ?? []).map((s: any) => {
     const p = paidMap.get(s.id)
     const last = lastMap.get(s.id)
+    const sum = summaries.get(s.id)
     return {
       userId: s.id,
       name: s.full_name || "Unnamed",
@@ -73,6 +107,12 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
             base: Number(p.base_salary) || 0,
             allowances: Number(p.allowances) || 0,
             overtime: Number(p.overtime) || 0,
+            commission: Number(p.commission) || 0,
+            absentDays: Number(p.absent_days) || 0,
+            absenceDeduction: Number(p.absence_deduction) || 0,
+            lateMinutes: Number(p.late_minutes) || 0,
+            lateDeduction: Number(p.late_deduction) || 0,
+            otherDeductions: Number(p.other_deductions) || 0,
             deductions: Number(p.deductions) || 0,
             net: Number(p.net_amount) || 0,
             method: p.payment_method,
@@ -80,8 +120,18 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
             paidOn: String(p.paid_on).slice(0, 10),
           }
         : null,
-      suggestedBase: last ? Number(last.base_salary) || 0 : 0,
+      suggestedBase: contractSalary.get(s.id) || (last ? Number(last.base_salary) || 0 : 0),
       suggestedAllowances: last ? Number(last.allowances) || 0 : 0,
+      attendance: sum
+        ? {
+            present: sum.present,
+            absentDays: sum.absent,
+            lateDays: sum.late,
+            lateMinutes: sum.lateMinutes,
+            leaveDays: sum.leave + sum.sick,
+            overtimeMinutes: sum.overtimeMinutes,
+          }
+        : null,
     }
   })
 
@@ -92,6 +142,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           month={month}
           expenses={expenses}
           staff={staff}
+          payrollRules={rules}
           canExpenses={canExpenses}
           canPayroll={canPayroll}
         />

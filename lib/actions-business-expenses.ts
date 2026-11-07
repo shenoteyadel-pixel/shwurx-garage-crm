@@ -133,11 +133,24 @@ export async function recordSalaryPayment(formData: FormData): Promise<Result> {
   const base = money(formData.get("base_salary"))
   const allowances = money(formData.get("allowances"))
   const overtime = money(formData.get("overtime"))
-  const deductions = money(formData.get("deductions"))
-  if ([base, allowances, overtime, deductions].some((v) => !(v >= 0) || v > 1_000_000))
+  const commission = money(formData.get("commission"))
+  const absenceDeduction = money(formData.get("absence_deduction"))
+  const lateDeduction = money(formData.get("late_deduction"))
+  const otherDeductions = money(formData.get("other_deductions"))
+  const absentDays = money(formData.get("absent_days"))
+  const lateMinutes = Math.round(money(formData.get("late_minutes")))
+  if (
+    [base, allowances, overtime, commission, absenceDeduction, lateDeduction, otherDeductions].some(
+      (v) => !(v >= 0) || v > 1_000_000,
+    )
+  )
     return { ok: false, error: "Salary amounts must be zero or more." }
+  if (!(absentDays >= 0 && absentDays <= 31) || !(lateMinutes >= 0 && lateMinutes <= 50_000))
+    return { ok: false, error: "Check the absent days and late minutes." }
 
-  const net = Math.round((base + allowances + overtime - deductions) * 100) / 100
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  const deductions = r2(absenceDeduction + lateDeduction + otherDeductions)
+  const net = r2(base + allowances + overtime + commission - deductions)
   if (net < 0) return { ok: false, error: "Deductions cannot be more than the salary." }
 
   const paidOn = String(formData.get("paid_on") || "")
@@ -158,6 +171,12 @@ export async function recordSalaryPayment(formData: FormData): Promise<Result> {
         base_salary: base,
         allowances,
         overtime,
+        commission,
+        absent_days: absentDays,
+        absence_deduction: absenceDeduction,
+        late_minutes: lateMinutes,
+        late_deduction: lateDeduction,
+        other_deductions: otherDeductions,
         deductions,
         net_amount: net,
         payment_method: method,

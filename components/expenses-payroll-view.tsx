@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { ChevronLeft, ChevronRight, FileText, Paperclip, Plus, Trash2, X } from "lucide-react"
 import { useI18n } from "@/lib/i18n/provider"
 import { Button, Card, Field, Input, Select, Badge } from "@/components/ui"
+import { SalaryConclusion, type PayrollRules, type SalaryStaff } from "@/components/salary-conclusion"
 import {
   EXPENSE_CATEGORIES,
   EXPENSE_GROUPS,
@@ -35,26 +36,7 @@ export interface BizExpense {
   receiptPath: string | null
 }
 
-export interface StaffPay {
-  userId: string
-  name: string
-  role: string
-  title: string
-  employeeId: string
-  payment: {
-    id: string
-    base: number
-    allowances: number
-    overtime: number
-    deductions: number
-    net: number
-    method: string
-    reference: string
-    paidOn: string
-  } | null
-  suggestedBase: number
-  suggestedAllowances: number
-}
+export type StaffPay = SalaryStaff
 
 const TEXT = {
   en: {
@@ -192,6 +174,7 @@ export function ExpensesPayrollView({
   month,
   expenses,
   staff,
+  payrollRules = { basisDays: 30, shiftMinutes: 600, absenceFactor: 1, lateEnabled: true },
   canExpenses,
   canPayroll,
   expensesOnly = false,
@@ -201,6 +184,7 @@ export function ExpensesPayrollView({
   month: string
   expenses: BizExpense[]
   staff: StaffPay[]
+  payrollRules?: PayrollRules
   canExpenses: boolean
   canPayroll: boolean
   expensesOnly?: boolean
@@ -298,7 +282,7 @@ export function ExpensesPayrollView({
       {tab === "expenses" ? (
         <ExpensesTab month={month} expenses={expenses} inMonth={inMonth} canEdit={canExpenses} t={t} L={L} />
       ) : (
-        <SalariesTab month={month} staff={staff} canEdit={canPayroll} t={t} L={L} />
+        <SalaryConclusion month={month} staff={staff} rules={payrollRules} canEdit={canPayroll} />
       )}
         </>
       )}
@@ -586,182 +570,5 @@ function ExpenseForm({ month, onDone, t, L }: { month: string; onDone: () => voi
         </div>
       </form>
     </Card>
-  )
-}
-
-function SalariesTab({
-  month,
-  staff,
-  canEdit,
-  t,
-  L,
-}: {
-  month: string
-  staff: StaffPay[]
-  canEdit: boolean
-  t: T
-  L: "en" | "ar"
-}) {
-  const [editing, setEditing] = React.useState<string | null>(null)
-  const total = staff.reduce((s, p) => s + (p.payment?.net ?? 0), 0)
-
-  return (
-    <div className="flex flex-col gap-3">
-      {!canEdit ? <p className="text-sm text-muted-foreground">{t.readOnly}</p> : null}
-      <Card className="divide-y divide-border overflow-hidden">
-        {staff.map((s) => (
-          <div key={s.userId} className="flex flex-col gap-3 p-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 flex-col">
-                <span className="text-sm font-medium text-foreground">{s.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {[s.employeeId, s.title || s.role].filter(Boolean).join(" · ")}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                {s.payment ? (
-                  <>
-                    <span className="font-mono text-sm tabular-nums text-foreground">AED {aed(s.payment.net, L)}</span>
-                    <Badge className="bg-primary/15 text-primary">
-                      {t.paid} · {s.payment.paidOn}
-                    </Badge>
-                  </>
-                ) : (
-                  <Badge className="bg-destructive/15 text-destructive">{t.unpaid}</Badge>
-                )}
-                {canEdit && editing !== s.userId ? (
-                  <Button variant={s.payment ? "ghost" : "primary"} size="sm" onClick={() => setEditing(s.userId)}>
-                    {s.payment ? t.edit : t.pay}
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            {editing === s.userId ? (
-              <SalaryForm month={month} s={s} onDone={() => setEditing(null)} t={t} L={L} />
-            ) : null}
-          </div>
-        ))}
-      </Card>
-      <div className="flex justify-end gap-2 text-sm">
-        <span className="text-muted-foreground">{t.total}</span>
-        <span className="font-mono tabular-nums text-foreground">AED {aed(total, L)}</span>
-      </div>
-    </div>
-  )
-}
-
-function SalaryForm({ month, s, onDone, t, L }: { month: string; s: StaffPay; onDone: () => void; t: T; L: "en" | "ar" }) {
-  const router = useRouter()
-  const p = s.payment
-  const [vals, setVals] = React.useState({
-    base: p?.base ?? s.suggestedBase,
-    allowances: p?.allowances ?? s.suggestedAllowances,
-    overtime: p?.overtime ?? 0,
-    deductions: p?.deductions ?? 0,
-  })
-  const [error, setError] = React.useState<string | null>(null)
-  const [pending, startTransition] = React.useTransition()
-  const net = vals.base + vals.allowances + vals.overtime - vals.deductions
-
-  const num = (k: keyof typeof vals) => ({
-    name: k === "base" ? "base_salary" : k,
-    type: "number",
-    inputMode: "decimal" as const,
-    min: "0",
-    step: "0.01",
-    value: String(vals[k]),
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setVals((v) => ({ ...v, [k]: Number(e.target.value) || 0 })),
-  })
-
-  const submit = (ev: React.FormEvent<HTMLFormElement>) => {
-    ev.preventDefault()
-    const fd = new FormData(ev.currentTarget)
-    setError(null)
-    startTransition(async () => {
-      const res = await recordSalaryPayment(fd)
-      if (!res.ok) setError(res.error)
-      else {
-        router.refresh()
-        onDone()
-      }
-    })
-  }
-
-  const remove = () => {
-    if (!p || !confirm(t.confirmDelete)) return
-    startTransition(async () => {
-      const res = await deleteSalaryPayment(p.id)
-      if (!res.ok) setError(res.error)
-      else {
-        router.refresh()
-        onDone()
-      }
-    })
-  }
-
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-4 rounded-lg border border-border bg-background/40 p-4">
-      <input type="hidden" name="user_id" value={s.userId} />
-      <input type="hidden" name="period_month" value={month} />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Field label={t.base}>
-          <Input {...num("base")} required />
-        </Field>
-        <Field label={t.allowances}>
-          <Input {...num("allowances")} />
-        </Field>
-        <Field label={t.overtime}>
-          <Input {...num("overtime")} />
-        </Field>
-        <Field label={t.deductions}>
-          <Input {...num("deductions")} />
-        </Field>
-        <Field label={t.paidOn}>
-          <Input name="paid_on" type="date" defaultValue={p?.paidOn ?? new Date().toISOString().slice(0, 10)} required />
-        </Field>
-        <Field label={t.method}>
-          <Select name="payment_method" defaultValue={p?.method ?? "bank_transfer"}>
-            {PAYMENT_METHODS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {L === "ar" ? m.labelAr : m.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label={t.reference}>
-          <Input name="reference" defaultValue={p?.reference ?? ""} maxLength={100} />
-        </Field>
-        <Field label={t.note}>
-          <Input name="note" maxLength={300} />
-        </Field>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground">
-          {t.netPreview}:{" "}
-          <span className={`font-mono tabular-nums ${net < 0 ? "text-destructive" : "text-foreground"}`}>
-            AED {aed(net, L)}
-          </span>
-        </span>
-        <div className="flex gap-2">
-          {p ? (
-            <Button type="button" variant="ghost" size="sm" onClick={remove} disabled={pending}>
-              <Trash2 className="size-4" />
-              {t.delete}
-            </Button>
-          ) : null}
-          <Button type="button" variant="ghost" size="sm" onClick={onDone}>
-            {t.cancel}
-          </Button>
-          <Button type="submit" size="sm" disabled={pending || net < 0}>
-            {pending ? t.saving : t.savePay}
-          </Button>
-        </div>
-      </div>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-    </form>
   )
 }

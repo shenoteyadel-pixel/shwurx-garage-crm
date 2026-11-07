@@ -19,6 +19,8 @@ export interface AttendanceSettings {
   payroll_day_basis: PayrollBasis
   absence_deduction_days: number
   late_deduction_enabled: boolean
+  late_fee_per_hour: number
+  late_fee_under_half: number
 }
 
 export type PayrollBasis = "30" | "calendar" | "working"
@@ -28,6 +30,8 @@ export interface PayrollLine {
   name: string
   role: string
   salary: number
+  fullSalary: number
+  startDate: string | null
   basisDays: number
   dailyRate: number
   absentDays: number
@@ -60,6 +64,7 @@ export interface StaffMember {
   full_name: string | null
   role: string
   created_at?: string | null
+  start_date?: string | null
 }
 
 export interface EmployeeSummary {
@@ -74,6 +79,7 @@ export interface EmployeeSummary {
   workedMinutes: number
   overtimeMinutes: number
   lateMinutes: number
+  lateFee: number
   missingCheckout: number
 }
 
@@ -91,6 +97,8 @@ export const DEFAULT_ATTENDANCE_SETTINGS: AttendanceSettings = {
   payroll_day_basis: "30",
   absence_deduction_days: 1,
   late_deduction_enabled: true,
+  late_fee_per_hour: 100,
+  late_fee_under_half: 50,
 }
 
 export const RECORD_COLUMNS =
@@ -166,6 +174,24 @@ export function lateMinutesFor(checkInIso: string | null, s: AttendanceSettings)
   return diff > s.attendance_grace_minutes ? diff : 0
 }
 
+/** Fixed late fine for one day: the full rate per whole hour, then the full rate again if the leftover is 30+ minutes, or the half rate if it is under 30. */
+export function lateFeeFor(minutes: number, s: Pick<AttendanceSettings, "late_fee_per_hour" | "late_fee_under_half">): number {
+  if (minutes <= 0) return 0
+  const rest = minutes % 60
+  return Math.floor(minutes / 60) * s.late_fee_per_hour + (rest >= 30 ? s.late_fee_per_hour : rest > 0 ? s.late_fee_under_half : 0)
+}
+
+/** Calendar days in the month on or after the employee's start date. */
+export function employedDays(days: string[], startDate: string | null | undefined): number {
+  if (!startDate) return days.length
+  return days.filter((d) => d >= startDate).length
+}
+
+export function proratedSalary(salary: number, days: string[], startDate: string | null | undefined): number {
+  const worked = employedDays(days, startDate)
+  return worked >= days.length ? salary : round2((salary * worked) / Math.max(1, days.length))
+}
+
 export function shiftMinutes(s: AttendanceSettings): number {
   return Math.max(0, hhmmToMinutes(s.shift_end) - hhmmToMinutes(s.shift_start))
 }
@@ -205,12 +231,14 @@ export function buildSummaries(
       workedMinutes: 0,
       overtimeMinutes: 0,
       lateMinutes: 0,
+      lateFee: 0,
       missingCheckout: 0,
     }
-    const joined = st.created_at ? localDate(new Date(st.created_at)) : ""
+    const joined = st.start_date || (st.created_at ? localDate(new Date(st.created_at)) : "")
     const trackingStart = joined > s.attendance_start_date ? joined : s.attendance_start_date
     for (const day of days) {
       if (day > today) break
+      if (st.start_date && day < st.start_date) continue
       const r = recs.get(day)
       if (!r) {
         if (day < today && day >= trackingStart && !s.attendance_off_days.includes(weekdayOf(day))) sum.absent++
@@ -226,6 +254,7 @@ export function buildSummaries(
         if (late > 0 || r.status === "late") {
           sum.late++
           sum.lateMinutes += late
+          sum.lateFee += lateFeeFor(late, s)
         }
         if (!r.check_out_at && day < today) {
           sum.missingCheckout++
@@ -250,26 +279,29 @@ export function basisDaysFor(s: AttendanceSettings, days: string[]): number {
   return 30
 }
 
-/** Salary deductions: each absent day costs (daily rate × absence_deduction_days); late time is charged pro-rata per minute of the shift. */
+/** Salary deductions: each absent day costs (daily rate × absence_deduction_days); each late day is a fixed fine (see lateFeeFor). Salary is prorated from the start date. */
 export function buildPayroll(
   summaries: EmployeeSummary[],
   salaries: Map<string, number>,
   s: AttendanceSettings,
   days: string[],
+  startDates: Map<string, string> = new Map(),
 ): PayrollLine[] {
   const basisDays = basisDaysFor(s, days)
-  const shift = Math.max(1, shiftMinutes(s))
   return summaries.map((sum) => {
-    const salary = salaries.get(sum.userId) ?? 0
-    const dailyRate = salary / basisDays
+    const fullSalary = salaries.get(sum.userId) ?? 0
+    const salary = proratedSalary(fullSalary, days, startDates.get(sum.userId))
+    const dailyRate = fullSalary / basisDays
     const absenceDeduction = round2(sum.absent * s.absence_deduction_days * dailyRate)
-    const lateDeduction = s.late_deduction_enabled ? round2((sum.lateMinutes / shift) * dailyRate) : 0
+    const lateDeduction = s.late_deduction_enabled ? round2(sum.lateFee) : 0
     const totalDeduction = Math.min(salary, round2(absenceDeduction + lateDeduction))
     return {
       userId: sum.userId,
       name: sum.name,
       role: sum.role,
       salary,
+      fullSalary,
+      startDate: startDates.get(sum.userId) ?? null,
       basisDays,
       dailyRate: round2(dailyRate),
       absentDays: sum.absent,
@@ -287,7 +319,7 @@ export async function loadAttendanceSettings(supabase: SupabaseClient): Promise<
   const { data } = await supabase
     .from("settings")
     .select(
-      "shift_start, shift_end, attendance_grace_minutes, attendance_off_days, workshop_lat, workshop_lng, geofence_radius_m, attendance_require_location, max_gps_accuracy_m, attendance_start_date, payroll_day_basis, absence_deduction_days, late_deduction_enabled",
+      "shift_start, shift_end, attendance_grace_minutes, attendance_off_days, workshop_lat, workshop_lng, geofence_radius_m, attendance_require_location, max_gps_accuracy_m, attendance_start_date, payroll_day_basis, absence_deduction_days, late_deduction_enabled, late_fee_per_hour, late_fee_under_half",
     )
     .eq("id", 1)
     .maybeSingle()
@@ -295,6 +327,8 @@ export async function loadAttendanceSettings(supabase: SupabaseClient): Promise<
   return {
     ...DEFAULT_ATTENDANCE_SETTINGS,
     ...data,
+    late_fee_per_hour: Number(data.late_fee_per_hour ?? 100),
+    late_fee_under_half: Number(data.late_fee_under_half ?? 50),
     shift_start: String(data.shift_start ?? "08:00").slice(0, 5),
     shift_end: String(data.shift_end ?? "18:00").slice(0, 5),
     attendance_off_days: data.attendance_off_days ?? [],

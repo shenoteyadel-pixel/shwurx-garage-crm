@@ -8,51 +8,16 @@ import { Button, Card, Field, Input, Select, Badge } from "@/components/ui"
 import { PAYMENT_METHODS } from "@/lib/expense-categories"
 import { recordSalaryPayment, deleteSalaryPayment } from "@/lib/actions-business-expenses"
 
-export interface SalaryPayment {
-  id: string
-  base: number
-  allowances: number
-  overtime: number
-  commission: number
-  absentDays: number
-  absenceDeduction: number
-  lateMinutes: number
-  lateDeduction: number
-  otherDeductions: number
-  deductions: number
-  net: number
-  method: string
-  reference: string
-  paidOn: string
-}
+import {
+  r2,
+  absenceDeduction,
+  statementFor,
+  type PayrollRules,
+  type SalaryStaff,
+  type StaffAttendance,
+} from "@/lib/salary-statement"
 
-export interface StaffAttendance {
-  present: number
-  absentDays: number
-  lateDays: number
-  lateMinutes: number
-  leaveDays: number
-  overtimeMinutes: number
-}
-
-export interface SalaryStaff {
-  userId: string
-  name: string
-  role: string
-  title: string
-  employeeId: string
-  payment: SalaryPayment | null
-  suggestedBase: number
-  suggestedAllowances: number
-  attendance?: StaffAttendance | null
-}
-
-export interface PayrollRules {
-  basisDays: number
-  shiftMinutes: number
-  absenceFactor: number
-  lateEnabled: boolean
-}
+export type { SalaryPayment, StaffAttendance, SalaryStaff, PayrollRules } from "@/lib/salary-statement"
 
 const TEXT = {
   en: {
@@ -158,76 +123,9 @@ const TEXT = {
 type T = (typeof TEXT)["en"]
 type Lang = "en" | "ar"
 
-const r2 = (n: number) => Math.round(n * 100) / 100
 const fmt = (n: number, L: Lang) =>
   new Intl.NumberFormat(L === "ar" ? "ar-AE" : "en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
 const hours = (min: number) => `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, "0")}m`
-
-function attendanceDeductions(base: number, absentDays: number, lateMinutes: number, rules: PayrollRules) {
-  const daily = base / Math.max(1, rules.basisDays)
-  return {
-    absence: r2(absentDays * rules.absenceFactor * daily),
-    late: rules.lateEnabled ? r2((lateMinutes / rules.shiftMinutes) * daily) : 0,
-  }
-}
-
-interface Statement {
-  base: number
-  allowances: number
-  overtime: number
-  commission: number
-  gross: number
-  absentDays: number
-  absence: number
-  lateMinutes: number
-  late: number
-  other: number
-  deductions: number
-  final: number
-  estimated: boolean
-}
-
-function statementFor(s: SalaryStaff, rules: PayrollRules): Statement {
-  const p = s.payment
-  if (p) {
-    const gross = r2(p.base + p.allowances + p.overtime + p.commission)
-    return {
-      base: p.base,
-      allowances: p.allowances,
-      overtime: p.overtime,
-      commission: p.commission,
-      gross,
-      absentDays: p.absentDays,
-      absence: p.absenceDeduction,
-      lateMinutes: p.lateMinutes,
-      late: p.lateDeduction,
-      other: p.otherDeductions,
-      deductions: p.deductions,
-      final: p.net,
-      estimated: false,
-    }
-  }
-  const absentDays = s.attendance?.absentDays ?? 0
-  const lateMinutes = s.attendance?.lateMinutes ?? 0
-  const d = attendanceDeductions(s.suggestedBase, absentDays, lateMinutes, rules)
-  const gross = r2(s.suggestedBase + s.suggestedAllowances)
-  const deductions = Math.min(gross, r2(d.absence + d.late))
-  return {
-    base: s.suggestedBase,
-    allowances: s.suggestedAllowances,
-    overtime: 0,
-    commission: 0,
-    gross,
-    absentDays,
-    absence: d.absence,
-    lateMinutes,
-    late: d.late,
-    other: 0,
-    deductions,
-    final: r2(gross - deductions),
-    estimated: true,
-  }
-}
 
 export function SalaryConclusion({
   month,
@@ -475,19 +373,21 @@ function SalaryForm({
 }) {
   const router = useRouter()
   const p = s.payment
+  const est = statementFor({ ...s, payment: null }, rules)
   const [vals, setVals] = React.useState({
-    base: p?.base ?? s.suggestedBase,
+    base: p?.base ?? est.base,
     allowances: p?.allowances ?? s.suggestedAllowances,
     overtime: p?.overtime ?? 0,
-    commission: p?.commission ?? 0,
+    commission: p?.commission ?? est.commission,
     absentDays: p?.absentDays ?? s.attendance?.absentDays ?? 0,
     lateMinutes: p?.lateMinutes ?? s.attendance?.lateMinutes ?? 0,
+    lateDeduction: p?.lateDeduction ?? est.late,
     otherDeductions: p?.otherDeductions ?? 0,
   })
   const [error, setError] = React.useState<string | null>(null)
   const [pending, startTransition] = React.useTransition()
 
-  const d = attendanceDeductions(vals.base, vals.absentDays, vals.lateMinutes, rules)
+  const d = { absence: absenceDeduction(s.suggestedBase || vals.base, vals.absentDays, rules), late: vals.lateDeduction }
   const gross = r2(vals.base + vals.allowances + vals.overtime + vals.commission)
   const deductions = r2(d.absence + d.late + vals.otherDeductions)
   const net = r2(gross - deductions)
@@ -503,7 +403,14 @@ function SalaryForm({
   })
 
   const resetFromAttendance = () =>
-    setVals((v) => ({ ...v, absentDays: s.attendance?.absentDays ?? 0, lateMinutes: s.attendance?.lateMinutes ?? 0 }))
+    setVals((v) => ({
+      ...v,
+      base: est.base,
+      commission: est.commission,
+      absentDays: s.attendance?.absentDays ?? 0,
+      lateMinutes: s.attendance?.lateMinutes ?? 0,
+      lateDeduction: est.late,
+    }))
 
   const submit = (ev: React.FormEvent<HTMLFormElement>) => {
     ev.preventDefault()
@@ -572,6 +479,9 @@ function SalaryForm({
           </Field>
           <Field label={t.lateMinutes}>
             <Input {...num("lateMinutes", "late_minutes", "1")} />
+          </Field>
+          <Field label={t.late}>
+            <Input {...num("lateDeduction", "late_fee_input")} />
           </Field>
           <Field label={t.other}>
             <Input {...num("otherDeductions", "other_deductions")} />

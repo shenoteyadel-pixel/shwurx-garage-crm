@@ -59,6 +59,31 @@ export async function saveStaffTargets(items: { userId: string; kind: TargetKind
   return { ok: true as const }
 }
 
+/** Commission % paid on the amount above the target once the employee passes it. */
+export async function saveTargetCommission(userId: string, kind: TargetKind, percent: number) {
+  const denied = await requireOwner()
+  if (denied) return denied
+  if (!KINDS.includes(kind) || !UUID.test(userId)) return { ok: false as const, error: "Invalid target." }
+  const value = Math.round(Number(percent) * 100) / 100
+  if (!Number.isFinite(value) || value < 0 || value > 100) return { ok: false as const, error: "Enter a percentage between 0 and 100." }
+
+  const svc = createServiceClient()
+  const { data: existing } = await svc.from("staff_targets").select("user_id").eq("user_id", userId).eq("kind", kind).maybeSingle()
+  if (!existing) return { ok: false as const, error: "Set a target first, then the commission." }
+  const { error } = await svc
+    .from("staff_targets")
+    .update({ commission_percent: value, updated_by: await currentUserId(), updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("kind", kind)
+  if (error) return { ok: false as const, error: error.message }
+
+  await logCurrent("targets.commission", "user", userId, { kind, percent: value })
+  revalidatePath("/reports/staff-targets")
+  revalidatePath("/finance/expenses")
+  revalidatePath("/me")
+  return { ok: true as const }
+}
+
 export async function removeStaffTarget(userId: string, kind: TargetKind) {
   const denied = await requireOwner()
   if (denied) return denied

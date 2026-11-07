@@ -55,7 +55,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       return canViewAll ? q : q.eq("user_id", ctx.userId)
     })(),
     (() => {
-      const q = supabase.from("employee_salaries").select("user_id, monthly_salary")
+      const q = supabase.from("employee_salaries").select("user_id, monthly_salary, start_date")
       return canManage ? q : q.eq("user_id", ctx.userId)
     })(),
     loadPasskeys(ctx.userId),
@@ -73,9 +73,13 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const trackedIds = new Set(staff.map((s) => s.id))
   const records = ((recordsRes.data ?? []) as AttendanceRecord[]).filter((r) => trackedIds.has(r.user_id))
   const todayRecords = ((todayRes.data ?? []) as AttendanceRecord[]).filter((r) => trackedIds.has(r.user_id))
+  const startDates = new Map(
+    (salaryRes.data ?? []).filter((s) => s.start_date).map((s) => [s.user_id as string, s.start_date as string]),
+  )
+  for (const st of staff) st.start_date = startDates.get(st.id) ?? null
   const summaries = buildSummaries(staff, records, settings, days, today)
   const salaries = new Map((salaryRes.data ?? []).map((s) => [s.user_id as string, Number(s.monthly_salary)]))
-  const payroll = buildPayroll(summaries, salaries, settings, days)
+  const payroll = buildPayroll(summaries, salaries, settings, days, startDates)
 
   return (
     <AppShell user={shellUser}>

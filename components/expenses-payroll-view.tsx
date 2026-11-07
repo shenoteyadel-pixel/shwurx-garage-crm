@@ -174,7 +174,7 @@ export function ExpensesPayrollView({
   month,
   expenses,
   staff,
-  payrollRules = { basisDays: 30, shiftMinutes: 600, absenceFactor: 1, lateEnabled: true },
+  payrollRules = { basisDays: 30, absenceFactor: 1, lateEnabled: true, lateFeePerHour: 100, lateFeeUnderHalf: 50 },
   canExpenses,
   canPayroll,
   expensesOnly = false,

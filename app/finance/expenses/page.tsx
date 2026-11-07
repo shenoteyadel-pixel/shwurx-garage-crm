@@ -7,12 +7,14 @@ import {
   RECORD_COLUMNS,
   basisDaysFor,
   buildSummaries,
+  employedDays,
   loadAttendanceSettings,
   localDate,
   monthRange,
-  shiftMinutes,
   type AttendanceRecord,
 } from "@/lib/attendance"
+import { loadTargetProgress } from "@/lib/target-progress"
+import type { PayrollRules } from "@/lib/salary-statement"
 
 export const metadata = { title: "Expenses & Salaries · SHWURX Auto Service Center" }
 
@@ -56,20 +58,27 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       .limit(500),
     loadAttendanceSettings(supabase),
     supabase.from("attendance").select(RECORD_COLUMNS).gte("work_date", from).lte("work_date", to),
-    supabase.from("employee_salaries").select("user_id, monthly_salary"),
+    supabase.from("employee_salaries").select("user_id, monthly_salary, start_date"),
   ])
 
   const { days } = monthRange(month)
-  const tracked = (staffRes.data ?? []).filter((s: any) => !["owner", "marketing"].includes(s.role))
+  const startDates = new Map(
+    (salaryRes.data ?? []).map((s: any) => [s.user_id as string, s.start_date ? String(s.start_date).slice(0, 10) : null]),
+  )
+  const tracked = (staffRes.data ?? [])
+    .filter((s: any) => !["owner", "marketing"].includes(s.role))
+    .map((s: any) => ({ ...s, start_date: startDates.get(s.id) ?? null }))
   const summaries = new Map(
     buildSummaries(tracked, (attRes.data ?? []) as AttendanceRecord[], attSettings, days, localDate()).map((s) => [s.userId, s]),
   )
   const contractSalary = new Map((salaryRes.data ?? []).map((s: any) => [s.user_id as string, Number(s.monthly_salary) || 0]))
-  const rules = {
+  const targets = await loadTargetProgress(supabase, month)
+  const rules: PayrollRules = {
     basisDays: basisDaysFor(attSettings, days),
-    shiftMinutes: Math.max(1, shiftMinutes(attSettings)),
     absenceFactor: attSettings.absence_deduction_days,
     lateEnabled: attSettings.late_deduction_enabled,
+    lateFeePerHour: attSettings.late_fee_per_hour,
+    lateFeeUnderHalf: attSettings.late_fee_under_half,
   }
 
   const expenses: BizExpense[] = (expRes.data ?? []).map((e: any) => ({
@@ -128,10 +137,15 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
             absentDays: sum.absent,
             lateDays: sum.late,
             lateMinutes: sum.lateMinutes,
+            lateFee: sum.lateFee,
             leaveDays: sum.leave + sum.sick,
             overtimeMinutes: sum.overtimeMinutes,
           }
         : null,
+      startDate: startDates.get(s.id) ?? null,
+      daysInMonth: days.length,
+      daysEmployed: employedDays(days, startDates.get(s.id)),
+      targets: targets.get(s.id) ?? [],
     }
   })
 

@@ -36,6 +36,7 @@ import {
   reportLocationFailure,
   saveAttendanceSettings,
   saveEmployeeSalary,
+  saveEmployeeStartDate,
   saveManualRecord,
 } from "@/lib/actions-attendance"
 import { LocationPicker } from "@/components/attendance/location-picker"
@@ -712,8 +713,11 @@ function PayrollTab({ month, today, payroll, settings, company }: Parameters<typ
       </div>
       <p className="text-xs text-muted-foreground leading-relaxed">
         Daily rate = monthly salary ÷ {basisLabel}. Each absent day deducts {settings.absence_deduction_days} day(s)
-        {settings.late_deduction_enabled ? "; late minutes are deducted pro-rata" : ""}. Absences are counted from{" "}
-        {settings.attendance_start_date}. Enter each employee&apos;s salary below and press Enter to save.
+        {settings.late_deduction_enabled
+          ? `; each late day costs AED ${settings.late_fee_per_hour} per hour late (30+ minutes counts as a full hour) or AED ${settings.late_fee_under_half} if under 30 minutes`
+          : ""}
+        . Absences are counted from {settings.attendance_start_date} or the employee&apos;s start date, and salary is prorated
+        for employees who started mid-month. Edit salary or start date below — changes save automatically.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[820px] text-sm">
@@ -721,6 +725,7 @@ function PayrollTab({ month, today, payroll, settings, company }: Parameters<typ
             <tr className="text-left text-xs text-muted-foreground">
               <th className="py-2 font-medium">Employee</th>
               <th className="py-2 font-medium">Monthly salary (AED)</th>
+              <th className="py-2 font-medium">Start date</th>
               <th className="py-2 text-right font-medium">Daily rate</th>
               <th className="py-2 text-right font-medium">Absent</th>
               <th className="py-2 text-right font-medium">Absence ded.</th>
@@ -738,7 +743,13 @@ function PayrollTab({ month, today, payroll, settings, company }: Parameters<typ
                   <div className="text-xs text-muted-foreground">{roleLabel(p.role)}</div>
                 </td>
                 <td className="py-2">
-                  <SalaryInput userId={p.userId} salary={p.salary} name={p.name} />
+                  <SalaryInput userId={p.userId} salary={p.fullSalary} name={p.name} />
+                  {p.salary !== p.fullSalary && (
+                    <div className="mt-1 text-xs text-muted-foreground tabular-nums">Prorated: {money(p.salary)}</div>
+                  )}
+                </td>
+                <td className="py-2">
+                  <StartDateInput userId={p.userId} startDate={p.startDate} name={p.name} />
                 </td>
                 <td className="py-2 text-right tabular-nums">{money(p.dailyRate)}</td>
                 <td className={cn("py-2 text-right tabular-nums", p.absentDays > 0 && "text-destructive")}>{p.absentDays}</td>
@@ -754,7 +765,7 @@ function PayrollTab({ month, today, payroll, settings, company }: Parameters<typ
             <tr className="border-t border-border font-semibold">
               <td className="py-2">Total</td>
               <td className="py-2 tabular-nums">{money(totals.salary)}</td>
-              <td colSpan={5} />
+              <td colSpan={6} />
               <td className="py-2 text-right tabular-nums text-destructive">{money(totals.ded)}</td>
               <td className="py-2 text-right tabular-nums">{money(totals.net)}</td>
             </tr>
@@ -762,6 +773,39 @@ function PayrollTab({ month, today, payroll, settings, company }: Parameters<typ
         </table>
       </div>
     </Card>
+  )
+}
+
+function StartDateInput({ userId, startDate, name }: { userId: string; startDate: string | null; name: string }) {
+  const router = useRouter()
+  const [value, setValue] = useState(startDate ?? "")
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle")
+
+  async function save(next: string) {
+    if (next === (startDate ?? "")) return
+    setState("saving")
+    const res = await saveEmployeeStartDate(userId, next || null)
+    setState(res.ok ? "saved" : "error")
+    if (res.ok) router.refresh()
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        aria-label={`Start date for ${name}`}
+        type="date"
+        className="h-8 w-36 tabular-nums"
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value)
+          setState("idle")
+        }}
+        onBlur={(e) => save(e.target.value)}
+      />
+      {state === "saving" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+      {state === "saved" && <span className="text-xs text-primary">Saved</span>}
+      {state === "error" && <span className="text-xs text-destructive">Failed</span>}
+    </div>
   )
 }
 
@@ -1112,6 +1156,8 @@ function SettingsForm({ settings }: { settings: AttendanceSettings }) {
     dayBasis: settings.payroll_day_basis,
     absenceDeductionDays: settings.absence_deduction_days,
     lateDeduction: settings.late_deduction_enabled,
+    lateFeePerHour: settings.late_fee_per_hour,
+    lateFeeUnderHalf: settings.late_fee_under_half,
   })
   return (
     <Card className="flex flex-col gap-5 p-5">
@@ -1251,8 +1297,34 @@ function SettingsForm({ settings }: { settings: AttendanceSettings }) {
               checked={f.lateDeduction}
               onChange={(e) => setF({ ...f, lateDeduction: e.target.checked })}
             />
-            Also deduct late time (pro-rated per minute of the shift)
+            Deduct a fine for late arrival
           </label>
+          {f.lateDeduction && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="s-latehour">Fine per hour late (AED) — 30+ min counts as an hour</Label>
+                <Input
+                  id="s-latehour"
+                  type="number"
+                  step="1"
+                  min={0}
+                  value={f.lateFeePerHour}
+                  onChange={(e) => setF({ ...f, lateFeePerHour: Number(e.target.value) })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="s-latehalf">Fine if late under 30 min (AED)</Label>
+                <Input
+                  id="s-latehalf"
+                  type="number"
+                  step="1"
+                  min={0}
+                  value={f.lateFeeUnderHalf}
+                  onChange={(e) => setF({ ...f, lateFeeUnderHalf: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+          )}
         </section>
 
         {msg && <p className={cn("text-sm", msg.ok ? "text-primary" : "text-destructive")}>{msg.text}</p>}

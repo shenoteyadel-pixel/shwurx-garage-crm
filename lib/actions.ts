@@ -26,6 +26,7 @@ import { syncPendingApproval } from "@/lib/actions-approvals"
 import { resyncQuotationAddons } from "@/lib/addons"
 import { getSettings } from "@/lib/settings"
 import { isCloseReason } from "@/lib/job-close"
+import { transitionJobStage, syncStageTracking } from "@/lib/workflow"
 import {
   PHOTO_KINDS,
   TRADE_VALUES,
@@ -191,23 +192,56 @@ async function workGateForMove(
   return check.ok ? null : check.error
 }
 
-export async function updateStage(
+export type StageMoveResult =
+  | { ok: true }
+  | { ok: false; error: string; missing?: { check: string; label: string; overridable: boolean }[]; canOverride?: boolean }
+
+export type StageOverride = { override?: boolean; reason?: string | null }
+
+async function moveJobStage(
   jobId: string,
   stage: Stage,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  source: "manual" | "car_flow",
+  opts: StageOverride & { liftBay?: string | null } = {},
+): Promise<StageMoveResult> {
   const { supabase, ctx } = await guard("jobs.update_status")
+  // Visibility check with the RLS-bound client: you can only move jobs you can see.
+  const { data: visible } = await supabase.from("jobs").select("id").eq("id", jobId).maybeSingle()
+  if (!visible) return { ok: false, error: "Job not found or not accessible." }
   const blocked = await workGateForMove(supabase, jobId, stage)
   if (blocked) return { ok: false, error: blocked }
-  const { error } = await supabase
-    .from("jobs")
-    .update({ stage, updated_at: new Date().toISOString() })
-    .eq("id", jobId)
-  if (error) throw new Error(error.message)
+
+  const extraPatch: Record<string, unknown> = {}
+  // Lift bay only applies to the repair/workshop zone; clear it otherwise.
+  if (source === "car_flow") extraPatch.lift_bay = stage === "repair" ? opts.liftBay || null : null
+
+  const res = await transitionJobStage({
+    jobId,
+    toStage: stage,
+    actorId: ctx.userId,
+    actorRole: ctx.role,
+    source,
+    reason: opts.reason,
+    override: opts.override,
+    extraPatch,
+  })
+  if (!res.ok) return res
+
   if (stage === "delivered") await onJobDelivered(supabase, jobId)
-  await logAction(ctx, "job.update_stage", "job", jobId, { stage })
+  await logAction(ctx, source === "car_flow" ? "job.move" : "job.update_stage", "job", jobId, {
+    from: res.fromStage,
+    stage,
+    lift_bay: source === "car_flow" ? opts.liftBay ?? null : undefined,
+    override: opts.override ? opts.reason ?? null : undefined,
+  })
   revalidatePath("/crm")
+  revalidatePath("/flow")
   revalidatePath(`/jobs/${jobId}`)
   return { ok: true }
+}
+
+export async function updateStage(jobId: string, stage: Stage, opts: StageOverride = {}): Promise<StageMoveResult> {
+  return moveJobStage(jobId, stage, "manual", opts)
 }
 
 // Car Flow drag & drop: move a job to a new stage (workshop zone) and optionally a lift bay.
@@ -215,21 +249,9 @@ export async function moveJobLocation(
   jobId: string,
   stage: Stage,
   liftBay?: string | null,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { supabase } = await guard("jobs.update_status")
-  const blocked = await workGateForMove(supabase, jobId, stage)
-  if (blocked) return { ok: false, error: blocked }
-  const patch: Record<string, unknown> = { stage, updated_at: new Date().toISOString() }
-  // Lift bay only applies to the repair/workshop zone; clear it otherwise.
-  patch.lift_bay = stage === "repair" ? liftBay || null : null
-  const { error } = await supabase.from("jobs").update(patch).eq("id", jobId)
-  if (error) throw new Error(error.message)
-  if (stage === "delivered") await onJobDelivered(supabase, jobId)
-  await logCurrent("job.move", "job", jobId, { stage, lift_bay: liftBay ?? null })
-  revalidatePath("/crm")
-  revalidatePath("/flow")
-  revalidatePath(`/jobs/${jobId}`)
-  return { ok: true }
+  opts: StageOverride = {},
+): Promise<StageMoveResult> {
+  return moveJobStage(jobId, stage, "car_flow", { ...opts, liftBay })
 }
 
 /**
@@ -264,17 +286,17 @@ export async function markJobPaid(
     }
   }
 
-  const { error } = await supabase
-    .from("jobs")
-    .update({
-      stage: "delivered",
-      paid_at: nowIso,
-      paid_amount: amount,
-      payment_method: method,
-      updated_at: nowIso,
-    })
-    .eq("id", jobId)
-  if (error) throw new Error(error.message)
+  const { data: visible } = await supabase.from("jobs").select("id").eq("id", jobId).maybeSingle()
+  if (!visible) return { ok: false, error: "Job not found or not accessible." }
+  const moved = await transitionJobStage({
+    jobId,
+    toStage: "delivered",
+    actorId: ctx.userId,
+    actorRole: ctx.role,
+    source: "payment",
+    extraPatch: { paid_at: nowIso, paid_amount: amount, payment_method: method },
+  })
+  if (!moved.ok) return { ok: false, error: moved.error }
   await closeOpenPartsForDeliveredJob(supabase, jobId)
 
   // Keep the invoice in sync: if this job has an open invoice, settle it too so
@@ -887,11 +909,24 @@ export async function saveQuotation(
   }
 
   // Move to quotation stage if still earlier
-  await supabase
+  const { data: beforeQuote } = await supabase.from("jobs").select("stage").eq("id", jobId).maybeSingle()
+  const { data: movedToQuote } = await supabase
     .from("jobs")
     .update({ stage: "quotation", approval_status: "pending", updated_at: new Date().toISOString() })
     .eq("id", jobId)
     .in("stage", ["check_in", "inspection"])
+    .select("id")
+  if (movedToQuote?.length) {
+    const { data: auth } = await supabase.auth.getUser()
+    await syncStageTracking({
+      jobId,
+      fromStage: (beforeQuote?.stage as Stage | undefined) ?? null,
+      toStage: "quotation",
+      actorId: auth.user?.id ?? null,
+      actorRole: null,
+      source: "quotation",
+    })
+  }
 
   // Re-materialise linked add-on services (wash / pickup / delivery) onto this
   // freshly-rebuilt quotation so they are never lost when the quote is re-saved.
@@ -1073,12 +1108,21 @@ export async function sendPartsToQuotation(jobId: string) {
 
 /* ---------------- Send approval to customer ---------------- */
 export async function sendApproval(jobId: string) {
-  const { supabase } = await guard("quotations.edit")
+  const { supabase, ctx } = await guard("quotations.edit")
+  const { data: before } = await supabase.from("jobs").select("stage").eq("id", jobId).maybeSingle()
   const { error } = await supabase
     .from("jobs")
     .update({ stage: "customer_approval", approval_status: "pending", updated_at: new Date().toISOString() })
     .eq("id", jobId)
   if (error) throw new Error(error.message)
+  await syncStageTracking({
+    jobId,
+    fromStage: (before?.stage as Stage | undefined) ?? null,
+    toStage: "customer_approval",
+    actorId: ctx.userId,
+    actorRole: ctx.role,
+    source: "approval",
+  })
   await notifyActivity({ title: "Sent for customer approval", link: `/jobs/${jobId}` })
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/crm")

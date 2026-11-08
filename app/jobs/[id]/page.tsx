@@ -7,6 +7,7 @@ import { bucketParts, classifyPartRows, reconcilePartsRequests } from "@/lib/par
 import { AppShell } from "@/components/app-shell"
 import { Badge, Card, UAEPlate } from "@/components/ui"
 import { StageStepper } from "@/components/stage-stepper"
+import { JobStagePanel } from "@/components/job-stage-panel"
 import { QuotationBuilder, type CatalogPart } from "@/components/quotation-builder"
 import { SmartMergeParts } from "@/components/smart-merge-parts"
 import { PartsManager } from "@/components/parts-manager"
@@ -591,6 +592,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
       <Card className="mb-6 p-4">
         <StageStepper jobId={job.id} stage={job.stage as Stage} />
+        <div className="mt-4 border-t border-border pt-4">
+          <JobStagePanel job={job} />
+        </div>
       </Card>
 
       <section

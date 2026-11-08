@@ -2,21 +2,29 @@
 
 import * as React from "react"
 import { updateStage } from "@/lib/actions"
-import { STAGES, STAGE_ORDER, type Stage } from "@/lib/constants"
+import { STAGES, STAGE_ORDER, STAGE_MAP, type Stage } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { Check } from "lucide-react"
+import { StageBlockDialog, type StageBlock } from "@/components/stage-block-dialog"
 
 export function StageStepper({ jobId, stage }: { jobId: string; stage: Stage }) {
   const [pending, setPending] = React.useState<Stage | null>(null)
   const [error, setError] = React.useState<string | null>(null)
+  const [block, setBlock] = React.useState<(StageBlock & { target: Stage }) | null>(null)
   const currentIndex = STAGE_ORDER.indexOf(stage)
 
-  async function go(target: Stage) {
+  async function go(target: Stage, override?: { reason: string }) {
     setPending(target)
     setError(null)
     try {
-      const res = await updateStage(jobId, target)
-      if (!res.ok) setError(res.error)
+      const res = await updateStage(jobId, target, override ? { override: true, reason: override.reason } : {})
+      if (res.ok) {
+        setBlock(null)
+      } else if (res.missing?.length || override) {
+        setBlock({ ...res, target, targetLabel: STAGE_MAP[target].label })
+      } else {
+        setError(res.error)
+      }
     } finally {
       setPending(null)
     }
@@ -59,6 +67,13 @@ export function StageStepper({ jobId, stage }: { jobId: string; stage: Stage }) 
         <p role="alert" className="mt-2 max-w-xl text-pretty text-xs text-destructive">
           {error}
         </p>
+      )}
+      {block && (
+        <StageBlockDialog
+          block={block}
+          onClose={() => setBlock(null)}
+          onOverride={(reason) => go(block.target, { reason })}
+        />
       )}
     </div>
   )

@@ -49,6 +49,7 @@ import {
   Trophy,
   CreditCard,
   Target,
+  ListChecks,
   DatabaseBackup,
   Tag,
   Activity,
@@ -123,6 +124,7 @@ const NAV_GROUPS = [
       { href: "/reports/labour", label: "Labour Report", icon: Clock, anyOf: ["reports.view"] },
       { href: "/reports/top-customers", label: "Top Customers", icon: Trophy, anyOf: ["reports.view"] },
       { href: "/reports/staff-targets", label: "Staff Targets", icon: Target, ownerOnly: true },
+      { href: "/reports/workflow-review", label: "Workflow Review", icon: ListChecks, anyOf: ["reports.view"] },
     ],
   },
   {

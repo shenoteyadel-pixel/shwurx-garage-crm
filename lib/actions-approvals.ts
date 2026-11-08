@@ -13,6 +13,7 @@ import { loadApprovedToOrder } from "@/lib/approved-to-order"
 import { notifyUsers } from "@/lib/attendance-notify"
 import { buildApprovalMessage, waMeLink } from "@/lib/whatsapp"
 import { revalidatePath } from "next/cache"
+import { syncStageTracking } from "@/lib/workflow"
 
 /* =============================================================================
    Per-item, legally-signed approval engine.
@@ -257,10 +258,19 @@ export async function createApprovalRequest(
   }
 
   // Keep the legacy job flags in sync so existing dashboards/badges still work.
+  const { data: beforeApproval } = await svc.from("jobs").select("stage").eq("id", jobId).maybeSingle()
   await svc
     .from("jobs")
     .update({ stage: "customer_approval", approval_status: "pending", updated_at: new Date().toISOString() })
     .eq("id", jobId)
+  await syncStageTracking({
+    jobId,
+    fromStage: beforeApproval?.stage ?? null,
+    toStage: "customer_approval",
+    actorId: ctx.userId,
+    actorRole: ctx.role,
+    source: "approval",
+  })
 
   const url = `${appBaseUrl()}/approve/r/${token}`
   let emailed = false

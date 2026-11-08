@@ -10,6 +10,7 @@ import { VehicleVisual, BrandLogo } from "@/components/vehicle-visual"
 import { UAEPlate } from "@/components/ui"
 import { moveJobLocation, markJobPaid } from "@/lib/actions"
 import type { JobCardData } from "@/components/job-card"
+import { StageBlockDialog, type StageBlock } from "@/components/stage-block-dialog"
 import {
   Wrench,
   Loader2,
@@ -44,7 +45,11 @@ export function CarFlow({ jobs }: { jobs: Job[] }) {
 
   const drag = items.find((j) => j.id === dragId) || null
 
-  async function place(job: Job, stage: Stage, liftBay?: string | null) {
+  const [block, setBlock] = React.useState<
+    (StageBlock & { job: Job; stage: Stage; liftBay: string | null }) | null
+  >(null)
+
+  async function place(job: Job, stage: Stage, liftBay?: string | null, overrideReason?: string) {
     if (job.stage === stage && (stage !== "repair" || (job.lift_bay ?? null) === (liftBay ?? null))) return
     // optimistic
     setItems((prev) =>
@@ -53,12 +58,22 @@ export function CarFlow({ jobs }: { jobs: Job[] }) {
     setPending(job.id)
     setMoveError(null)
     try {
-      const res = await moveJobLocation(job.id, stage, liftBay ?? null)
+      const res = await moveJobLocation(
+        job.id,
+        stage,
+        liftBay ?? null,
+        overrideReason ? { override: true, reason: overrideReason } : {},
+      )
       if (!res.ok) {
         setItems((prev) => prev.map((j) => (j.id === job.id ? job : j)))
-        setMoveError(res.error)
+        if (res.missing?.length || overrideReason) {
+          setBlock({ ...res, job, stage, liftBay: liftBay ?? null, targetLabel: STAGE_MAP[stage].label })
+        } else {
+          setMoveError(res.error)
+        }
         return
       }
+      setBlock(null)
       router.refresh()
     } finally {
       setPending(null)
@@ -119,6 +134,13 @@ export function CarFlow({ jobs }: { jobs: Job[] }) {
         ))}
       </div>
     </div>
+    {block && (
+      <StageBlockDialog
+        block={block}
+        onClose={() => setBlock(null)}
+        onOverride={(reason) => place(block.job, block.stage, block.liftBay, reason)}
+      />
+    )}
     {payJob && (
       <CollectPaymentDialog
         job={payJob}

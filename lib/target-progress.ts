@@ -30,7 +30,7 @@ export async function loadTargetProgress(
 
   let salesQ = svc
     .from("invoices")
-    .select("total, jobs!inner(advisor_id, technician_id)")
+    .select("total, jobs!inner(advisor_id, technician_id, comeback_of)")
     .neq("status", "cancelled")
     .gte("issue_date", from)
     .lte("issue_date", to)
@@ -49,8 +49,9 @@ export async function loadTargetProgress(
   for (const r of purchasesRes.data ?? []) add("purchase", r.created_by as string, r.total)
   for (const r of (salesRes.data ?? []) as unknown as {
     total: number | null
-    jobs: { advisor_id: string | null; technician_id: string | null } | null
+    jobs: { advisor_id: string | null; technician_id: string | null; comeback_of: string | null } | null
   }[]) {
+    if (r.jobs?.comeback_of) continue
     add("sales", r.jobs?.advisor_id, r.total)
     add("technician", r.jobs?.technician_id, r.total)
   }

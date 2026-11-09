@@ -43,7 +43,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
       .or(`and(invoice_date.gte.${from},invoice_date.lte.${to}),and(invoice_date.is.null,created_at.gte.${from},created_at.lt.${next})`),
     svc
       .from("invoices")
-      .select("total, jobs(advisor_id, technician_id)")
+      .select("total, jobs(advisor_id, technician_id, comeback_of)")
       .neq("status", "cancelled")
       .gte("issue_date", from)
       .lte("issue_date", to),
@@ -76,8 +76,9 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
   const technicianWork = new Map<string, Acc>()
   for (const r of (salesRes.data ?? []) as unknown as {
     total: number | null
-    jobs: { advisor_id: string | null; technician_id: string | null } | null
+    jobs: { advisor_id: string | null; technician_id: string | null; comeback_of: string | null } | null
   }[]) {
+    if (r.jobs?.comeback_of) continue
     add(sales, r.jobs?.advisor_id ?? null, r.total)
     add(technicianWork, r.jobs?.technician_id ?? null, r.total)
   }

@@ -27,6 +27,7 @@ import { resyncQuotationAddons } from "@/lib/addons"
 import { getSettings } from "@/lib/settings"
 import { isCloseReason } from "@/lib/job-close"
 import { transitionJobStage, syncStageTracking } from "@/lib/workflow"
+import { ensureTechnicianTask } from "@/lib/technician-task-create"
 import {
   PHOTO_KINDS,
   TRADE_VALUES,
@@ -470,15 +471,17 @@ export async function addJobTechnician(jobId: string, userId: string, trade: Tra
   if (job && !job.technician_id) {
     await supabase.from("jobs").update({ technician_id: userId, updated_at: new Date().toISOString() }).eq("id", jobId)
   }
-  await logAction(ctx, "job.technician_add", "job", jobId, { userId, trade: safeTrade })
+  const taskId = await ensureTechnicianTask(supabase, jobId, userId, { trade: tradeLabel(safeTrade) })
+  await logAction(ctx, "job.technician_add", "job", jobId, { userId, trade: safeTrade, taskId })
   await notifyUser(userId, {
     title: "New job assigned to you",
     body: `You were added as ${tradeLabel(safeTrade)} on job ${job?.job_number ?? jobId.slice(0, 8)}.`,
     type: "assignment",
-    link: `/jobs/${jobId}`,
+    link: taskId ? `/technician/tasks/${taskId}` : `/jobs/${jobId}`,
   })
   revalidatePath(`/jobs/${jobId}`)
   revalidatePath("/flow")
+  revalidatePath("/technician")
 }
 
 export async function removeJobTechnician(jobId: string, userId: string) {

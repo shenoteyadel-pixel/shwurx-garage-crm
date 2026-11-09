@@ -18,6 +18,8 @@ import {
   type TaskStatus,
 } from "@/lib/technician-tasks"
 
+import { ensureTechnicianTask } from "@/lib/technician-task-create"
+
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string }
 
 const text = (v: FormDataEntryValue | null, max: number) => String(v ?? "").trim().slice(0, max) || null
@@ -87,6 +89,41 @@ export async function assignTechnicianTask(jobId: string, formData: FormData): P
     return { ok: true, id: data.id }
   } catch (e) {
     return fail(e, "Could not assign the task.")
+  }
+}
+
+/** Creates a task for every open job that has a lead technician but no open task for them. */
+export async function createMissingTechnicianTasks(): Promise<Result<{ created: number }>> {
+  try {
+    const ctx = await requirePermission("jobs.assign")
+    const supabase = await createClient()
+    const { data: jobs, error } = await supabase
+      .from("jobs")
+      .select("id, technician_id")
+      .not("technician_id", "is", null)
+      .neq("stage", "delivered")
+      .is("deleted_at", null)
+      .limit(500)
+    if (error) return fail(error, "Could not load jobs.")
+
+    let created = 0
+    for (const job of jobs ?? []) {
+      const id = await ensureTechnicianTask(supabase, job.id, job.technician_id as string)
+      if (id) {
+        created++
+        await notifyUserIds([job.technician_id as string], {
+          title: "New task assigned",
+          body: "A task was created for a job you are assigned to.",
+          type: "job",
+          link: `/technician/tasks/${id}`,
+        })
+      }
+    }
+    await logAction(ctx, "technician_task.backfill", "technician_task", null, { created })
+    revalidatePath("/technician")
+    return { ok: true, created }
+  } catch (e) {
+    return fail(e, "Could not create the tasks.")
   }
 }
 

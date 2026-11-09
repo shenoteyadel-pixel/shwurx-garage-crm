@@ -10,15 +10,17 @@ import {
   decidePriceRevision,
   requestPriceRevision,
   retireCatalogItem,
+  syncCatalogFromInventory,
   type CatalogEntry,
 } from "@/lib/actions-parts-catalog"
-import { Plus, History, Check, X, Search } from "lucide-react"
+import { Plus, History, Check, X, Search, RefreshCw } from "lucide-react"
 
 type Props = {
   entries: CatalogEntry[]
   canEdit: boolean
   canApprove: boolean
   currentUserId: string
+  missingFromCatalog: number
 }
 
 const EMPTY_SPEC = {
@@ -39,21 +41,59 @@ const EMPTY_SPEC = {
   warranty_months: "",
 }
 
-export function PriceCatalogClient({ entries, canEdit, canApprove, currentUserId }: Props) {
+export function PriceCatalogClient({ entries, canEdit, canApprove, currentUserId, missingFromCatalog }: Props) {
   const router = useRouter()
   const [query, setQuery] = React.useState("")
   const [showRetired, setShowRetired] = React.useState(false)
   const [adding, setAdding] = React.useState(false)
+  const [syncing, setSyncing] = React.useState(false)
+  const [syncMessage, setSyncMessage] = React.useState<string | null>(null)
+
+  async function syncInventory() {
+    setSyncing(true)
+    setSyncMessage(null)
+    const res = await syncCatalogFromInventory()
+    setSyncing(false)
+    if (!res.ok) return setSyncMessage(res.error)
+    setSyncMessage(
+      `Added ${res.added} part${res.added === 1 ? "" : "s"} from inventory${res.skipped ? ` (${res.skipped} skipped)` : ""}.`,
+    )
+    router.refresh()
+  }
 
   const pending = entries.filter((e) => e.pending)
   const visible = entries.filter((e) => {
     if (!showRetired && e.retired_at) return false
     const q = query.trim().toLowerCase()
-    return !q || e.label.toLowerCase().includes(q) || (e.part_number ?? "").toLowerCase().includes(q)
+    if (!q) return true
+    return [e.name, e.label, e.part_number, e.oem_part_number, e.our_part_number].some((v) =>
+      (v ?? "").toLowerCase().includes(q),
+    )
   })
 
   return (
     <div className="flex flex-col gap-6">
+      {(missingFromCatalog > 0 || syncMessage) && (
+        <Card className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-1">
+            {missingFromCatalog > 0 && (
+              <p className="text-sm font-medium">
+                {missingFromCatalog} inventory part{missingFromCatalog === 1 ? " is" : "s are"} not in the price catalog yet
+              </p>
+            )}
+            <p className="text-sm leading-relaxed text-muted-foreground" role="status">
+              {syncMessage ??
+                "Import them with their OEM number, our part number and current inventory selling price. Existing catalog prices are not changed."}
+            </p>
+          </div>
+          {canApprove && missingFromCatalog > 0 && (
+            <Button size="sm" onClick={syncInventory} disabled={syncing}>
+              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} aria-hidden />
+              {syncing ? "Importing…" : "Import from inventory"}
+            </Button>
+          )}
+        </Card>
+      )}
       {canApprove && pending.length > 0 && (
         <Card className="flex flex-col gap-3 p-4">
           <h2 className="text-sm font-semibold">Price changes waiting for approval ({pending.length})</h2>
@@ -68,7 +108,7 @@ export function PriceCatalogClient({ entries, canEdit, canApprove, currentUserId
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
             aria-label="Search catalog"
-            placeholder="Search name, brand or part number"
+            placeholder="Search name, OEM number or our part number"
             className="pl-9"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -140,10 +180,15 @@ function CatalogRow({ entry, canEdit, onDone }: { entry: CatalogEntry; canEdit: 
     <div className="flex flex-col gap-3 p-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
-          <p className="font-medium text-pretty">{entry.label}</p>
+          <p className="font-medium text-pretty">{entry.name}</p>
+          {entry.label && <p className="text-xs text-muted-foreground text-pretty">{entry.label}</p>}
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge>{CATALOG_QUALITIES.find((q) => q.value === entry.quality)?.label ?? entry.quality}</Badge>
-            {entry.part_number && <span className="font-mono">{entry.part_number}</span>}
+            {entry.oem_part_number && <span className="font-mono">OEM {entry.oem_part_number}</span>}
+            {entry.our_part_number && <span className="font-mono">Our P/N {entry.our_part_number}</span>}
+            {!entry.oem_part_number && entry.part_number && entry.part_number !== entry.our_part_number && (
+              <span className="font-mono">{entry.part_number}</span>
+            )}
             <span>per {entry.unit}</span>
             {entry.retired_at && <Badge>Retired</Badge>}
             {entry.pending && <Badge>Change pending: {formatCurrency(entry.pending.selling_price)}</Badge>}

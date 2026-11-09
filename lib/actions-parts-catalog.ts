@@ -14,7 +14,7 @@ import {
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string }
 
 const ITEM_COLUMNS =
-  "id, item_type, name, brand, manufacturer, part_number, quality, condition, specification, product_line, viscosity, approvals, package_size, unit, used_item_ref, warranty_months, created_at, retired_at"
+  "id, item_type, name, brand, manufacturer, part_number, quality, condition, specification, product_line, viscosity, approvals, package_size, unit, used_item_ref, warranty_months, created_at, retired_at, oem_part_number, our_part_number, inventory_item_id"
 
 export type CatalogRevision = {
   id: string
@@ -50,6 +50,9 @@ export type CatalogEntry = {
   warranty_months: number | null
   created_at: string
   retired_at: string | null
+  oem_part_number: string | null
+  our_part_number: string | null
+  inventory_item_id: string | null
   label: string
   current: { revision_id: string; selling_price: number } | null
   pending: CatalogRevision | null
@@ -126,7 +129,7 @@ export async function searchCatalogForQuote(query: string): Promise<QuoteCatalog
   let request = svc.from("parts_price_catalog").select(ITEM_COLUMNS).is("retired_at", null).limit(25)
   if (term) {
     request = request.or(
-      `name.ilike.%${term}%,part_number.ilike.%${term}%,manufacturer.ilike.%${term}%,brand.ilike.%${term}%,specification.ilike.%${term}%`,
+      `name.ilike.%${term}%,part_number.ilike.%${term}%,oem_part_number.ilike.%${term}%,our_part_number.ilike.%${term}%,manufacturer.ilike.%${term}%,brand.ilike.%${term}%,specification.ilike.%${term}%`,
     )
   }
   const { data: items } = await request.order("name")
@@ -311,6 +314,130 @@ export async function decidePriceRevision(input: {
   }
   revalidatePath("/pricing")
   return { ok: true }
+}
+
+function cleanText(value: unknown): string | null {
+  const text = value === null || value === undefined ? "" : String(value).trim().replace(/\s+/g, " ")
+  return text ? text.slice(0, 200) : null
+}
+
+function identityPart(value: string | null): string {
+  return (value ?? "").toLowerCase().replace(/[\s\-.]/g, "")
+}
+
+/** Inventory parts that have a selling price but no price catalog entry yet. */
+export async function countInventoryMissingFromCatalog(): Promise<number> {
+  await requirePermission("quotations.view")
+  const svc = createServiceClient()
+  const [{ data: inv }, { data: linked }] = await Promise.all([
+    svc.from("inventory_items").select("id").is("deleted_at", null).gt("sale_price", 0).limit(5000),
+    svc.from("parts_price_catalog").select("inventory_item_id").not("inventory_item_id", "is", null).limit(5000),
+  ])
+  const linkedIds = new Set((linked ?? []).map((l) => l.inventory_item_id as string))
+  return (inv ?? []).filter((i) => !linkedIds.has(i.id as string)).length
+}
+
+/**
+ * Adds every inventory part that is not in the catalog yet, keeping its OEM number,
+ * our part number (CRM ID) and its current inventory selling price as the approved price.
+ * Existing catalog items and prices are never changed.
+ */
+export async function syncCatalogFromInventory(): Promise<Result<{ added: number; skipped: number }>> {
+  const ctx = await requirePermission("settings.manage")
+  const svc = createServiceClient()
+
+  const [{ data: inv, error: invError }, { data: existing }] = await Promise.all([
+    svc
+      .from("inventory_items")
+      .select("id, name, brand, sku, oem_part_number, supplier_part_number, crm_part_id, unit, sale_price")
+      .is("deleted_at", null)
+      .gt("sale_price", 0)
+      .order("name")
+      .limit(5000),
+    svc.from("parts_price_catalog").select("inventory_item_id, identity_key").limit(5000),
+  ])
+  if (invError) return { ok: false, error: invError.message }
+
+  const linkedIds = new Set((existing ?? []).map((e) => e.inventory_item_id as string | null).filter(Boolean))
+  const usedKeys = new Set((existing ?? []).map((e) => e.identity_key as string))
+  const now = new Date().toISOString()
+  let added = 0
+  let skipped = 0
+
+  const baseKeys = new Set([...usedKeys].map((k) => k.split("|").slice(0, 12).join("|")))
+  const rows: Record<string, unknown>[] = []
+  const priceByInventory = new Map<string, number>()
+
+  for (const item of inv ?? []) {
+    if (linkedIds.has(item.id as string)) continue
+    const name = cleanText(item.name)
+    if (!name) {
+      skipped++
+      continue
+    }
+    const oem = cleanText(item.oem_part_number)
+    const ours = cleanText(item.crm_part_id)
+    const partNumber = oem ?? cleanText(item.sku) ?? cleanText(item.supplier_part_number) ?? ours
+    const quality = oem ? "oem_oes" : "aftermarket"
+    const unit = cleanText(item.unit)?.toLowerCase() ?? "each"
+    const brand = cleanText(item.brand)
+    // Mirrors the first 12 fields of the database identity_key (up to and including unit).
+    const baseKey = ["part", (brand ?? "").toLowerCase(), "", identityPart(partNumber), quality, "", "", "", "", "", "", unit].join("|")
+    // Two inventory rows can share a part number; tag the duplicate with our part number so each stays separate.
+    const usedItemRef = baseKeys.has(baseKey) ? (ours ?? (item.id as string)) : null
+    baseKeys.add(baseKey)
+
+    rows.push({
+      item_type: "part",
+      name,
+      brand,
+      part_number: partNumber,
+      quality,
+      unit,
+      used_item_ref: usedItemRef,
+      oem_part_number: oem,
+      our_part_number: ours,
+      inventory_item_id: item.id,
+      created_by: ctx.userId,
+    })
+    priceByInventory.set(item.id as string, Math.round(Number(item.sale_price) * 100) / 100)
+  }
+
+  const insertRows = async (batch: Record<string, unknown>[]) => {
+    const { data, error } = await svc.from("parts_price_catalog").insert(batch).select("id, inventory_item_id")
+    if (!error) return data ?? []
+    if (batch.length === 1) {
+      skipped++
+      return []
+    }
+    const created: { id: string; inventory_item_id: string }[] = []
+    for (const row of batch) created.push(...((await insertRows([row])) as typeof created))
+    return created
+  }
+
+  for (let i = 0; i < rows.length; i += 100) {
+    const created = (await insertRows(rows.slice(i, i + 100))) as { id: string; inventory_item_id: string }[]
+    if (!created.length) continue
+    const revisions = created.map((c) => ({
+      catalog_id: c.id,
+      selling_price: priceByInventory.get(c.inventory_item_id) ?? 0,
+      reason: "Imported from inventory selling price",
+      status: "approved",
+      effective_from: now,
+      requested_by: ctx.userId,
+      requested_by_name: ctx.name ?? null,
+      decided_by: ctx.userId,
+      decided_by_name: ctx.name ?? null,
+      decided_at: now,
+    }))
+    const { error: revError } = await svc.from("parts_price_revisions").insert(revisions)
+    if (revError) return { ok: false, error: `Parts were added but prices failed: ${revError.message}` }
+    added += created.length
+  }
+
+  await logAction(ctx, "parts_catalog.sync_inventory", "parts_price_catalog", null, { added, skipped })
+  revalidatePath("/pricing")
+  return { ok: true, added, skipped }
 }
 
 export async function retireCatalogItem(catalogId: string): Promise<Result> {

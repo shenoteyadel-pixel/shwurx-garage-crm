@@ -2,14 +2,14 @@ import { getShellUser } from "@/lib/shell-user"
 import { requirePageAccess } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
 import { PriceCatalogClient } from "@/components/price-catalog-client"
-import { listCatalog } from "@/lib/actions-parts-catalog"
+import { countInventoryMissingFromCatalog, listCatalog } from "@/lib/actions-parts-catalog"
 
 export const metadata = { title: "Price Catalog · SHWURX Auto Service Center" }
 
 export default async function PricingPage() {
   const ctx = await requirePageAccess(["quotations.edit", "settings.manage"], "Price Catalog")
   const user = await getShellUser()
-  const entries = await listCatalog()
+  const [entries, missingFromCatalog] = await Promise.all([listCatalog(), countInventoryMissingFromCatalog()])
 
   return (
     <AppShell user={user}>
@@ -26,6 +26,7 @@ export default async function PricingPage() {
           canEdit={ctx.permissions.has("quotations.edit")}
           canApprove={ctx.permissions.has("settings.manage")}
           currentUserId={ctx.userId}
+          missingFromCatalog={missingFromCatalog}
         />
       </div>
     </AppShell>

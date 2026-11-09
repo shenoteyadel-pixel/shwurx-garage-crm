@@ -4,7 +4,7 @@ import * as React from "react"
 import { Button, Card, Textarea } from "@/components/ui"
 import { SignaturePad, type SignaturePadHandle } from "@/components/signature-pad"
 import { formatCurrency } from "@/lib/utils"
-import { Check, X, Car, CheckCircle2, XCircle } from "lucide-react"
+import { Check, X, Car, CheckCircle2, XCircle, MapPin } from "lucide-react"
 
 type Data = {
   job: {
@@ -45,7 +45,15 @@ type Data = {
   }
 }
 
-export function ApprovalView({ token, data }: { token: string; data: Data }) {
+export function ApprovalView({
+  token,
+  data,
+  trackingPath,
+}: {
+  token: string
+  data: Data
+  trackingPath?: string | null
+}) {
   const [status, setStatus] = React.useState(data.job.approval_status)
   const [decision, setDecision] = React.useState<"approved" | "rejected" | null>(null)
   const [comment, setComment] = React.useState("")
@@ -88,10 +96,23 @@ export function ApprovalView({ token, data }: { token: string; data: Data }) {
   }
 
   if (status === "approved") {
-    return <Result ok title="Thank you — Approved!" text="Your approval has been received. Our team will begin work on your vehicle right away." />
+    return (
+      <Result
+        ok
+        title="Thank you — Approved!"
+        text="Your approval has been received. Our team will begin work on your vehicle right away. You can follow every step live."
+        trackingPath={trackingPath}
+      />
+    )
   }
   if (status === "rejected") {
-    return <Result title="Quotation Declined" text="You have declined this quotation. Our service advisor will contact you to discuss the next steps." />
+    return (
+      <Result
+        title="Quotation Declined"
+        text="You have declined this quotation. Our service advisor will contact you to discuss the next steps."
+        trackingPath={trackingPath}
+      />
+    )
   }
 
   return (
@@ -326,7 +347,17 @@ function QuoteItem({
   )
 }
 
-function Result({ ok, title, text }: { ok?: boolean; title: string; text: string }) {
+function Result({
+  ok,
+  title,
+  text,
+  trackingPath,
+}: {
+  ok?: boolean
+  title: string
+  text: string
+  trackingPath?: string | null
+}) {
   return (
     <Card className="p-8 text-center">
       <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary">
@@ -334,6 +365,15 @@ function Result({ ok, title, text }: { ok?: boolean; title: string; text: string
       </div>
       <h1 className="text-xl font-bold">{title}</h1>
       <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">{text}</p>
+      {trackingPath && (
+        <a
+          href={trackingPath}
+          className="mx-auto mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+        >
+          <MapPin className="h-4 w-4" aria-hidden="true" />
+          Track your car live
+        </a>
+      )}
     </Card>
   )
 }

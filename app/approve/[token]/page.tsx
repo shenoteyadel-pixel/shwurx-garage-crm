@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import { createPublicClient } from "@/lib/supabase/public"
 import { ApprovalView } from "@/components/approval-view"
 import { BrandLogo } from "@/components/brand-logo"
+import { trackingPathForApproval } from "@/lib/approval-tracking"
 
 export const dynamic = "force-dynamic"
 
@@ -11,6 +12,8 @@ export default async function ApprovePage({ params }: { params: Promise<{ token:
   const { data, error } = await supabase.rpc("get_approval", { p_token: token })
 
   if (error || !data) notFound()
+
+  const trackingPath = await trackingPathForApproval({ kind: "job", token })
 
   return (
     <div className="min-h-svh bg-background">
@@ -23,7 +26,7 @@ export default async function ApprovePage({ params }: { params: Promise<{ token:
         </div>
       </header>
       <main className="mx-auto max-w-2xl px-4 py-6">
-        <ApprovalView token={token} data={data as any} />
+        <ApprovalView token={token} data={data as any} trackingPath={trackingPath} />
       </main>
       <footer className="mx-auto max-w-2xl px-4 py-8 text-center text-xs text-muted-foreground">
         Secured by SHWURX Auto Service Center CRM · This link is unique to your vehicle.

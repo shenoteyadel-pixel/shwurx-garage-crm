@@ -30,6 +30,8 @@ const TEXT = {
     remaining: "Remaining",
     reached: "Target reached",
     invoices: "{n} invoices",
+    invoiced: "Invoiced work",
+    comebackCut: "Comeback cars ({n}) cut from target",
     commissionRule: "{p}% commission on everything above the target",
     commissionEarned: "Commission earned",
     noCommission: "No commission set for this target",
@@ -77,6 +79,8 @@ const TEXT = {
     remaining: "المتبقي",
     reached: "تم تحقيق الهدف",
     invoices: "{n} فاتورة",
+    invoiced: "الأعمال المفوترة",
+    comebackCut: "سيارات راجعة ({n}) مخصومة من الهدف",
     commissionRule: "عمولة {p}% على كل ما يزيد عن الهدف",
     commissionEarned: "العمولة المستحقة",
     noCommission: "لا توجد عمولة لهذا الهدف",
@@ -215,6 +219,22 @@ export function MyPayView({
                     <Stat label={t.target} value={money(tg.target, L)} />
                     <Stat label={t.remaining} value={money(Math.max(0, tg.target - tg.achieved), L)} />
                   </dl>
+                  {tg.comebackDeduction ? (
+                    <div className="flex flex-col gap-1 rounded-md bg-destructive/10 px-2.5 py-2 text-xs">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground">{t.invoiced}</span>
+                        <span className="tabular-nums text-foreground">{money(tg.gross ?? tg.achieved, L)}</span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground">
+                          {t.comebackCut.replace("{n}", String(tg.comebacks ?? 0))}
+                        </span>
+                        <span className="font-medium tabular-nums text-destructive">
+                          −{money(tg.comebackDeduction, L)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
                   {tg.percent > 0 ? (
                     <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-border pt-2 text-xs">
                       <span className="text-muted-foreground">{t.commissionRule.replace("{p}", String(tg.percent))}</span>

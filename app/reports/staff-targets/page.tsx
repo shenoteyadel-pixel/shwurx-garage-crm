@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app-shell"
 import { createServiceClient } from "@/lib/supabase/server"
 import { StaffTargetsClient, type TargetRow } from "@/components/staff-targets-client"
 import type { TargetKind } from "@/lib/actions-targets"
+import { loadComebackDeductions } from "@/lib/target-progress"
 
 export const metadata = { title: "Staff Targets · SHWURX Auto Service Center" }
 
@@ -34,7 +35,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
   const { month, from, to, next } = monthBounds((await searchParams).month)
   const svc = createServiceClient()
 
-  const [purchasesRes, salesRes, staffRes, targetsRes] = await Promise.all([
+  const [purchasesRes, salesRes, staffRes, targetsRes, comebackCuts] = await Promise.all([
     svc
       .from("supplier_invoices")
       .select("created_by, total")
@@ -49,6 +50,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
       .lte("issue_date", to),
     svc.from("profiles").select("id, full_name, role, job_title, is_active").neq("role", "customer"),
     svc.from("staff_targets").select("user_id, kind, monthly_target, commission_percent"),
+    loadComebackDeductions(svc, from, next),
   ])
 
   const { data: workshopRows } = await svc
@@ -107,15 +109,21 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
   }
 
   function rows(kind: TargetKind, totals: Map<string, Acc>): TargetRow[] {
-    const ids = new Set([...totals.keys(), ...targets[kind].keys()])
+    const cuts = kind === "purchase" ? new Map<string, Acc>() : comebackCuts[kind]
+    const ids = new Set([...totals.keys(), ...targets[kind].keys(), ...cuts.keys()])
     return [...ids]
       .map((id) => {
         const s = staffById.get(id)
+        const gross = totals.get(id)?.total ?? 0
+        const cut = cuts.get(id)
         return {
           userId: id,
           name: s?.name ?? "Former staff",
           title: s?.title ?? "",
-          total: totals.get(id)?.total ?? 0,
+          total: Math.max(0, gross - (cut?.total ?? 0)),
+          gross,
+          comebackDeduction: cut?.total ?? 0,
+          comebacks: cut?.count ?? 0,
           count: totals.get(id)?.count ?? 0,
           target: targets[kind].get(id) ?? 0,
           commission: commissions[kind].get(id) ?? 0,

@@ -3,6 +3,63 @@ import { targetCommission, type TargetKind, type TargetLine } from "@/lib/salary
 
 type Acc = { total: number; count: number }
 
+export type ComebackDeductions = Record<"sales" | "technician", Map<string, Acc>>
+
+/**
+ * A comeback opened in [from, next) cuts the invoiced value of the original job from whoever is responsible:
+ * advisor → sales target, technician → technician target, both or not decided → both. Customer/parts faults cut nothing.
+ */
+export async function loadComebackDeductions(svc: SupabaseClient, from: string, next: string): Promise<ComebackDeductions> {
+  const deductions: ComebackDeductions = { sales: new Map(), technician: new Map() }
+  const { data } = await svc
+    .from("jobs")
+    .select("comeback_of, comeback_advisor_id, comeback_technician_id, comeback_responsibility")
+    .not("comeback_of", "is", null)
+    .gte("created_at", from)
+    .lt("created_at", next)
+  const comebacks = (data ?? []) as {
+    comeback_of: string
+    comeback_advisor_id: string | null
+    comeback_technician_id: string | null
+    comeback_responsibility: string | null
+  }[]
+  if (!comebacks.length) return deductions
+
+  const originalIds = [...new Set(comebacks.map((c) => c.comeback_of))]
+  const { data: originals } = await svc
+    .from("jobs")
+    .select("id, advisor_id, technician_id, invoices(total, status)")
+    .in("id", originalIds)
+  const byId = new Map(
+    ((originals ?? []) as unknown as {
+      id: string
+      advisor_id: string | null
+      technician_id: string | null
+      invoices: { total: number | null; status: string | null }[] | null
+    }[]).map((o) => [o.id, o]),
+  )
+  const deduct = (kind: "sales" | "technician", id: string | null, amount: number) => {
+    if (!id || amount <= 0) return
+    const acc = deductions[kind].get(id) ?? { total: 0, count: 0 }
+    acc.total += amount
+    acc.count += 1
+    deductions[kind].set(id, acc)
+  }
+  for (const c of comebacks) {
+    const resp = c.comeback_responsibility ?? "none"
+    if (resp === "customer" || resp === "parts") continue
+    const o = byId.get(c.comeback_of)
+    const value = (o?.invoices ?? [])
+      .filter((i) => i.status !== "cancelled")
+      .reduce((s, i) => s + (Number(i.total) || 0), 0)
+    if (resp === "advisor" || resp === "both" || resp === "none")
+      deduct("sales", c.comeback_advisor_id ?? o?.advisor_id ?? null, value)
+    if (resp === "technician" || resp === "both" || resp === "none")
+      deduct("technician", c.comeback_technician_id ?? o?.technician_id ?? null, value)
+  }
+  return deductions
+}
+
 /** Monthly target, achievement and commission per employee. Pass userId to limit the result to one person. */
 export async function loadTargetProgress(
   svc: SupabaseClient,
@@ -36,7 +93,11 @@ export async function loadTargetProgress(
     .lte("issue_date", to)
   if (userId) salesQ = salesQ.or(`advisor_id.eq.${userId},technician_id.eq.${userId}`, { referencedTable: "jobs" })
 
-  const [purchasesRes, salesRes] = await Promise.all([purchasesQ, salesQ])
+  const [purchasesRes, salesRes, deductions] = await Promise.all([
+    purchasesQ,
+    salesQ,
+    loadComebackDeductions(svc, from, next),
+  ])
 
   const totals: Record<TargetKind, Map<string, Acc>> = { purchase: new Map(), sales: new Map(), technician: new Map() }
   const add = (kind: TargetKind, id: string | null | undefined, amount: unknown) => {
@@ -61,13 +122,18 @@ export async function loadTargetProgress(
     const target = Number(t.monthly_target) || 0
     const percent = Number(t.commission_percent) || 0
     const acc = totals[kind]?.get(t.user_id as string) ?? { total: 0, count: 0 }
+    const cut = kind === "purchase" ? { total: 0, count: 0 } : (deductions[kind].get(t.user_id as string) ?? { total: 0, count: 0 })
+    const net = Math.max(0, acc.total - cut.total)
     const line: TargetLine = {
       kind,
       target,
-      achieved: Math.round(acc.total * 100) / 100,
+      achieved: Math.round(net * 100) / 100,
       count: acc.count,
       percent,
-      commission: targetCommission(target, acc.total, percent),
+      commission: targetCommission(target, net, percent),
+      gross: Math.round(acc.total * 100) / 100,
+      comebackDeduction: Math.round(cut.total * 100) / 100,
+      comebacks: cut.count,
     }
     const list = result.get(t.user_id as string) ?? []
     list.push(line)

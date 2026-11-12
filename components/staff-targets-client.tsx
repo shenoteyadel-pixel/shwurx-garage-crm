@@ -22,7 +22,11 @@ export type TargetRow = {
   userId: string
   name: string
   title: string
+  /** Net achievement after comeback deductions. */
   total: number
+  gross?: number
+  comebackDeduction?: number
+  comebacks?: number
   count: number
   target: number
   commission: number
@@ -446,7 +450,14 @@ function Row({
         {row.title && <div className="text-xs capitalize text-muted-foreground">{row.title}</div>}
       </td>
       <td className="px-4 py-3 text-right tabular-nums">{row.count}</td>
-      <td className="px-4 py-3 text-right font-semibold tabular-nums">{money(row.total)}</td>
+      <td className="px-4 py-3 text-right tabular-nums">
+        <div className="font-semibold">{money(row.total)}</div>
+        {row.comebackDeduction ? (
+          <div className="mt-0.5 text-xs text-destructive">
+            −{money(row.comebackDeduction)} · {row.comebacks} comeback{row.comebacks === 1 ? "" : "s"}
+          </div>
+        ) : null}
+      </td>
       <td className="px-4 py-3">
         <form
           className="flex items-center gap-2"

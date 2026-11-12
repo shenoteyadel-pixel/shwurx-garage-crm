@@ -31,10 +31,16 @@ export type TargetKind = "purchase" | "sales" | "technician"
 export interface TargetLine {
   kind: TargetKind
   target: number
+  /** Net achievement used for the target and commission: gross minus comeback deductions. */
   achieved: number
   count: number
   percent: number
   commission: number
+  /** Invoiced work before comeback deductions. */
+  gross?: number
+  /** Value of original jobs that came back this month and are charged to this person. */
+  comebackDeduction?: number
+  comebacks?: number
 }
 
 export interface SalaryStaff {

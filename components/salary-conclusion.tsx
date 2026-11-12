@@ -34,6 +34,7 @@ const TEXT = {
     achievedOf: "{a} of {t} ({p}%)",
     commissionRule: "{c}% on amount above target",
     toGo: "AED {n} to go",
+    comebackCut: "Invoiced {g} · {n} comeback(s) cut",
     passed: "Target passed",
     noTarget: "No target set",
     gross: "Gross",
@@ -89,6 +90,7 @@ const TEXT = {
     achievedOf: "{a} من {t} ({p}%)",
     commissionRule: "{c}% على المبلغ فوق الهدف",
     toGo: "متبقي {n} درهم",
+    comebackCut: "المفوتر {g} · خصم {n} سيارة راجعة",
     passed: "تم تجاوز الهدف",
     noTarget: "لا يوجد هدف",
     gross: "الإجمالي",
@@ -385,6 +387,16 @@ function TargetDetail({ targets, t, L }: { targets?: TargetLine[]; t: T; L: Lang
               </span>
               <span>{t.commissionRule.replace("{c}", String(x.percent))}</span>
             </div>
+            {x.comebackDeduction ? (
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-muted-foreground">
+                <span>
+                  {t.comebackCut
+                    .replace("{g}", whole(x.gross ?? x.achieved))
+                    .replace("{n}", String(x.comebacks ?? 0))}
+                </span>
+                <span className="font-mono tabular-nums text-destructive">−{whole(x.comebackDeduction)}</span>
+              </div>
+            ) : null}
           </li>
         )
       })}

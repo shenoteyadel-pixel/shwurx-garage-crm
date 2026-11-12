@@ -1,6 +1,7 @@
 "use server"
 
 import { bestPartMatch, partDocLink } from "@/lib/part-match"
+import { receiveQuotedPartsForInvoice } from "@/lib/parts-receive"
 import { notifyJobAdvisor, notifyJobTechnicians } from "@/lib/job-notify"
 import { logCurrent } from "@/lib/rbac/context"
 
@@ -1660,6 +1661,11 @@ async function reconcileJobs(jobIds: (string | null | undefined)[]) {
 }
 
 async function reconcileInvoiceJobs(invoiceId: string) {
+  try {
+    await receiveQuotedPartsForInvoice(createServiceClient(), invoiceId)
+  } catch (e) {
+    console.error("[receiveQuotedPartsForInvoice] failed", invoiceId, e)
+  }
   const { data } = await createServiceClient()
     .from("supplier_invoice_items")
     .select("job_id, job_line_link")

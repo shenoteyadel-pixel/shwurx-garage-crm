@@ -15,6 +15,7 @@ import {
   type PayrollRules,
   type SalaryStaff,
   type StaffAttendance,
+  type TargetLine,
 } from "@/lib/salary-statement"
 
 export type { SalaryPayment, StaffAttendance, SalaryStaff, PayrollRules } from "@/lib/salary-statement"
@@ -29,6 +30,12 @@ const TEXT = {
     allowances: "Allowances",
     overtime: "Overtime pay",
     commission: "Commission",
+    kind: { purchase: "Purchase target", sales: "Sales target", technician: "Technician target" },
+    achievedOf: "{a} of {t} ({p}%)",
+    commissionRule: "{c}% on amount above target",
+    toGo: "AED {n} to go",
+    passed: "Target passed",
+    noTarget: "No target set",
     gross: "Gross",
     absence: "Absence",
     late: "Late arrival",
@@ -78,6 +85,12 @@ const TEXT = {
     allowances: "البدلات",
     overtime: "أجر العمل الإضافي",
     commission: "العمولة",
+    kind: { purchase: "هدف المشتريات", sales: "هدف المبيعات", technician: "هدف الفني" },
+    achievedOf: "{a} من {t} ({p}%)",
+    commissionRule: "{c}% على المبلغ فوق الهدف",
+    toGo: "متبقي {n} درهم",
+    passed: "تم تجاوز الهدف",
+    noTarget: "لا يوجد هدف",
     gross: "الإجمالي",
     absence: "الغياب",
     late: "التأخير",
@@ -265,6 +278,7 @@ export function SalaryConclusion({
                       <Line label={t.allowances} value={st.allowances} L={L} />
                       <Line label={t.overtime} value={st.overtime} L={L} />
                       <Line label={t.commission} value={st.commission} L={L} />
+                      <TargetDetail targets={s.targets} t={t} L={L} />
                       <Line label={t.gross} value={st.gross} L={L} strong />
                     </div>
                     <div className="flex flex-col gap-1.5">
@@ -333,6 +347,48 @@ function Line({
         {fmt(Math.abs(value), L)}
       </span>
     </div>
+  )
+}
+
+function TargetDetail({ targets, t, L }: { targets?: TargetLine[]; t: T; L: Lang }) {
+  if (!targets?.length) return <span className="text-xs text-muted-foreground">{t.noTarget}</span>
+  const whole = (n: number) => new Intl.NumberFormat(L === "ar" ? "ar-AE" : "en-AE", { maximumFractionDigits: 0 }).format(n)
+  return (
+    <ul className="flex flex-col gap-1.5 rounded-md bg-muted/50 px-2.5 py-2">
+      {targets.map((x) => {
+        const pct = x.target > 0 ? Math.min(100, Math.round((x.achieved / x.target) * 100)) : 0
+        const passed = x.achieved > x.target
+        return (
+          <li key={x.kind} className="flex flex-col gap-1 text-xs">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-medium text-foreground">{t.kind[x.kind]}</span>
+              <span className={passed ? "font-medium text-primary" : "text-muted-foreground"}>
+                {passed ? t.passed : t.toGo.replace("{n}", whole(x.target - x.achieved))}
+              </span>
+            </div>
+            <div
+              className="h-1.5 w-full overflow-hidden rounded-full bg-border"
+              role="progressbar"
+              aria-valuenow={pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={t.kind[x.kind]}
+            >
+              <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-muted-foreground">
+              <span className="font-mono tabular-nums">
+                {t.achievedOf
+                  .replace("{a}", whole(x.achieved))
+                  .replace("{t}", whole(x.target))
+                  .replace("{p}", String(Math.round((x.achieved / Math.max(1, x.target)) * 100)))}
+              </span>
+              <span>{t.commissionRule.replace("{c}", String(x.percent))}</span>
+            </div>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 

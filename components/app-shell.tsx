@@ -126,6 +126,8 @@ const NAV_GROUPS = [
       { href: "/reports/labour", label: "Labour Report", icon: Clock, anyOf: ["reports.view"] },
       { href: "/reports/top-customers", label: "Top Customers", icon: Trophy, anyOf: ["reports.view"] },
       { href: "/reports/staff-targets", label: "Staff Targets", icon: Target, ownerOnly: true },
+      { href: "/reports/advisor-performance", label: "Advisor Performance", icon: Trophy, anyOf: ["payroll.manage"] },
+      { href: "/my-performance", label: "My Performance", icon: Target, anyOf: ["quotations.edit"] },
       { href: "/reports/addon-sales", label: "Add-on Commission", icon: Trophy, anyOf: ["reports.financial", "payroll.manage"] },
       { href: "/my-addon-sales", label: "My Add-on Sales", icon: Target, anyOf: ["quotations.edit"] },
       { href: "/reports/workflow-review", label: "Workflow Review", icon: ListChecks, anyOf: ["reports.view"] },

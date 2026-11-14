@@ -45,6 +45,8 @@ import { formatDate } from "@/lib/utils"
 import { findJobDuplicateParts } from "@/lib/part-costs"
 import { DuplicatePartsDialog } from "@/components/duplicate-parts-dialog"
 import { JobSectionTabs } from "@/components/job-section-tabs"
+import { AddonSalesPanel } from "@/components/addon-sales-panel"
+import { loadJobAddonPanel } from "@/lib/addon-sales-data"
 import { JobBillingPanel, type JobInvoice, type JobPayment } from "@/components/job-billing-panel"
 import { JobDepositPanel, type JobDeposit } from "@/components/job-deposit-panel"
 import {
@@ -268,6 +270,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     (sessionCtx?.permissions.has("quotations.view") ?? false) ||
     (sessionCtx?.permissions.has("quotations.edit") ?? false)
   const canCreateComeback = sessionCtx?.permissions.has("jobs.create") ?? false
+  const addonPanel = canSeeQuotation
+    ? await loadJobAddonPanel({
+        id: job.id,
+        mileage: job.mileage ?? null,
+        vehicle_make: job.vehicle_make ?? null,
+        vehicle_id: job.vehicle_id ?? null,
+        complaint: (job as { complaint?: string | null }).complaint ?? null,
+      })
+    : null
   const financialSettings = await getSettings()
 
   let comebackInfo: ComebackInfo | null = null
@@ -741,6 +752,27 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                                 <ShoppingCart className="h-4 w-4 text-muted-foreground" /> Raise Purchase Order
                               </Link>
                             </>
+                          ),
+                        },
+                      ]
+                    : []),
+                  ...(addonPanel
+                    ? [
+                        {
+                          id: "addons",
+                          label: "Additional Sales",
+                          badge: addonPanel.lines.filter((l) => !["rejected", "cancelled"].includes(l.status)).length,
+                          hint: "Recommend admin-priced add-ons, send them for customer approval and track advisor commission.",
+                          content: (
+                            <AddonSalesPanel
+                              jobId={job.id}
+                              catalog={addonPanel.catalog}
+                              lines={addonPanel.lines}
+                              canEdit={(sessionCtx?.permissions.has("quotations.edit") ?? false) && job.stage !== "delivered"}
+                              canSeeCost={sessionCtx?.permissions.has("costs.view") ?? false}
+                              canComplete={sessionCtx?.permissions.has("jobs.assign") ?? false}
+                              isAdmin={sessionCtx?.permissions.has("settings.manage") ?? false}
+                            />
                           ),
                         },
                       ]

@@ -270,7 +270,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     (sessionCtx?.permissions.has("quotations.view") ?? false) ||
     (sessionCtx?.permissions.has("quotations.edit") ?? false)
   const canCreateComeback = sessionCtx?.permissions.has("jobs.create") ?? false
-  const addonPanel = canSeeQuotation
+  const canSeeAddonCost = (sessionCtx?.permissions.has("reports.financial") || sessionCtx?.permissions.has("settings.manage")) ?? false
+  const rawAddonPanel = canSeeQuotation
     ? await loadJobAddonPanel({
         id: job.id,
         mileage: job.mileage ?? null,
@@ -279,6 +280,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         complaint: (job as { complaint?: string | null }).complaint ?? null,
       })
     : null
+  // Advisors must not receive product purchase cost in the page payload.
+  const addonPanel =
+    rawAddonPanel && !canSeeAddonCost
+      ? { ...rawAddonPanel, catalog: rawAddonPanel.catalog.map((c) => ({ ...c, unit_cost: 0 })) }
+      : rawAddonPanel
   const financialSettings = await getSettings()
 
   let comebackInfo: ComebackInfo | null = null
@@ -769,7 +775,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                               catalog={addonPanel.catalog}
                               lines={addonPanel.lines}
                               canEdit={(sessionCtx?.permissions.has("quotations.edit") ?? false) && job.stage !== "delivered"}
-                              canSeeCost={sessionCtx?.permissions.has("costs.view") ?? false}
+                              canSeeCost={canSeeAddonCost}
                               canComplete={sessionCtx?.permissions.has("jobs.assign") ?? false}
                               isAdmin={sessionCtx?.permissions.has("settings.manage") ?? false}
                             />

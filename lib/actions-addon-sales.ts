@@ -142,13 +142,19 @@ export async function addAddonToJob(jobId: string, catalogId: string, overrideNo
   const note = text(overrideNote, 500)
   if (rec.level === "recent" && !note) return fail(`${rec.reason}. Add a note explaining why it's needed again.`)
 
+  const { data: advisorRate } = await svc
+    .from("addon_advisor_rates")
+    .select("commission_pct")
+    .eq("advisor_id", ctx.userId)
+    .maybeSingle()
+  const commissionPct = advisorRate ? Number(advisorRate.commission_pct) : Number(item.commission_pct)
   const line = computeLine({
     quantity: 1,
     unitPrice: item.selling_price,
     unitCost: item.purchase_cost,
     unitExtraCost: item.extra_cost,
     discount: 0,
-    commissionPct: item.commission_pct,
+    commissionPct,
     commissionEligible: item.commission_eligible,
   })
   const { error } = await svc.from("addon_sales").insert({
@@ -166,8 +172,9 @@ export async function addAddonToJob(jobId: string, catalogId: string, overrideNo
     original_amount: line.originalAmount,
     discount: 0,
     net_amount: line.netAmount,
-    commission_pct: item.commission_pct,
+    commission_pct: commissionPct,
     commission_eligible: item.commission_eligible,
+    rate_override_reason: advisorRate ? "Advisor rate" : null,
     notes: note || null,
   })
   if (error) return fail(error.code === "23505" ? `${item.name} is already on this job.` : error.message)
@@ -421,6 +428,63 @@ export async function reverseCommissionPayout(payoutId: string, reason: string):
   await notifyUser(p.advisor_id, {
     title: "Add-on commission payout reversed",
     body: `AED ${Number(p.amount).toFixed(2)} payout reversed: ${why}`,
+    type: "addon",
+    link: "/my-addon-sales",
+  })
+  revalidatePath("/reports/addon-sales")
+  return { ok: true }
+}
+
+export async function payAllReadyForAdvisor(advisorId: string, reference: string): Promise<Result & { paid?: number }> {
+  await requirePermission("payroll.manage")
+  const svc = createServiceClient()
+  const { data } = await svc
+    .from("addon_sales")
+    .select("id, job_id")
+    .eq("advisor_id", advisorId)
+    .eq("status", "completed")
+    .or("last_commission_status.is.null,last_commission_status.neq.paid")
+  const sales = data ?? []
+  if (!sales.length) return fail("Nothing is ready to pay for this advisor.")
+  await syncAddonSales([...new Set(sales.map((s) => s.job_id))])
+  const rows = await loadLedger({ advisorId })
+  const ready = rows.filter((r) => !r.payout && canPayout(r.commission))
+  if (!ready.length) return fail("Nothing is ready to pay for this advisor.")
+  let paid = 0
+  for (const r of ready) {
+    const res = await recordCommissionPayout(r.id, { method: "salary", reference, note: "Bulk payout" })
+    if (res.ok) paid += 1
+  }
+  return { ok: true, paid }
+}
+
+/* ---------------- Advisor commission rates (admin) ---------------- */
+
+export async function setAdvisorCommissionRate(advisorId: string, pct: number | null, reason: string): Promise<Result> {
+  const ctx = await requirePermission("settings.manage")
+  const why = text(reason, 500)
+  if (!why) return fail("A reason is required to change an advisor's rate.")
+  const svc = createServiceClient()
+  const { data: before } = await svc.from("addon_advisor_rates").select("commission_pct").eq("advisor_id", advisorId).maybeSingle()
+  if (pct === null) {
+    await svc.from("addon_advisor_rates").delete().eq("advisor_id", advisorId)
+  } else {
+    const rate = num(pct, -1)
+    if (rate < 0 || rate > 100) return fail("Enter a rate between 0 and 100.")
+    const { error } = await svc.from("addon_advisor_rates").upsert(
+      { advisor_id: advisorId, commission_pct: rate, reason: why, updated_by: ctx.userId, updated_at: new Date().toISOString() },
+      { onConflict: "advisor_id" },
+    )
+    if (error) return fail(error.message)
+  }
+  await logCurrent("addon.advisor_rate.set", "profile", advisorId, {
+    from: before ? Number(before.commission_pct) : "catalog",
+    to: pct === null ? "catalog" : pct,
+    reason: why,
+  })
+  await notifyUser(advisorId, {
+    title: "Upsell commission rate updated",
+    body: pct === null ? "Your upsell commission now follows the product rate." : `Your upsell commission rate is now ${pct}% on new lines.`,
     type: "addon",
     link: "/my-addon-sales",
   })

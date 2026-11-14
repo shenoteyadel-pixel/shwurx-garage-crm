@@ -3,19 +3,41 @@
 import Link from "next/link"
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Badge, Button, Card, Input } from "@/components/ui"
+import { Badge, Button, Card, Input, Select } from "@/components/ui"
 import { cn } from "@/lib/utils"
 import { COMMISSION_STATUS_LABEL, canPayout } from "@/lib/addon-commission"
 import type { LedgerRow } from "@/lib/addon-sales-data"
-import { recordCommissionPayout, reverseCommissionPayout, setAddonTarget } from "@/lib/actions-addon-sales"
+import {
+  AdvisorRates,
+  AdvisorTable,
+  PayoutCell,
+  PayoutHistory,
+  PeriodTable,
+  ProductTable,
+  Stat,
+  aed,
+  figuresOf,
+  type AdvisorSummary,
+  type Figures,
+  type PayoutHistoryRow,
+  type Runner,
+} from "@/components/addon-ledger-sections"
 
-const aed = (n: number) => `AED ${n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+export type { AdvisorSummary, PayoutHistoryRow }
 
-export type AdvisorSummary = { id: string; name: string; target: number }
+const STATUS_FILTERS = [
+  ["all", "All"],
+  ["pending", "In progress"],
+  ["payable", "Ready to pay"],
+  ["paid", "Paid"],
+  ["reversed", "Reversed"],
+] as const
 
 export function AddonLedgerClient({
   rows,
-  month,
+  payouts,
+  range,
+  presets,
   advisors,
   canPay,
   canSetTargets,
@@ -23,7 +45,9 @@ export function AddonLedgerClient({
   selfView,
 }: {
   rows: LedgerRow[]
-  month: string
+  payouts: PayoutHistoryRow[]
+  range: { from: string; to: string }
+  presets: { label: string; from: string; to: string }[]
   advisors: AdvisorSummary[]
   canPay: boolean
   canSetTargets: boolean
@@ -32,295 +56,307 @@ export function AddonLedgerClient({
 }) {
   const router = useRouter()
   const [pending, start] = useTransition()
-  const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState("all")
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+  const [status, setStatus] = useState<string>("all")
+  const [advisor, setAdvisor] = useState("all")
+  const [product, setProduct] = useState("all")
+  const [jobQuery, setJobQuery] = useState("")
 
-  const totals = useMemo(() => {
-    const t = { proposed: 0, approved: 0, completed: 0, revenue: 0, profit: 0, potential: 0, earned: 0, paid: 0, decided: 0 }
-    for (const r of rows) {
-      t.proposed += 1
-      if (["approved", "completed"].includes(r.status)) {
-        t.approved += 1
-        t.revenue += r.line.netAmount
-        t.profit += r.line.grossProfit
-      }
-      if (["approved", "completed", "rejected"].includes(r.status)) t.decided += 1
-      if (r.status === "completed") t.completed += 1
-      t.potential += r.commission.potential
-      t.earned += r.commission.earned
-      if (r.payout) t.paid += Number(r.payout.amount)
-    }
-    return t
-  }, [rows])
+  const products = useMemo(() => [...new Set(rows.map((r) => r.name))].sort(), [rows])
 
-  const byAdvisor = useMemo(() => {
-    const m = new Map<string, { revenue: number; earned: number; count: number }>()
-    for (const r of rows) {
-      if (!r.advisor_id) continue
-      const a = m.get(r.advisor_id) ?? { revenue: 0, earned: 0, count: 0 }
-      if (["approved", "completed"].includes(r.status)) {
-        a.revenue += r.line.netAmount
-        a.count += 1
-      }
-      a.earned += r.commission.earned
-      m.set(r.advisor_id, a)
-    }
-    return m
-  }, [rows])
+  const filtered = useMemo(() => {
+    const q = jobQuery.trim().toLowerCase()
+    return rows.filter((r) => {
+      if (advisor !== "all" && r.advisor_id !== advisor) return false
+      if (product !== "all" && r.name !== product) return false
+      if (q && ![r.job_number, r.customer_name, r.customer_mobile].some((v) => v?.toLowerCase().includes(q))) return false
+      return true
+    })
+  }, [rows, advisor, product, jobQuery])
 
-  const shown = rows.filter((r) => {
-    if (filter === "payable") return canPayout(r.commission)
-    if (filter === "pending") return ["proposed", "approved"].includes(r.status) || r.commission.status === "invoiced" || r.commission.status === "work_completed"
-    if (filter === "reversed") return r.commission.status === "reversed"
+  const shown = filtered.filter((r) => {
+    if (status === "payable") return !r.payout && canPayout(r.commission)
+    if (status === "paid") return Boolean(r.payout)
+    if (status === "pending") return r.commission.status !== "reversed" && !r.payout && !canPayout(r.commission) && ["proposed", "approved", "completed"].includes(r.status)
+    if (status === "reversed") return r.commission.status === "reversed"
     return true
   })
 
-  const run = (fn: () => Promise<{ ok: boolean; error?: string }>) =>
+  const totals = useMemo(() => figuresOf(filtered), [filtered])
+  const byAdvisor = useMemo(() => {
+    const groups = new Map<string, LedgerRow[]>()
+    for (const r of filtered) if (r.advisor_id) groups.set(r.advisor_id, [...(groups.get(r.advisor_id) ?? []), r])
+    return new Map<string, Figures>([...groups].map(([id, rs]) => [id, figuresOf(rs)]))
+  }, [filtered])
+
+  const run: Runner = (fn, done) =>
     start(async () => {
-      setError(null)
+      setMessage(null)
       const res = await fn()
-      if (!res.ok) setError(res.error ?? "Something went wrong.")
-      else router.refresh()
+      if (!res.ok) setMessage({ ok: false, text: res.error ?? "Something went wrong." })
+      else {
+        if (done) setMessage({ ok: true, text: done })
+        router.refresh()
+      }
     })
 
-  const conversion = totals.decided ? Math.round((totals.approved / totals.decided) * 100) : 0
+  const retained = totals.profit - totals.commission
+  const visibleAdvisors = advisor === "all" ? advisors : advisors.filter((a) => a.id === advisor)
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 md:p-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+      <header className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
-          <h1 className="text-balance text-2xl font-semibold">{selfView ? "My add-on sales" : "Add-on sales & commission"}</h1>
-          <p className="text-sm text-muted-foreground">Commission is earned only on approved, completed and paid work.</p>
+          <h1 className="text-balance text-2xl font-semibold">{selfView ? "My upsell commission" : "Upsell commission"}</h1>
+          <p className="text-pretty text-sm text-muted-foreground">
+            Commission becomes payable only after the customer approves, the work is completed and the invoice is paid.
+          </p>
         </div>
-        <form className="flex items-end gap-2" method="get">
+        <form method="get" className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Month
-            <Input type="month" name="month" defaultValue={month} />
+            From
+            <Input type="date" name="from" defaultValue={range.from} className="h-9" />
           </label>
-          <Button type="submit" size="sm" variant="ghost">
-            Show
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            To
+            <Input type="date" name="to" defaultValue={range.to} className="h-9" />
+          </label>
+          <Button type="submit" size="sm">
+            Apply
           </Button>
+          <nav aria-label="Quick ranges" className="flex flex-wrap gap-1">
+            {presets.map((p) => {
+              const active = p.from === range.from && p.to === range.to
+              return (
+                <Link
+                  key={p.label}
+                  href={`?from=${p.from}&to=${p.to}`}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "rounded-md px-2.5 py-1.5 text-xs",
+                    active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  {p.label}
+                </Link>
+              )
+            })}
+          </nav>
         </form>
       </header>
 
-      {error && (
-        <p role="alert" className="rounded-lg border border-destructive/40 px-3 py-2 text-sm text-destructive">
-          {error}
+      {message && (
+        <p
+          role={message.ok ? "status" : "alert"}
+          className={cn("rounded-lg border px-3 py-2 text-sm", message.ok ? "border-primary/40 text-primary" : "border-destructive/40 text-destructive")}
+        >
+          {message.text}
         </p>
       )}
 
-      <section aria-label="Summary" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Approved revenue" value={aed(totals.revenue)} sub={`${totals.approved} of ${totals.proposed} lines`} />
-        <Stat label="Conversion" value={`${conversion}%`} sub={`${totals.completed} completed`} />
-        <Stat label="Commission earned" value={aed(totals.earned)} sub={`${aed(totals.potential)} potential`} />
-        <Stat label="Commission paid" value={aed(totals.paid)} sub={`${aed(Math.max(0, totals.earned - totals.paid))} outstanding`} />
+      <section aria-label="Summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Upsell revenue" value={aed(totals.revenue)} sub={`${totals.approved} of ${totals.lines} lines approved`} />
+        {canSeeCost ? (
+          <>
+            <Stat label="Gross profit" value={aed(totals.profit)} tone={totals.profit < 0 ? "bad" : undefined} />
+            <Stat label="Advisor commissions" value={aed(totals.commission)} sub={`${aed(totals.paid)} paid`} />
+            <Stat label="Company retained profit" value={aed(retained)} tone={retained < 0 ? "bad" : "good"} />
+          </>
+        ) : (
+          <>
+            <Stat label="Pending commission" value={aed(totals.pending)} sub="Waiting for approval, work or payment" />
+            <Stat label="Ready / earned, unpaid" value={aed(totals.earnedUnpaid)} sub={`${totals.readyCount} lines ready`} />
+            <Stat label="Commission paid" value={aed(totals.paid)} tone="good" />
+          </>
+        )}
       </section>
 
-      {advisors.length > 0 && (
+      {canSeeCost && (
+        <section aria-label="Commission pipeline" className="grid grid-cols-3 gap-3">
+          <Stat label="Pending" value={aed(totals.pending)} sub="Not yet earned" />
+          <Stat label="Earned, unpaid" value={aed(totals.earnedUnpaid)} sub={`${totals.readyCount} ready to pay`} />
+          <Stat label="Paid" value={aed(totals.paid)} />
+        </section>
+      )}
+
+      <Card className="flex flex-wrap items-end gap-3 p-4">
+        {!selfView && (
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Advisor
+            <Select value={advisor} onChange={(e) => setAdvisor(e.target.value)}>
+              <option value="all">All advisors</option>
+              {advisors.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+        )}
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Product / service
+          <Select value={product} onChange={(e) => setProduct(e.target.value)}>
+            <option value="all">All products</option>
+            {products.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          Job card or customer
+          <Input type="search" value={jobQuery} onChange={(e) => setJobQuery(e.target.value)} placeholder="Job number, name or mobile" />
+        </label>
+        <Button size="sm" variant="ghost" onClick={() => exportCsv(shown, canSeeCost, range)}>
+          Export CSV
+        </Button>
+      </Card>
+
+      {!selfView && advisors.length > 0 && (
+        <AdvisorTable
+          advisors={visibleAdvisors}
+          byAdvisor={byAdvisor}
+          canSeeCost={canSeeCost}
+          canPay={canPay}
+          canSetTargets={canSetTargets}
+          pending={pending}
+          run={run}
+        />
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <PeriodTable rows={filtered} canSeeCost={canSeeCost} />
+        <ProductTable rows={filtered} canSeeCost={canSeeCost} />
+      </div>
+
+      <section aria-label="Upsell lines" className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by commission status">
+          {STATUS_FILTERS.map(([k, label]) => (
+            <Button key={k} size="sm" variant={status === k ? "primary" : "ghost"} aria-pressed={status === k} onClick={() => setStatus(k)}>
+              {label}
+            </Button>
+          ))}
+        </div>
         <Card className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
-            <caption className="px-4 pt-3 text-left text-sm font-semibold">Advisors this month</caption>
+          <table className="w-full min-w-[920px] text-sm">
+            <caption className="sr-only">Upsell lines</caption>
             <thead className="border-b border-border text-left text-xs text-muted-foreground">
               <tr>
-                <th className="px-4 py-2 font-medium">Advisor</th>
-                <th className="px-4 py-2 text-right font-medium">Approved revenue</th>
-                <th className="px-4 py-2 font-medium">Target progress</th>
-                <th className="px-4 py-2 text-right font-medium">Earned</th>
+                <th className="px-4 py-2 font-medium">Date</th>
+                <th className="px-4 py-2 font-medium">Job / customer</th>
+                <th className="px-4 py-2 font-medium">Product / service</th>
+                {!selfView && <th className="px-4 py-2 font-medium">Advisor</th>}
+                <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 text-right font-medium">Net</th>
+                {canSeeCost && <th className="px-4 py-2 text-right font-medium">Profit</th>}
+                <th className="px-4 py-2 text-right font-medium">Commission</th>
+                {canPay && (
+                  <th className="px-4 py-2">
+                    <span className="sr-only">Payout</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {advisors.map((a) => {
-                const s = byAdvisor.get(a.id) ?? { revenue: 0, earned: 0, count: 0 }
-                const pct = a.target > 0 ? Math.min(100, Math.round((s.revenue / a.target) * 100)) : 0
-                return (
-                  <tr key={a.id}>
-                    <td className="px-4 py-3 font-medium">{a.name}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{aed(s.revenue)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-28 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${a.name} target progress`}>
-                          <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
-                        </div>
-                        {canSetTargets ? (
-                          <TargetInput advisorId={a.id} initial={a.target} pending={pending} run={run} />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{a.target > 0 ? `${pct}% of ${aed(a.target)}` : "No target"}</span>
-                        )}
-                      </div>
+              {shown.map((r) => (
+                <tr key={r.id} className="align-top">
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">{r.created_at.slice(0, 10)}</td>
+                  <td className="px-4 py-3">
+                    <Link href={`/jobs/${r.job_id}`} className="font-medium underline-offset-2 hover:underline">
+                      {r.job_number ?? "Job"}
+                    </Link>
+                    <div className="text-xs text-muted-foreground">{[r.customer_name, r.customer_mobile].filter(Boolean).join(" · ") || "—"}</div>
+                    {r.invoice?.number && <div className="text-xs text-muted-foreground">Invoice {r.invoice.number}</div>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div>{r.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Qty {r.quantity} · {Number(r.commission_pct)}%
+                    </div>
+                  </td>
+                  {!selfView && <td className="px-4 py-3">{r.advisor_name ?? "—"}</td>}
+                  <td className="px-4 py-3">
+                    <Badge
+                      className={cn(
+                        "border-border",
+                        r.commission.status === "reversed"
+                          ? "text-destructive"
+                          : r.commission.status === "paid" || r.commission.status === "earned"
+                            ? "border-primary/40 text-primary"
+                            : "text-muted-foreground",
+                      )}
+                    >
+                      {COMMISSION_STATUS_LABEL[r.commission.status]}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">{aed(r.line.netAmount)}</td>
+                  {canSeeCost && (
+                    <td className={cn("px-4 py-3 text-right tabular-nums", r.line.grossProfit < 0 && "text-destructive")}>{aed(r.line.grossProfit)}</td>
+                  )}
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    <div>{aed(r.commission.earned)}</div>
+                    {r.commission.earned !== r.commission.potential && (
+                      <div className="text-xs text-muted-foreground">of {aed(r.commission.potential)}</div>
+                    )}
+                  </td>
+                  {canPay && (
+                    <td className="px-4 py-3 text-right">
+                      <PayoutCell row={r} pending={pending} run={run} />
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">{aed(s.earned)}</td>
-                  </tr>
-                )
-              })}
+                  )}
+                </tr>
+              ))}
+              {!shown.length && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-6 text-center text-sm text-muted-foreground">
+                    No upsell lines match these filters.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </Card>
-      )}
+      </section>
 
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Filter lines">
-        {[
-          ["all", "All"],
-          ["pending", "In progress"],
-          ["payable", "Ready to pay"],
-          ["reversed", "Reversed"],
-        ].map(([k, label]) => (
-          <Button key={k} size="sm" variant={filter === k ? "primary" : "ghost"} aria-pressed={filter === k} onClick={() => setFilter(k)}>
-            {label}
-          </Button>
-        ))}
-      </div>
+      <PayoutHistory payouts={advisor === "all" ? payouts : payouts.filter((p) => advisors.find((a) => a.id === advisor)?.name === p.advisor_name)} selfView={selfView} />
 
-      <Card className="overflow-x-auto">
-        <table className="w-full min-w-[820px] text-sm">
-          <caption className="sr-only">Add-on sale lines</caption>
-          <thead className="border-b border-border text-left text-xs text-muted-foreground">
-            <tr>
-              <th className="px-4 py-2 font-medium">Job / add-on</th>
-              {!selfView && <th className="px-4 py-2 font-medium">Advisor</th>}
-              <th className="px-4 py-2 font-medium">Status</th>
-              <th className="px-4 py-2 text-right font-medium">Net</th>
-              {canSeeCost && <th className="px-4 py-2 text-right font-medium">Profit</th>}
-              <th className="px-4 py-2 text-right font-medium">Commission</th>
-              {canPay && (
-                <th className="px-4 py-2">
-                  <span className="sr-only">Payout</span>
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {shown.map((r) => (
-              <tr key={r.id} className="align-top">
-                <td className="px-4 py-3">
-                  <Link href={`/jobs/${r.job_id}`} className="text-xs text-muted-foreground underline-offset-2 hover:underline">
-                    {r.job_number ?? "Job"}
-                  </Link>
-                  <div className="font-medium">{r.name}</div>
-                  {r.invoice?.number && <div className="text-xs text-muted-foreground">Invoice {r.invoice.number}</div>}
-                </td>
-                {!selfView && <td className="px-4 py-3">{r.advisor_name ?? "—"}</td>}
-                <td className="px-4 py-3">
-                  <Badge className={cn("border-border", r.commission.status === "reversed" ? "text-destructive" : r.commission.status === "paid" || r.commission.status === "earned" ? "border-primary/40 text-primary" : "text-muted-foreground")}>
-                    {COMMISSION_STATUS_LABEL[r.commission.status]}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">{aed(r.line.netAmount)}</td>
-                {canSeeCost && (
-                  <td className={cn("px-4 py-3 text-right tabular-nums", r.line.grossProfit < 0 && "text-destructive")}>{aed(r.line.grossProfit)}</td>
-                )}
-                <td className="px-4 py-3 text-right tabular-nums">
-                  <div>{aed(r.commission.earned)}</div>
-                  {r.commission.earned !== r.commission.potential && (
-                    <div className="text-xs text-muted-foreground">of {aed(r.commission.potential)}</div>
-                  )}
-                </td>
-                {canPay && (
-                  <td className="px-4 py-3 text-right">
-                    <PayoutCell row={r} pending={pending} run={run} />
-                  </td>
-                )}
-              </tr>
-            ))}
-            {!shown.length && (
-              <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  No add-on sales for this view.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
+      {canSetTargets && !selfView && <AdvisorRates advisors={advisors} pending={pending} run={run} />}
     </main>
   )
 }
 
-type Runner = (fn: () => Promise<{ ok: boolean; error?: string }>) => void
-
-function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <Card className="flex flex-col gap-1 p-4">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-lg font-semibold tabular-nums">{value}</span>
-      <span className="text-xs text-muted-foreground">{sub}</span>
-    </Card>
-  )
-}
-
-function TargetInput({ advisorId, initial, pending, run }: { advisorId: string; initial: number; pending: boolean; run: Runner }) {
-  const [value, setValue] = useState(String(initial || ""))
-  return (
-    <form
-      className="flex items-center gap-1"
-      onSubmit={(e) => {
-        e.preventDefault()
-        run(() => setAddonTarget(advisorId, Number(value) || 0))
-      }}
-    >
-      <label className="sr-only" htmlFor={`target-${advisorId}`}>
-        Monthly target (AED)
-      </label>
-      <Input id={`target-${advisorId}`} className="h-8 w-24" type="number" min="0" placeholder="Target" value={value} onChange={(e) => setValue(e.target.value)} />
-      <Button size="sm" variant="ghost" type="submit" disabled={pending}>
-        Set
-      </Button>
-    </form>
-  )
-}
-
-function PayoutCell({ row, pending, run }: { row: LedgerRow; pending: boolean; run: Runner }) {
-  const [mode, setMode] = useState<null | "pay" | "reverse">(null)
-  const [ref, setRef] = useState("")
-  const [reason, setReason] = useState("")
-
-  if (row.payout && mode !== "reverse") {
-    return (
-      <div className="flex flex-col items-end gap-1 text-xs text-muted-foreground">
-        <span>Paid {row.payout.paid_at}</span>
-        <Button size="sm" variant="ghost" onClick={() => setMode("reverse")}>
-          Reverse
-        </Button>
-      </div>
-    )
+function exportCsv(rows: LedgerRow[], canSeeCost: boolean, range: { from: string; to: string }) {
+  const header = ["Date", "Job", "Customer", "Mobile", "Product", "Advisor", "Status", "Qty", "Net", ...(canSeeCost ? ["Profit"] : []), "Rate %", "Commission potential", "Commission earned", "Paid"]
+  const cell = (v: unknown) => {
+    const s = String(v ?? "")
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
-  if (mode === "reverse" && row.payout) {
-    return (
-      <form
-        className="flex flex-col items-end gap-1"
-        onSubmit={(e) => {
-          e.preventDefault()
-          run(() => reverseCommissionPayout(row.payout!.id, reason))
-          setMode(null)
-        }}
-      >
-        <Input aria-label="Reason for reversal" required placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} />
-        <Button size="sm" type="submit" disabled={pending}>
-          Confirm reversal
-        </Button>
-      </form>
-    )
-  }
-  if (!canPayout(row.commission)) return null
-  if (mode === "pay") {
-    return (
-      <form
-        className="flex flex-col items-end gap-1"
-        onSubmit={(e) => {
-          e.preventDefault()
-          run(() => recordCommissionPayout(row.id, { method: "salary", reference: ref, note: "" }))
-          setMode(null)
-        }}
-      >
-        <Input aria-label="Payment reference" placeholder="Reference (optional)" value={ref} onChange={(e) => setRef(e.target.value)} />
-        <Button size="sm" type="submit" disabled={pending}>
-          Pay {aed(row.commission.earned)}
-        </Button>
-      </form>
-    )
-  }
-  return (
-    <Button size="sm" onClick={() => setMode("pay")}>
-      Record payout
-    </Button>
+  const lines = rows.map((r) =>
+    [
+      r.created_at.slice(0, 10),
+      r.job_number,
+      r.customer_name,
+      r.customer_mobile,
+      r.name,
+      r.advisor_name,
+      COMMISSION_STATUS_LABEL[r.commission.status],
+      r.quantity,
+      r.line.netAmount.toFixed(2),
+      ...(canSeeCost ? [r.line.grossProfit.toFixed(2)] : []),
+      r.commission_pct,
+      r.commission.potential.toFixed(2),
+      r.commission.earned.toFixed(2),
+      r.payout ? Number(r.payout.amount).toFixed(2) : "",
+    ]
+      .map(cell)
+      .join(","),
   )
+  const blob = new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `upsell-commission-${range.from}-to-${range.to}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }

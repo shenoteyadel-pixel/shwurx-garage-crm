@@ -60,6 +60,21 @@ export async function loadComebackDeductions(svc: SupabaseClient, from: string, 
   return deductions
 }
 
+/** Approved/completed upsell value per job, used to keep upsells out of the advisor sales target. */
+export async function loadUpsellByJob(svc: SupabaseClient, jobIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  const ids = [...new Set(jobIds)]
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await svc
+      .from("addon_sales")
+      .select("job_id, net_amount")
+      .in("status", ["approved", "completed"])
+      .in("job_id", ids.slice(i, i + 200))
+    for (const r of data ?? []) out.set(r.job_id, (out.get(r.job_id) ?? 0) + (Number(r.net_amount) || 0))
+  }
+  return out
+}
+
 /** Monthly target, achievement and commission per employee. Pass userId to limit the result to one person. */
 export async function loadTargetProgress(
   svc: SupabaseClient,
@@ -87,7 +102,7 @@ export async function loadTargetProgress(
 
   let salesQ = svc
     .from("invoices")
-    .select("total, jobs!inner(advisor_id, technician_id, comeback_of)")
+    .select("job_id, total, jobs!inner(advisor_id, technician_id, comeback_of)")
     .neq("status", "cancelled")
     .gte("issue_date", from)
     .lte("issue_date", to)
@@ -108,13 +123,23 @@ export async function loadTargetProgress(
     totals[kind].set(id, acc)
   }
   for (const r of purchasesRes.data ?? []) add("purchase", r.created_by as string, r.total)
-  for (const r of (salesRes.data ?? []) as unknown as {
+  const salesRows = (salesRes.data ?? []) as unknown as {
+    job_id: string | null
     total: number | null
     jobs: { advisor_id: string | null; technician_id: string | null; comeback_of: string | null } | null
-  }[]) {
+  }[]
+  // Upsell (add-on) lines are paid through their own commission, so they are
+  // removed from the advisor's normal sales target only. Company revenue and the
+  // technician target still include them.
+  const upsellLeft = await loadUpsellByJob(svc, salesRows.map((r) => r.job_id).filter(Boolean) as string[])
+  for (const r of salesRows) {
     if (r.jobs?.comeback_of) continue
-    add("sales", r.jobs?.advisor_id, r.total)
-    add("technician", r.jobs?.technician_id, r.total)
+    const total = Number(r.total) || 0
+    const left = r.job_id ? (upsellLeft.get(r.job_id) ?? 0) : 0
+    const cut = Math.min(left, total)
+    if (r.job_id && cut) upsellLeft.set(r.job_id, left - cut)
+    add("sales", r.jobs?.advisor_id, total - cut)
+    add("technician", r.jobs?.technician_id, total)
   }
 
   for (const t of targetRows) {

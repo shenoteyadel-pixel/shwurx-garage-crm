@@ -66,6 +66,8 @@ export type PayoutRow = {
 
 export type LedgerRow = AddonSaleRow & {
   job_number: string | null
+  customer_name: string | null
+  customer_mobile: string | null
   advisor_name: string | null
   line: LineFigures
   commission: CommissionResult
@@ -369,11 +371,11 @@ export async function loadLedger(filter: {
   const [{ policy }, invoices, { data: jobs }, { data: profiles }, { data: payouts }] = await Promise.all([
     getAddonPolicy(svc),
     invoicesByJob(svc, jobIds),
-    svc.from("jobs").select("id, job_number").in("id", jobIds),
+    svc.from("jobs").select("id, job_number, customer_name, customer_mobile").in("id", jobIds),
     advisorIds.length ? svc.from("profiles").select("id, full_name").in("id", advisorIds) : Promise.resolve({ data: [] as any[] }),
     svc.from("addon_commission_payouts").select("*").in("sale_id", sales.map((s) => s.id)).is("reversed_at", null),
   ])
-  const jobNo = new Map((jobs ?? []).map((j) => [j.id, j.job_number]))
+  const jobById = new Map((jobs ?? []).map((j) => [j.id, j]))
   const names = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name]))
   const payoutBySale = new Map((payouts ?? []).map((p: any) => [p.sale_id, p as PayoutRow]))
 
@@ -383,7 +385,9 @@ export async function loadLedger(filter: {
     const payout = payoutBySale.get(s.id) ?? null
     return {
       ...s,
-      job_number: jobNo.get(s.job_id) ?? null,
+      job_number: jobById.get(s.job_id)?.job_number ?? null,
+      customer_name: jobById.get(s.job_id)?.customer_name ?? null,
+      customer_mobile: jobById.get(s.job_id)?.customer_mobile ?? null,
       advisor_name: s.advisor_id ? (names.get(s.advisor_id) ?? null) : null,
       line,
       invoice,

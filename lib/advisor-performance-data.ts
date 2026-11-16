@@ -4,6 +4,7 @@ import { loadUpsellByJob } from "@/lib/target-progress"
 import {
   attributeCollections,
   normalizeBuckets,
+  normalizeDefaults,
   type AttributionRow,
   type InvoiceInput,
   type PartBuckets,
@@ -22,10 +23,16 @@ async function inChunks<T>(ids: string[], load: (slice: string[]) => Promise<T[]
 }
 
 export async function loadPerformanceSettings(svc: Svc = createServiceClient()) {
-  const { data } = await svc.from("settings").select("google_review_url, part_source_buckets").eq("id", 1).maybeSingle()
+  const { data } = await svc
+    .from("settings")
+    .select("google_review_url, part_source_buckets, advisor_default_targets, performance_closed_through")
+    .eq("id", 1)
+    .maybeSingle()
   return {
     googleReviewUrl: (data?.google_review_url as string | null) ?? null,
     buckets: normalizeBuckets(data?.part_source_buckets),
+    defaults: normalizeDefaults(data?.advisor_default_targets),
+    closedThrough: (data?.performance_closed_through as string | null) ?? null,
   }
 }
 
@@ -149,11 +156,13 @@ export interface AdvisorTargetRow {
   id: string
   scope: "individual" | "team"
   user_id: string | null
-  category: TargetCategory | "addon"
+  category: TargetCategory
   month: string
   target: number
   commission_percent: number
   bonus_amount: number
+  enabled: boolean
+  adjustment_reason: string | null
   note: string | null
   created_at: string
   created_by: string | null
@@ -165,7 +174,9 @@ export async function loadTargets(opts: { fromMonth: string; toMonth: string; us
   const svc = createServiceClient()
   let q = svc
     .from("advisor_targets")
-    .select("id, scope, user_id, category, month, target, commission_percent, bonus_amount, note, created_at, created_by, superseded_at")
+    .select(
+      "id, scope, user_id, category, month, target, commission_percent, bonus_amount, enabled, adjustment_reason, note, created_at, created_by, superseded_at",
+    )
     .gte("month", opts.fromMonth)
     .lte("month", opts.toMonth)
     .order("created_at", { ascending: false })

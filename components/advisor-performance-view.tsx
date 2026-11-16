@@ -10,6 +10,8 @@ import {
   breakdown,
   type CategoryAmounts,
   type CategoryCard,
+  type DefaultTargets,
+  type LeaderboardEntry,
   type PartBuckets,
   type ReviewStats,
   type Scorecard,
@@ -19,6 +21,9 @@ import {
   BreakdownTable,
   ClassificationPanel,
   ComparisonTable,
+  DefaultsPanel,
+  Leaderboard,
+  MonthlyChart,
   ReviewsPanel,
   ScoreGrid,
   SettingsPanel,
@@ -36,6 +41,10 @@ export interface PerformanceViewProps {
   advisors: { id: string; name: string }[]
   scorecards: Scorecard[]
   teamCards: CategoryCard[]
+  leaderboard: LeaderboardEntry[]
+  defaults: DefaultTargets
+  closedThrough: string | null
+  monthClosed: boolean
   monthRows: { day: string; advisor_id: string | null; amounts: CategoryAmounts }[]
   yearRows: { day: string; advisor_id: string | null; amounts: CategoryAmounts }[]
   reviewStats: ReviewStats
@@ -81,6 +90,11 @@ export function AdvisorPerformanceView(props: PerformanceViewProps) {
   const [tab, setTab] = useState<Tab>("overview")
   const [by, setBy] = useState<"day" | "week">("week")
   const [focus, setFocus] = useState<string>(admin ? "all" : props.selfId)
+  const [editUser, setEditUser] = useState<string | undefined>(undefined)
+  const editTargets = (advisorId: string) => {
+    setEditUser(advisorId)
+    setTab("targets")
+  }
 
   const pick = <T extends { advisor_id: string | null }>(rows: T[]) =>
     focus === "all" ? rows : rows.filter((r) => r.advisor_id === focus)
@@ -108,8 +122,9 @@ export function AdvisorPerformanceView(props: PerformanceViewProps) {
           <h1 className="text-balance text-2xl font-semibold">{admin ? "Advisor Performance" : "My Performance"}</h1>
           <p className="text-pretty text-sm text-muted-foreground">
             Labour, new parts and used parts count from collected payments, excluding VAT, on the payment date. Refunds
-            reduce the figures. Add-on sales are tracked separately.
+            reduce the figures. Add-on sales have their own card and never count toward Main Sales.
           </p>
+          {props.monthClosed && <p className="text-xs font-medium text-muted-foreground">This month is closed.</p>}
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -153,7 +168,8 @@ export function AdvisorPerformanceView(props: PerformanceViewProps) {
                 </h2>
                 <ScoreGrid cards={props.teamCards} />
               </section>
-              <ComparisonTable scorecards={props.scorecards} month={props.month} canApprove />
+              <ComparisonTable scorecards={props.scorecards} month={props.month} canApprove onEdit={editTargets} />
+              <Leaderboard entries={props.leaderboard} />
             </>
           ) : self ? (
             <section aria-labelledby="mine-h" className="flex flex-col gap-3">
@@ -172,6 +188,7 @@ export function AdvisorPerformanceView(props: PerformanceViewProps) {
                   <ScoreGrid cards={props.teamCards.filter((c) => c.hasTarget)} />
                 </>
               )}
+              <Leaderboard entries={props.leaderboard} selfId={props.selfId} />
             </section>
           ) : null}
 
@@ -179,7 +196,8 @@ export function AdvisorPerformanceView(props: PerformanceViewProps) {
             <div className="flex flex-col gap-1">
               <h2 className="font-medium">Add-on Product Sales</h2>
               <p className="text-sm text-muted-foreground">
-                Managed in its own dashboard and never counted in the targets above. This month: {aed(props.addon.qualified)}{" "}
+                Tracked on its own card above and never counted in Main Sales. Commission is paid on profit in the
+                add-on dashboard. This month: {aed(props.addon.qualified)}{" "}
                 qualified
                 {props.addon.target > 0 ? ` of ${aed(props.addon.target)} target` : ""}, {aed(props.addon.commission)} estimated
                 commission.
@@ -226,6 +244,7 @@ export function AdvisorPerformanceView(props: PerformanceViewProps) {
               ))}
             </div>
           </div>
+          <MonthlyChart title={`Main Sales by month · ${props.month.slice(0, 4)}`} rows={yearRows} />
           <div className="grid gap-6 lg:grid-cols-2">
             <BreakdownTable title={`${by === "day" ? "Daily" : "Weekly"} · ${props.month}`} rows={periodRows} />
             <BreakdownTable title={`Monthly · ${props.month.slice(0, 4)}`} rows={yearRows} />
@@ -234,7 +253,18 @@ export function AdvisorPerformanceView(props: PerformanceViewProps) {
       )}
 
       {tab === "targets" && admin && (
-        <TargetEditor advisors={props.advisors} month={props.month} history={props.history ?? []} />
+        <div className="flex flex-col gap-6">
+          <TargetEditor
+            key={editUser ?? "default"}
+            advisors={props.advisors}
+            month={props.month}
+            history={props.history ?? []}
+            initialUserId={editUser}
+            monthClosed={props.monthClosed}
+            defaults={props.defaults}
+          />
+          <DefaultsPanel defaults={props.defaults} closedThrough={props.closedThrough} />
+        </div>
       )}
 
       {tab === "reviews" && (

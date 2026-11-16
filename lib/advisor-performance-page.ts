@@ -2,7 +2,14 @@ import "server-only"
 import { createServiceClient } from "@/lib/supabase/server"
 import { monthRange } from "@/lib/addon-month"
 import { loadLedger, openAddonJobIds, syncAddonSales } from "@/lib/addon-sales-data"
-import { buildScorecards, buildTeamCards, reviewStats } from "@/lib/advisor-performance"
+import {
+  buildScorecards,
+  buildTeamCards,
+  daysLeftInMonth,
+  isClosedMonth,
+  leaderboard,
+  reviewStats,
+} from "@/lib/advisor-performance"
 import {
   loadAdvisors,
   loadApprovals,
@@ -37,7 +44,7 @@ export async function loadPerformanceView(opts: {
   await syncAddonSales(await openAddonJobIds(scope))
 
   const svc = createServiceClient()
-  const [advisorsAll, monthData, yearData, teamMonth, targets, history, approvals, reviews, ledger, addonTarget, audit] =
+  const [advisorsAll, monthData, yearData, teamMonth, targets, history, approvals, reviews, ledger, teamLedger, audit] =
     await Promise.all([
       admin ? loadAdvisors() : Promise.resolve([{ id: opts.userId, name: opts.userName }]),
       loadCollections({ from: range.from, toExclusive: range.to, advisorId: scope, buckets: settings.buckets }),
@@ -50,14 +57,40 @@ export async function loadPerformanceView(opts: {
       loadApprovals({ fromMonth: range.from, toMonth: range.from, userId: scope }),
       loadReviewRequests({ from: range.from, toExclusive: range.to, advisorId: scope }),
       loadLedger({ advisorId: scope, from: range.from, to: range.to }),
-      scope
-        ? svc.from("staff_targets").select("monthly_target").eq("user_id", scope).eq("kind", "addon")
-        : svc.from("staff_targets").select("monthly_target").eq("kind", "addon"),
+      admin ? Promise.resolve(null) : loadLedger({ from: range.from, to: range.to }),
       admin ? loadPerformanceAudit() : Promise.resolve([]),
     ])
 
+  const todayKey = new Date().toISOString().slice(0, 10)
+  const daysLeft = daysLeftInMonth(range.month, todayKey)
+  const todayExtras = new Map<string, { addon?: number; reviews?: number }>()
+  const bump = (id: string, key: "addon" | "reviews", n: number) => {
+    const e = todayExtras.get(id) ?? {}
+    e[key] = (e[key] ?? 0) + n
+    todayExtras.set(id, e)
+  }
+
   const verifiedByAdvisor = new Map<string, number>()
-  for (const r of reviews) if (r.verified_at && r.advisor_id) verifiedByAdvisor.set(r.advisor_id, (verifiedByAdvisor.get(r.advisor_id) ?? 0) + 1)
+  for (const r of reviews) {
+    if (!r.verified_at || !r.advisor_id) continue
+    verifiedByAdvisor.set(r.advisor_id, (verifiedByAdvisor.get(r.advisor_id) ?? 0) + 1)
+    if (r.verified_at.slice(0, 10) === todayKey) bump(r.advisor_id, "reviews", 1)
+  }
+
+  const addonByAdvisor = new Map<string, number>()
+  let addonQualified = 0
+  let addonCommission = 0
+  for (const r of ledger) {
+    if (!LIVE_ADDON.has(r.status)) continue
+    addonQualified += r.line.netAmount
+    if (r.commission.status !== "reversed") addonCommission += r.commission.potential
+    if (!r.advisor_id) continue
+    addonByAdvisor.set(r.advisor_id, (addonByAdvisor.get(r.advisor_id) ?? 0) + r.line.netAmount)
+    if (r.approved_at?.slice(0, 10) === todayKey) bump(r.advisor_id, "addon", r.line.netAmount)
+  }
+  const teamAddon = (teamLedger ?? ledger)
+    .filter((r) => LIVE_ADDON.has(r.status))
+    .reduce((s, r) => s + r.line.netAmount, 0)
 
   const scorecards = buildScorecards({
     advisors: advisorsAll,
@@ -65,6 +98,11 @@ export async function loadPerformanceView(opts: {
     verifiedByAdvisor,
     targets,
     approvals,
+    addonByAdvisor,
+    defaults: settings.defaults,
+    todayKey,
+    todayExtras,
+    daysLeft,
   })
 
   let teamVerified = [...verifiedByAdvisor.values()].reduce((s, n) => s + n, 0)
@@ -77,18 +115,14 @@ export async function loadPerformanceView(opts: {
       .not("verified_at", "is", null)
     teamVerified = count ?? 0
   }
-  const teamCards = buildTeamCards(teamMonth?.rows ?? monthData.rows, teamVerified, targets)
+  const teamCards = buildTeamCards(teamMonth?.rows ?? monthData.rows, teamVerified, targets, teamAddon)
 
   const candidates = await loadReviewCandidates(monthData.rows)
 
-  let addonQualified = 0
-  let addonCommission = 0
-  for (const r of ledger) {
-    if (!LIVE_ADDON.has(r.status)) continue
-    addonQualified += r.line.netAmount
-    if (r.commission.status !== "reversed") addonCommission += r.commission.potential
-  }
-  const addonTargetTotal = (addonTarget.data ?? []).reduce((s, t) => s + (Number(t.monthly_target) || 0), 0)
+  const addonTargetTotal = scorecards.reduce(
+    (s, sc) => s + (sc.cards.find((c) => c.category === "addon" && c.hasTarget)?.target ?? 0),
+    0,
+  )
 
   const strip = <T extends { day: string; advisor_id: string | null; amounts: unknown }>(rows: T[]) =>
     rows.map((r) => ({ day: r.day, advisor_id: r.advisor_id, amounts: r.amounts })) as PerformanceViewProps["monthRows"]
@@ -100,6 +134,10 @@ export async function loadPerformanceView(opts: {
     advisors: advisorsAll,
     scorecards,
     teamCards,
+    leaderboard: leaderboard(scorecards),
+    defaults: settings.defaults,
+    closedThrough: settings.closedThrough,
+    monthClosed: isClosedMonth(range.month, settings.closedThrough),
     monthRows: strip(monthData.rows),
     yearRows: strip(yearData.rows),
     reviewStats: reviewStats(candidates.length, reviews),
@@ -127,7 +165,7 @@ export async function loadPerformanceView(opts: {
     },
     ...(admin
       ? {
-          history: history.filter((h) => h.category !== "addon"),
+          history,
           unclassified: monthData.unclassified,
           audit,
           settings,

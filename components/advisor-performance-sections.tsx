@@ -10,6 +10,8 @@ import {
   TARGET_CATEGORIES,
   type BreakdownRow,
   type CategoryCard,
+  type DefaultTargets,
+  type LeaderboardEntry,
   type PartBuckets,
   type ReviewStats,
   type Scorecard,
@@ -22,6 +24,7 @@ import {
   revokeAdvisorCommission,
   saveAdvisorTarget,
   savePerformanceSettings,
+  saveTargetDefaults,
   setReviewDelivery,
   unverifyReview,
   verifyReview,
@@ -65,13 +68,18 @@ export function CategoryCardView({ card }: { card: CategoryCard }) {
   return (
     <Card className="flex flex-col gap-3 p-4">
       <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-medium">{CATEGORY_LABEL[card.category]}</h3>
+        <div className="flex flex-col">
+          <h3 className="text-sm font-medium">{CATEGORY_LABEL[card.category]}</h3>
+          {card.source === "default" && <span className="text-xs text-muted-foreground">Company default target</span>}
+        </div>
         {card.hasTarget ? (
           <Badge className={cn(card.met ? "border-primary/40 text-primary" : "border-border text-muted-foreground")}>
             {card.met ? "Goal met" : "In progress"}
           </Badge>
         ) : (
-          <Badge className="border-border text-muted-foreground">No target</Badge>
+          <Badge className="border-border text-muted-foreground">
+            {card.source === "disabled" ? "Disabled" : "No target"}
+          </Badge>
         )}
       </div>
       <p className="text-2xl font-semibold tabular-nums">{valueOf(card.category, card.achieved)}</p>
@@ -92,10 +100,25 @@ export function CategoryCardView({ card }: { card: CategoryCard }) {
         <dd className="text-right tabular-nums">{card.hasTarget ? `${card.percent}%` : "-"}</dd>
         <dt className="text-muted-foreground">Remaining</dt>
         <dd className="text-right tabular-nums">{card.hasTarget ? valueOf(card.category, card.remaining) : "-"}</dd>
-        <dt className="text-muted-foreground">Estimated commission</dt>
-        <dd className="text-right tabular-nums">{aed(card.commission)}</dd>
-        <dt className="text-muted-foreground">Approved</dt>
-        <dd className="text-right tabular-nums">{card.approved === null ? "Pending" : aed(card.approved)}</dd>
+        <dt className="text-muted-foreground">Today</dt>
+        <dd className="text-right tabular-nums">{valueOf(card.category, card.today)}</dd>
+        <dt className="text-muted-foreground">Needed per day</dt>
+        <dd className="text-right tabular-nums">
+          {card.dailyNeeded === null ? "-" : valueOf(card.category, card.dailyNeeded)}
+        </dd>
+        {card.category === "addon" ? (
+          <>
+            <dt className="text-muted-foreground">Commission</dt>
+            <dd className="text-right">Paid on profit via Add-on Sales</dd>
+          </>
+        ) : (
+          <>
+            <dt className="text-muted-foreground">Estimated commission</dt>
+            <dd className="text-right tabular-nums">{aed(card.commission)}</dd>
+            <dt className="text-muted-foreground">Approved</dt>
+            <dd className="text-right tabular-nums">{card.approved === null ? "Pending" : aed(card.approved)}</dd>
+          </>
+        )}
       </dl>
     </Card>
   )
@@ -103,8 +126,8 @@ export function CategoryCardView({ card }: { card: CategoryCard }) {
 
 export function ScoreGrid({ cards }: { cards: CategoryCard[] }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {cards.map((c) => (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      {cards.filter((c) => c.source !== "disabled").map((c) => (
         <CategoryCardView key={c.category} card={c} />
       ))}
     </div>
@@ -117,10 +140,12 @@ export function ComparisonTable({
   scorecards,
   month,
   canApprove,
+  onEdit,
 }: {
   scorecards: Scorecard[]
   month: string
   canApprove: boolean
+  onEdit?: (advisorId: string) => void
 }) {
   const { pending, error, run } = useRunner()
   return (
@@ -150,14 +175,29 @@ export function ComparisonTable({
           <tbody>
             {scorecards.map((s) => (
               <tr key={s.advisorId} className="border-b border-border last:border-0">
-                <td className="px-4 py-3 font-medium">{s.name}</td>
+                <td className="px-4 py-3 align-top">
+                  <div className="font-medium">{s.name}</div>
+                  {onEdit && (
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      onClick={() => onEdit(s.advisorId)}
+                    >
+                      Edit targets
+                    </button>
+                  )}
+                </td>
                 {s.cards.map((c) => (
                   <td key={c.category} className="px-4 py-3 text-right align-top">
                     <div className="tabular-nums">{valueOf(c.category, c.achieved)}</div>
                     <div className="text-xs text-muted-foreground">
-                      {c.hasTarget ? `${c.percent}% of ${valueOf(c.category, c.target)}` : "No target"}
+                      {c.hasTarget
+                        ? `${c.percent}% of ${valueOf(c.category, c.target)}${c.source === "default" ? " (default)" : ""}`
+                        : c.source === "disabled"
+                          ? "Disabled"
+                          : "No target"}
                     </div>
-                    {canApprove && c.hasTarget && (
+                    {canApprove && c.hasTarget && c.category !== "addon" && (
                       <div className="mt-1 flex justify-end gap-1">
                         {c.approved === null ? (
                           <Button
@@ -188,7 +228,7 @@ export function ComparisonTable({
             ))}
             {!scorecards.length && (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-sm text-muted-foreground">
+                <td colSpan={TARGET_CATEGORIES.length + 3} className="px-4 py-6 text-center text-sm text-muted-foreground">
                   No active service advisors.
                 </td>
               </tr>
@@ -251,6 +291,8 @@ export interface TargetHistoryItem {
   target: number
   commission_percent: number
   bonus_amount: number
+  enabled?: boolean
+  adjustment_reason?: string | null
   note: string | null
   created_at: string
   superseded_at: string | null
@@ -260,20 +302,29 @@ export function TargetEditor({
   advisors,
   month,
   history,
+  initialUserId,
+  monthClosed = false,
+  defaults,
 }: {
   advisors: { id: string; name: string }[]
   month: string
   history: TargetHistoryItem[]
+  initialUserId?: string
+  monthClosed?: boolean
+  defaults?: DefaultTargets
 }) {
   const { pending, error, run } = useRunner()
   const [scope, setScope] = useState<"individual" | "team">("individual")
-  const [userId, setUserId] = useState(advisors[0]?.id ?? "")
+  const [userId, setUserId] = useState(initialUserId ?? advisors[0]?.id ?? "")
   const [category, setCategory] = useState<TargetCategory>("labour")
   const [target, setTarget] = useState("")
   const [pct, setPct] = useState("")
   const [bonus, setBonus] = useState("")
   const [note, setNote] = useState("")
+  const [enabled, setEnabled] = useState(true)
+  const [reason, setReason] = useState("")
   const nameOf = new Map(advisors.map((a) => [a.id, a.name]))
+  const visible = scope === "individual" && userId ? history.filter((h) => h.scope === "team" || h.user_id === userId) : history
 
   const pick = (h: TargetHistoryItem) => {
     setScope(h.scope)
@@ -282,6 +333,7 @@ export function TargetEditor({
     setTarget(String(h.target))
     setPct(String(h.commission_percent))
     setBonus(String(h.bonus_amount))
+    setEnabled(h.enabled !== false)
     setNote(h.note ?? "")
   }
 
@@ -290,9 +342,20 @@ export function TargetEditor({
       <div className="flex flex-col gap-1 p-4">
         <h2 className="font-medium">Targets for {month}</h2>
         <p className="text-pretty text-sm text-muted-foreground">
-          Commission is the percentage on value above target, plus the bonus once the target is met. Changing a target
-          keeps the old version in the history below.
+          Commission is the percentage on value above target, plus the bonus once the target is met. Advisors without a
+          target use the company default, with no commission until you set one. Untick Enabled to switch a category off
+          for an advisor. Changing a target keeps the old version in the history below.
         </p>
+        {defaults && scope === "individual" && (
+          <p className="text-xs text-muted-foreground">
+            Default for {CATEGORY_LABEL[category]}: {valueOf(category, defaults[category])}
+          </p>
+        )}
+        {monthClosed && (
+          <p role="note" className="text-sm font-medium text-destructive">
+            This month is closed. Changes need an adjustment reason and are recorded in the audit log.
+          </p>
+        )}
       </div>
       <form
         className="flex flex-wrap items-end gap-3 px-4 pb-4"
@@ -309,8 +372,13 @@ export function TargetEditor({
                 commissionPercent: Number(pct || 0),
                 bonusAmount: Number(bonus || 0),
                 note,
+                enabled,
+                adjustmentReason: monthClosed ? reason : undefined,
               }),
-            () => setNote(""),
+            () => {
+              setNote("")
+              setReason("")
+            },
           )
         }}
       >
@@ -345,8 +413,34 @@ export function TargetEditor({
         </label>
         <label className="flex w-32 flex-col gap-1 text-xs text-muted-foreground">
           {category === "reviews" ? "Verified reviews" : "Target (AED, ex-VAT)"}
-          <Input type="number" min={0} step="any" required value={target} onChange={(e) => setTarget(e.target.value)} className="h-9" />
+          <Input
+            type="number"
+            min={0}
+            step="any"
+            required={enabled}
+            disabled={!enabled}
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            className="h-9"
+          />
         </label>
+        <label className="flex h-9 items-center gap-2 text-sm">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="size-4" />
+          Enabled
+        </label>
+        {monthClosed && (
+          <label className="flex w-full flex-col gap-1 text-xs text-muted-foreground">
+            Adjustment reason (required for a closed month)
+            <Input
+              value={reason}
+              required
+              minLength={10}
+              maxLength={300}
+              onChange={(e) => setReason(e.target.value)}
+              className="h-9"
+            />
+          </label>
+        )}
         <label className="flex w-24 flex-col gap-1 text-xs text-muted-foreground">
           Commission %
           <Input type="number" min={0} max={100} step="any" value={pct} onChange={(e) => setPct(e.target.value)} className="h-9" />
@@ -377,11 +471,18 @@ export function TargetEditor({
             </tr>
           </thead>
           <tbody>
-            {history.map((h) => (
+            {visible.map((h) => (
               <tr key={h.id} className={cn("border-b border-border last:border-0", h.superseded_at && "text-muted-foreground")}>
                 <td className="px-4 py-2">{h.scope === "team" ? "Team" : (nameOf.get(h.user_id ?? "") ?? "Former advisor")}</td>
-                <td className="px-4 py-2">{CATEGORY_LABEL[h.category as TargetCategory] ?? h.category}</td>
-                <td className="px-4 py-2 text-right tabular-nums">{valueOf(h.category as TargetCategory, h.target)}</td>
+                <td className="px-4 py-2">
+                  {CATEGORY_LABEL[h.category as TargetCategory] ?? h.category}
+                  {h.adjustment_reason && (
+                    <div className="text-xs text-muted-foreground">Closed-period change: {h.adjustment_reason}</div>
+                  )}
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums">
+                  {h.enabled === false ? "Disabled" : valueOf(h.category as TargetCategory, h.target)}
+                </td>
                 <td className="px-4 py-2 text-right tabular-nums">
                   {h.commission_percent}% + {aed(h.bonus_amount)}
                 </td>
@@ -397,16 +498,172 @@ export function TargetEditor({
                 </td>
               </tr>
             ))}
-            {!history.length && (
+            {!visible.length && (
               <tr>
                 <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  No targets set for this month yet.
+                  No custom targets for this month yet. Company defaults apply.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+    </Card>
+  )
+}
+
+/* ---------------- Leaderboard ---------------- */
+
+export function Leaderboard({ entries, selfId }: { entries: LeaderboardEntry[]; selfId?: string }) {
+  return (
+    <Card>
+      <div className="flex flex-col gap-1 p-4">
+        <h2 className="font-medium">Leaderboard</h2>
+        <p className="text-pretty text-sm text-muted-foreground">
+          Ranked by Main Sales (labour, used parts and new parts) against target. Add-on and reviews are shown for
+          reference.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead className="border-y border-border text-left text-xs text-muted-foreground">
+            <tr>
+              <th className="px-4 py-2 font-medium">Rank</th>
+              <th className="px-4 py-2 font-medium">Advisor</th>
+              <th className="px-4 py-2 text-right font-medium">Main Sales</th>
+              <th className="px-4 py-2 text-right font-medium">Achieved</th>
+              <th className="px-4 py-2 text-right font-medium">Add-on</th>
+              <th className="px-4 py-2 text-right font-medium">Reviews</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e) => (
+              <tr
+                key={e.advisorId}
+                className={cn("border-b border-border last:border-0", e.advisorId === selfId && "bg-secondary")}
+                aria-current={e.advisorId === selfId ? "true" : undefined}
+              >
+                <td className="px-4 py-2 tabular-nums">{e.rank}</td>
+                <td className="px-4 py-2 font-medium">{e.name}</td>
+                <td className="px-4 py-2 text-right tabular-nums">
+                  {aed(e.mainAchieved)}
+                  {e.mainTarget > 0 && <span className="text-xs text-muted-foreground"> of {aed(e.mainTarget)}</span>}
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums">{e.mainTarget > 0 ? `${e.mainPercent}%` : "-"}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{aed(e.addon)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{e.reviews}</td>
+              </tr>
+            ))}
+            {!entries.length && (
+              <tr>
+                <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted-foreground">
+                  No active service advisors.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
+/* ---------------- Monthly chart ---------------- */
+
+export function MonthlyChart({ rows, title }: { rows: BreakdownRow[]; title: string }) {
+  const max = Math.max(1, ...rows.map((r) => r.total))
+  return (
+    <Card className="flex flex-col gap-3 p-4">
+      <h2 className="font-medium">{title}</h2>
+      {rows.length ? (
+        <ul className="flex flex-col gap-2" aria-label={title}>
+          {rows.map((r) => (
+            <li key={r.key} className="flex items-center gap-3 text-xs">
+              <span className="w-16 shrink-0 tabular-nums text-muted-foreground">{r.key}</span>
+              <div className="h-3 flex-1 overflow-hidden rounded-full bg-secondary">
+                <div className="h-full rounded-full bg-primary" style={{ width: `${(r.total / max) * 100}%` }} />
+              </div>
+              <span className="w-32 shrink-0 text-right tabular-nums">{aed(r.total)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">No collected payments yet this year.</p>
+      )}
+    </Card>
+  )
+}
+
+/* ---------------- Default targets & period closing ---------------- */
+
+export function DefaultsPanel({ defaults, closedThrough }: { defaults: DefaultTargets; closedThrough: string | null }) {
+  const { pending, error, run } = useRunner()
+  const [values, setValues] = useState<Record<TargetCategory, string>>(
+    () => Object.fromEntries(TARGET_CATEGORIES.map((c) => [c, String(defaults[c])])) as Record<TargetCategory, string>,
+  )
+  const [closed, setClosed] = useState(closedThrough?.slice(0, 10) ?? "")
+  const [reason, setReason] = useState("")
+  const reopening = Boolean(closedThrough) && (!closed || closed < String(closedThrough).slice(0, 10))
+
+  return (
+    <Card>
+      <div className="flex flex-col gap-1 p-4">
+        <h2 className="font-medium">Default targets & closed periods</h2>
+        <p className="text-pretty text-sm text-muted-foreground">
+          Defaults apply to every advisor who has no target of their own for the month. Months up to the closing date
+          are locked; changing their targets needs a written reason.
+        </p>
+      </div>
+      <form
+        className="flex flex-wrap items-end gap-3 px-4 pb-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          run(() =>
+            saveTargetDefaults({
+              defaults: Object.fromEntries(TARGET_CATEGORIES.map((c) => [c, Number(values[c] || 0)])),
+              closedThrough: closed || null,
+              reason,
+            }),
+          )
+        }}
+      >
+        {TARGET_CATEGORIES.map((c) => (
+          <label key={c} className="flex w-36 flex-col gap-1 text-xs text-muted-foreground">
+            {CATEGORY_LABEL[c]}
+            {c === "reviews" ? " (count)" : " (AED)"}
+            <Input
+              type="number"
+              min={0}
+              step="any"
+              required
+              value={values[c]}
+              onChange={(e) => setValues((v) => ({ ...v, [c]: e.target.value }))}
+              className="h-9"
+            />
+          </label>
+        ))}
+        <label className="flex w-44 flex-col gap-1 text-xs text-muted-foreground">
+          Closed through
+          <Input type="date" value={closed} onChange={(e) => setClosed(e.target.value)} className="h-9" />
+        </label>
+        {reopening && (
+          <label className="flex w-full flex-col gap-1 text-xs text-muted-foreground">
+            Reason for reopening
+            <Input
+              value={reason}
+              required
+              minLength={10}
+              maxLength={300}
+              onChange={(e) => setReason(e.target.value)}
+              className="h-9"
+            />
+          </label>
+        )}
+        <Button type="submit" disabled={pending} className="h-9">
+          {pending ? "Saving..." : "Save defaults"}
+        </Button>
+      </form>
+      <ErrorText error={error} />
     </Card>
   )
 }

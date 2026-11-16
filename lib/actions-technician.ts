@@ -4,7 +4,10 @@ import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { put } from "@vercel/blob"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
-import { requireSession, requirePermission, ctxCan, logAction } from "@/lib/rbac/context"
+import { requireSession, requirePermission, requireAnyPermission, ctxCan, logAction } from "@/lib/rbac/context"
+import { MASTER_ELIGIBLE_ROLES, assertTaskLead } from "@/lib/master-tech"
+import { transitionJobStage } from "@/lib/workflow"
+import { STAGE_ORDER, type Stage } from "@/lib/constants"
 import { notifyJobAdvisor, notifyPermissionHolders, notifyPurchasers, notifyUserIds } from "@/lib/job-notify"
 import {
   DEFAULT_CHECKLIST,
@@ -48,48 +51,104 @@ async function loadTask(taskId: string) {
 
 /* ---------------- Assignment (workshop manager) ---------------- */
 
+/**
+ * Splits a job card into technician tasks. Workshop managers can assign on any
+ * job; a Master Technician only on job cards they lead. Picking several
+ * technicians creates one task per technician so each tracks their own time.
+ */
 export async function assignTechnicianTask(jobId: string, formData: FormData): Promise<Result<{ id: string }>> {
   try {
-    const ctx = await requirePermission("jobs.assign")
-    const technicianId = String(formData.get("technician_id") ?? "")
+    const ctx = await requireAnyPermission(["jobs.assign", "tasks.assign"])
+    const technicianIds = [...new Set(formData.getAll("technician_id").map((v) => String(v)).filter(Boolean))]
     const title = text(formData.get("title"), 200)
-    if (!technicianId) return { ok: false, error: "Choose a technician." }
+    if (!technicianIds.length) return { ok: false, error: "Choose at least one technician." }
+    if (technicianIds.length > 6) return { ok: false, error: "Assign to six technicians or fewer at once." }
     if (!title) return { ok: false, error: "Describe the task." }
     const priority = String(formData.get("priority") ?? "normal")
     const deadlineRaw = text(formData.get("deadline"), 40)
     const deadline = deadlineRaw ? new Date(deadlineRaw) : null
     if (deadline && Number.isNaN(deadline.getTime())) return { ok: false, error: "Deadline is not a valid date." }
+    const hoursRaw = text(formData.get("estimated_hours"), 10)
+    const estimatedHours = hoursRaw ? Number(hoursRaw) : null
+    if (estimatedHours !== null && (!Number.isFinite(estimatedHours) || estimatedHours < 0 || estimatedHours > 500)) {
+      return { ok: false, error: "Estimated hours must be between 0 and 500." }
+    }
+    const chargeable = formData.get("chargeable") === "on"
 
-    const supabase = await createClient()
-    const { data, error } = await supabase
+    const svc = createServiceClient()
+    const { data: job } = await svc
+      .from("jobs")
+      .select("job_number, master_technician_id, approval_status, stage, deleted_at")
+      .eq("id", jobId)
+      .maybeSingle()
+    if (!job || job.deleted_at) return { ok: false, error: "Job not found." }
+    if (job.stage === "delivered") return { ok: false, error: "This job is already delivered." }
+    assertTaskLead(ctx, job.master_technician_id)
+
+    const { data: techs } = await svc.from("profiles").select("id, role, is_active").in("id", technicianIds)
+    const valid = new Set((techs ?? []).filter((t) => t.is_active && MASTER_ELIGIBLE_ROLES.includes(t.role)).map((t) => t.id))
+    if (technicianIds.some((id) => !valid.has(id))) return { ok: false, error: "One of the chosen people is not an active technician." }
+
+    const { data: rows, error } = await svc
       .from("technician_tasks")
-      .insert({
-        job_id: jobId,
-        technician_id: technicianId,
-        title,
-        description: text(formData.get("description"), 4000),
-        trade: text(formData.get("trade"), 40),
-        priority: TASK_PRIORITIES.some((p) => p.value === priority) ? priority : "normal",
-        deadline: deadline?.toISOString() ?? null,
-        checklist: DEFAULT_CHECKLIST,
-      })
-      .select("id")
-      .single()
-    if (error) return fail(error, "Could not assign the task.")
+      .insert(
+        technicianIds.map((technicianId) => ({
+          job_id: jobId,
+          technician_id: technicianId,
+          title,
+          description: text(formData.get("description"), 4000),
+          trade: text(formData.get("trade"), 40),
+          priority: TASK_PRIORITIES.some((p) => p.value === priority) ? priority : "normal",
+          deadline: deadline?.toISOString() ?? null,
+          estimated_hours: estimatedHours,
+          chargeable,
+          assigned_by: ctx.userId,
+          checklist: DEFAULT_CHECKLIST,
+        })),
+      )
+      .select("id, technician_id")
+    if (error || !rows?.length) return fail(error, "Could not assign the task.")
 
-    const { data: job } = await supabase.from("jobs").select("job_number").eq("id", jobId).maybeSingle()
-    await notifyUserIds([technicianId], {
-      title: `New task: ${title}`,
-      body: `Job ${job?.job_number ?? ""}${deadline ? ` · due ${deadline.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}` : ""}`,
-      type: "job",
-      link: `/technician/tasks/${data.id}`,
-    })
-    await logAction(ctx, "technician_task.assign", "technician_task", data.id, { job_id: jobId, technician_id: technicianId })
-    refresh(data.id, jobId)
-    return { ok: true, id: data.id }
+    const awaitingApproval = chargeable && job.approval_status !== "approved"
+    for (const row of rows) {
+      await notifyUserIds([row.technician_id], {
+        title: `New task: ${title}`,
+        body: [
+          `Job ${job.job_number ?? ""}`,
+          deadline ? `due ${deadline.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}` : null,
+          estimatedHours ? `${estimatedHours} h estimated` : null,
+          awaitingApproval ? "waiting for customer approval before work starts" : null,
+        ].filter(Boolean).join(" · "),
+        type: "job",
+        link: `/technician/tasks/${row.id}`,
+      })
+      await logAction(ctx, "technician_task.assign", "technician_task", row.id, { job_id: jobId, technician_id: row.technician_id })
+      refresh(row.id, jobId)
+    }
+    revalidatePath("/master")
+    return { ok: true, id: rows[0].id }
   } catch (e) {
     return fail(e, "Could not assign the task.")
   }
+}
+
+/** Chargeable work can't start until the customer has approved the job. */
+async function assertWorkAuthorized(taskId: string) {
+  const svc = createServiceClient()
+  const { data } = await svc
+    .from("technician_tasks")
+    .select("chargeable, jobs!inner(approval_status)")
+    .eq("id", taskId)
+    .maybeSingle<{ chargeable: boolean; jobs: { approval_status: string | null } }>()
+  if (data?.chargeable && data.jobs?.approval_status !== "approved") {
+    throw new Error("Customer approval is needed before chargeable work can start. Inspection and diagnosis tasks can go ahead.")
+  }
+}
+
+async function masterOf(jobId: string): Promise<string | null> {
+  const svc = createServiceClient()
+  const { data } = await svc.from("jobs").select("master_technician_id").eq("id", jobId).maybeSingle()
+  return data?.master_technician_id ?? null
 }
 
 /** Creates a task for every open job that has a lead technician but no open task for them. */
@@ -134,7 +193,9 @@ export async function startTaskTimer(taskId: string): Promise<Result> {
     await requireSession()
     const { supabase, task } = await loadTask(taskId)
     if (task.timer_started_at) return { ok: true }
+    if (task.status === "qc_pending" || task.status === "qc_approved") return { ok: false, error: "This work is already with QC." }
     const status: TaskStatus = task.status === "assigned" || task.status === "qc_rejected" || task.status === "waiting_parts" || task.status === "waiting_approval" ? "in_progress" : task.status
+    if (status === "in_progress") await assertWorkAuthorized(taskId)
     const { error } = await supabase
       .from("technician_tasks")
       .update({ timer_started_at: new Date().toISOString(), status })
@@ -166,6 +227,7 @@ export async function setTaskStatus(taskId: string, status: TaskStatus): Promise
     const ctx = await requireSession()
     if (!TECH_STATUSES.includes(status)) return { ok: false, error: "Status change not allowed." }
     const { supabase, task } = await loadTask(taskId)
+    if (status === "in_progress") await assertWorkAuthorized(taskId)
     // Waiting or finished work stops the clock so idle time is never billed.
     const stopsClock = status !== "in_progress" && status !== "inspection"
     const { error } = await supabase
@@ -183,13 +245,16 @@ export async function setTaskStatus(taskId: string, status: TaskStatus): Promise
         link: `/jobs/${task.job_id}`,
       }))
     }
-    if (status === "repair_completed") {
-      await notifyPermissionHolders(["jobs.assign"], {
-        title: `Repair completed: ${task.title}`,
-        body: `${ctx.name} finished this task. It is ready for QC once submitted.`,
+    if (status === "repair_completed" || status === "waiting_parts" || status === "waiting_approval") {
+      const master = await masterOf(task.job_id)
+      const payload = {
+        title: `${label}: ${task.title}`,
+        body: status === "repair_completed" ? `${ctx.name} finished this task. It is ready for QC once submitted.` : `${ctx.name} is blocked on this task.`,
         type: "job",
-        link: `/technician/tasks/${taskId}`,
-      }, ctx.userId)
+        link: "/master",
+      }
+      if (master && master !== ctx.userId) await notifyUserIds([master], payload)
+      else if (status === "repair_completed") await notifyPermissionHolders(["jobs.assign"], { ...payload, link: `/technician/tasks/${taskId}` }, ctx.userId)
     }
     refresh(taskId, task.job_id)
     return { ok: true }
@@ -212,12 +277,14 @@ export async function submitTaskForQc(taskId: string): Promise<Result> {
       .update({ status: "qc_pending", timer_started_at: null })
       .eq("id", taskId)
     if (error) return fail(error, "Could not submit for QC.")
-    await notifyPermissionHolders(["jobs.qc_approve"], {
+    const master = await masterOf(task.job_id)
+    const qcPayload = {
       title: `QC needed: ${task.title}`,
       body: `${ctx.name} submitted this work for quality control.`,
       type: "job",
-      link: `/technician/tasks/${taskId}`,
-    }, ctx.userId)
+    }
+    if (master && master !== ctx.userId) await notifyUserIds([master], { ...qcPayload, link: "/master" })
+    else await notifyPermissionHolders(["jobs.qc_approve"], { ...qcPayload, link: `/technician/tasks/${taskId}` }, ctx.userId)
     await logAction(ctx, "technician_task.submit_qc", "technician_task", taskId)
     refresh(taskId, task.job_id)
     return { ok: true }
@@ -231,13 +298,63 @@ export async function decideTaskQc(taskId: string, approve: boolean, note: strin
     const ctx = await requirePermission("jobs.qc_approve")
     const cleanNote = note.trim().slice(0, 2000)
     if (!approve && !cleanNote) return { ok: false, error: "Explain what needs rework." }
-    const { supabase, task } = await loadTask(taskId)
-    if (task.technician_id === ctx.userId) return { ok: false, error: "You cannot QC your own work." }
-    const { error } = await supabase
+    // Service client: a Master Technician reviews teammates' tasks, which RLS hides from them.
+    const svc = createServiceClient()
+    const { data: task } = await svc
       .from("technician_tasks")
-      .update({ status: approve ? "qc_approved" : "qc_rejected", qc_note: cleanNote || null, timer_started_at: null })
+      .select("id, job_id, technician_id, title, status, rework_count, jobs!inner(master_technician_id, stage, job_number)")
+      .eq("id", taskId)
+      .maybeSingle<{
+        id: string
+        job_id: string
+        technician_id: string
+        title: string
+        status: string
+        rework_count: number
+        jobs: { master_technician_id: string | null; stage: string; job_number: string | null }
+      }>()
+    if (!task) return { ok: false, error: "Task not found." }
+    if (!ctxCan(ctx, "jobs.view_all") && task.jobs.master_technician_id !== ctx.userId) {
+      return { ok: false, error: "Only this job's Master Technician or a workshop manager can QC this task." }
+    }
+    if (task.technician_id === ctx.userId) return { ok: false, error: "You cannot QC your own work." }
+    if (task.status !== "qc_pending" && task.status !== "repair_completed") {
+      return { ok: false, error: "This task is not waiting for QC." }
+    }
+    const { error } = await svc
+      .from("technician_tasks")
+      .update({
+        status: approve ? "qc_approved" : "qc_rejected",
+        qc_note: cleanNote || null,
+        timer_started_at: null,
+        ...(approve ? {} : { rework_count: (task.rework_count ?? 0) + 1 }),
+      })
       .eq("id", taskId)
     if (error) return fail(error, "Could not record the QC decision.")
+
+    if (approve) {
+      const { data: siblings } = await svc.from("technician_tasks").select("status").eq("job_id", task.job_id)
+      const allPassed = (siblings ?? []).length > 0 && (siblings ?? []).every((s) => s.status === "qc_approved" || s.status === "cancelled")
+      if (allPassed && STAGE_ORDER.indexOf(task.jobs.stage as Stage) < STAGE_ORDER.indexOf("quality_control")) {
+        // Hands the car to the existing final workshop QC; that stage's own gate still applies.
+        await transitionJobStage({
+          jobId: task.job_id,
+          toStage: "quality_control",
+          actorId: ctx.userId,
+          actorRole: ctx.role,
+          source: "system",
+          reason: "All technician tasks passed Master Technician QC",
+        })
+      }
+      if (allPassed) {
+        await notifyPermissionHolders(["jobs.qc_approve"], {
+          title: `Ready for final QC: job ${task.jobs.job_number ?? ""}`,
+          body: `All technician tasks passed technical QC (${ctx.name}).`,
+          type: "job",
+          link: `/jobs/${task.job_id}`,
+        }, ctx.userId)
+      }
+    }
     await notifyUserIds([task.technician_id], {
       title: approve ? `QC approved: ${task.title}` : `Rework required: ${task.title}`,
       body: cleanNote || `Checked by ${ctx.name}`,

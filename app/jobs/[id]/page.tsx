@@ -38,6 +38,8 @@ import { normalizeChecklist, type JobType } from "@/lib/full-inspection-config"
 import { TechnicianJobCard } from "@/components/technician-job-card"
 import { TechPartsRequest } from "@/components/tech-parts-request"
 import { AssignTaskPanel, type JobTask } from "@/components/technician/assign-task-panel"
+import { MasterTechCard } from "@/components/technician/master-tech-card"
+import { MASTER_ELIGIBLE_ROLES } from "@/lib/master-tech"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { RefreshVehicleImageButton } from "@/components/refresh-vehicle-image"
 import { STAGE_MAP, QC_STATUSES, canViewPrices, type Stage } from "@/lib/constants"
@@ -442,15 +444,30 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const viewerTrade: Trade =
     jobTechs.find((t) => t.user_id === viewerId)?.trade ?? tradeFromTitle(viewerProfile?.job_title)
   const canAssign = sessionCtx?.permissions.has("jobs.assign") ?? false
-  const { data: taskRows } = await supabase
+  const isJobMaster = Boolean(viewerId && job.master_technician_id === viewerId)
+  const canAssignTasks = canAssign || (isJobMaster && (sessionCtx?.permissions.has("tasks.assign") ?? false))
+  const canOverrideMaster = sessionCtx?.permissions.has("jobs.override_master") ?? false
+  const canPickMaster =
+    job.stage !== "delivered" &&
+    (canOverrideMaster ||
+      ((sessionCtx?.permissions.has("jobs.assign_master") ?? false) && (canAssign || job.advisor_id === viewerId)))
+  // A Master Technician sees every task on the job card they lead, which RLS would otherwise hide.
+  const taskClient = isJobMaster ? createServiceClient() : supabase
+  const { data: taskRows } = await taskClient
     .from("technician_tasks")
-    .select("id, title, status, priority, deadline, worked_seconds, timer_started_at, technician_id")
+    .select("id, title, status, priority, deadline, worked_seconds, timer_started_at, technician_id, estimated_hours, chargeable")
     .eq("job_id", id)
     .order("created_at")
   const jobTasks: JobTask[] = (taskRows ?? []).map((t) => ({
     ...t,
     technician_name: uploaderNames[t.technician_id] ?? "Technician",
   }))
+  const { data: masterHistory } = await createServiceClient()
+    .from("job_master_assignments")
+    .select("id, from_technician_id, to_technician_id, reason, is_override, actor_id, created_at")
+    .eq("job_id", id)
+    .order("created_at", { ascending: false })
+    .limit(10)
 
   const stageMeta = STAGE_MAP[job.stage as Stage]
   const vehicle =
@@ -924,11 +941,22 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             canChangeAdvisor={isOwner}
           />
 
+          <MasterTechCard
+            jobId={job.id}
+            masterId={job.master_technician_id ?? null}
+            masterAssignedAt={job.master_assigned_at ?? null}
+            technicians={(staff ?? []).filter((s) => MASTER_ELIGIBLE_ROLES.includes(s.role))}
+            names={uploaderNames}
+            history={masterHistory ?? []}
+            canPick={canPickMaster}
+          />
+
           <AssignTaskPanel
             jobId={job.id}
             tasks={jobTasks}
-            technicians={(staff ?? []).filter((s) => s.role === "technician" || s.role === "workshop_supervisor")}
-            canAssign={canAssign}
+            technicians={(staff ?? []).filter((s) => MASTER_ELIGIBLE_ROLES.includes(s.role))}
+            canAssign={canAssignTasks}
+            approved={job.approval_status === "approved"}
           />
 
           {!showPrices && (canManageExpenses || isOwner) && (

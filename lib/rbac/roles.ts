@@ -8,6 +8,7 @@ export type Role =
   | "general_manager"
   | "workshop_manager"
   | "workshop_supervisor"
+  | "master_technician"
   | "service_advisor"
   | "reception"
   | "technician"
@@ -50,6 +51,7 @@ export const ROLE_LIST: RoleMeta[] = [
   { value: "general_manager", team: "management", label: "General Manager", description: "Full operational access; cannot edit the permission matrix.", home: "/", staff: true },
   { value: "workshop_manager", team: "workshop", label: "Workshop Manager", description: "Runs the workshop: creates and assigns job cards, manages technicians and job flow.", home: "/flow", staff: true },
   { value: "workshop_supervisor", team: "workshop", label: "Workshop Supervisor", description: "Assigns and manages workshop jobs and technicians.", home: "/flow", staff: true },
+  { value: "master_technician", team: "workshop", label: "Master Technician", description: "Leads assigned job cards: splits work into technician tasks, tracks progress and performs technical QC. No prices or invoices.", home: "/master", staff: true },
   { value: "service_advisor", team: "front_office", label: "Service Advisor", description: "Job card control only: customers, vehicles, job cards and their quotations/invoices at selling price. No reports, garage finances, purchase costs or profit.", home: "/jobs", staff: true },
   { value: "reception", team: "front_office", label: "Reception", description: "Front desk intake: registers customers, vehicles and opens job cards.", home: "/", staff: true },
   { value: "technician", team: "workshop", label: "Technician", description: "Workshop technicians (mechanic, denter, painter, electrician, detailer — set by job title). Works on assigned jobs: sees the customer request, records inspection, diagnosis and photos, and requests parts. No prices or invoices.", home: "/jobs", staff: true },
@@ -85,6 +87,7 @@ export type Permission =
   | "customers.view" | "customers.create" | "customers.edit" | "customers.delete"
   | "vehicles.view" | "vehicles.create" | "vehicles.edit" | "vehicles.transfer" | "vehicles.delete"
   | "jobs.view_all" | "jobs.view_assigned" | "jobs.create" | "jobs.edit" | "jobs.update_status" | "jobs.assign" | "jobs.delete" | "jobs.qc_approve"
+  | "jobs.assign_master" | "jobs.override_master" | "tasks.assign"
   | "inspection.manage" | "diagnostics.manage" | "parts.request"
   | "quotations.view" | "quotations.create" | "quotations.edit" | "quotations.approve"
   | "invoices.view" | "invoices.create" | "invoices.edit"
@@ -139,6 +142,9 @@ export const PERMISSION_CATALOG: PermGroup[] = [
       { key: "jobs.update_status", label: "Update job status" },
       { key: "jobs.assign", label: "Assign technicians" },
       { key: "jobs.qc_approve", label: "Approve or reject technician work (QC)" },
+      { key: "jobs.assign_master", label: "Assign the Master Technician to a job card" },
+      { key: "jobs.override_master", label: "Override another person's Master Technician assignment" },
+      { key: "tasks.assign", label: "Split job cards into technician tasks" },
       { key: "jobs.delete", label: "Delete job cards" },
     ],
   },

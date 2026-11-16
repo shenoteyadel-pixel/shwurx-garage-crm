@@ -17,6 +17,8 @@ export type JobTask = {
   worked_seconds: number
   timer_started_at: string | null
   technician_name: string
+  estimated_hours?: number | null
+  chargeable?: boolean
 }
 
 const TRADES = ["Mechanical", "Electrical", "Body / denting", "Paint", "AC", "Diagnosis", "Detailing"]
@@ -26,11 +28,13 @@ export function AssignTaskPanel({
   tasks,
   technicians,
   canAssign,
+  approved = true,
 }: {
   jobId: string
   tasks: JobTask[]
   technicians: { id: string; full_name: string | null; job_title: string | null }[]
   canAssign: boolean
+  approved?: boolean
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
@@ -60,6 +64,8 @@ export function AssignTaskPanel({
                   <span className="text-sm font-medium">{t.title}</span>
                   <span className="text-xs text-muted-foreground">
                     {t.technician_name} · {formatDuration(liveSeconds(t.worked_seconds, t.timer_started_at))}
+                    {t.estimated_hours ? ` of ${t.estimated_hours} h` : ""}
+                    {t.chargeable && !approved ? " · waiting for customer approval" : ""}
                     {t.deadline ? ` · due ${new Date(t.deadline).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}` : ""}
                   </span>
                 </div>
@@ -88,19 +94,22 @@ export function AssignTaskPanel({
             })
           }}
         >
-          <Field label="Technician" htmlFor="t-tech">
-            <Select id="t-tech" name="technician_id" required defaultValue="">
-              <option value="" disabled>
-                Choose…
-              </option>
+          <fieldset className="flex flex-col gap-2 md:col-span-2">
+            <legend className="mb-1 text-sm font-medium">Technicians</legend>
+            <p className="text-xs text-muted-foreground">Pick one or more. Each person gets their own task and timer.</p>
+            <div className="flex flex-wrap gap-2">
               {technicians.map((t) => (
-                <option key={t.id} value={t.id}>
+                <label
+                  key={t.id}
+                  className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/10"
+                >
+                  <input type="checkbox" name="technician_id" value={t.id} className="accent-primary" />
                   {t.full_name ?? "Unnamed"}
-                  {t.job_title ? ` — ${t.job_title}` : ""}
-                </option>
+                  {t.job_title ? <span className="text-muted-foreground">{t.job_title}</span> : null}
+                </label>
               ))}
-            </Select>
-          </Field>
+            </div>
+          </fieldset>
           <Field label="Trade" htmlFor="t-trade">
             <Select id="t-trade" name="trade" defaultValue="Mechanical">
               {TRADES.map((t) => (
@@ -126,6 +135,16 @@ export function AssignTaskPanel({
           <Field label="Deadline" htmlFor="t-dead">
             <Input id="t-dead" name="deadline" type="datetime-local" />
           </Field>
+          <Field label="Estimated hours" htmlFor="t-hours">
+            <Input id="t-hours" name="estimated_hours" type="number" min={0} max={500} step={0.25} inputMode="decimal" />
+          </Field>
+          <label className="flex items-center gap-2 self-end pb-2 text-sm">
+            <input type="checkbox" name="chargeable" defaultChecked className="accent-primary" />
+            Chargeable repair work
+            <span className="text-xs text-muted-foreground">
+              {approved ? "" : "(can start only after customer approval)"}
+            </span>
+          </label>
           <div className="flex items-center gap-3 md:col-span-2">
             <Button type="submit" disabled={pending}>
               {pending ? "Assigning…" : "Assign and notify"}

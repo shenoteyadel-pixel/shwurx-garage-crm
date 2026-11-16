@@ -6,13 +6,22 @@ import { ctxCan, logCurrent, requirePermission } from "@/lib/rbac/context"
 import {
   PART_SOURCES,
   TARGET_CATEGORIES,
+  isClosedMonth,
   normalizeBuckets,
+  normalizeDefaults,
   progressFor,
+  resolveRule,
   sumAmounts,
+  type DefaultTargets,
   type PartBuckets,
   type TargetCategory,
 } from "@/lib/advisor-performance"
-import { loadCollections, loadReviewRequests, loadTargets } from "@/lib/advisor-performance-data"
+import {
+  loadCollections,
+  loadPerformanceSettings,
+  loadReviewRequests,
+  loadTargets,
+} from "@/lib/advisor-performance-data"
 import { monthRange } from "@/lib/addon-month"
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string }
@@ -41,6 +50,9 @@ export interface TargetInput {
   commissionPercent: number
   bonusAmount: number
   note?: string
+  enabled?: boolean
+  /** Required when the month is already closed; recorded on the target and in the audit log. */
+  adjustmentReason?: string
 }
 
 /** Replaces the active target. The previous version is kept and marked superseded. */
@@ -51,13 +63,19 @@ export async function saveAdvisorTarget(input: TargetInput): Promise<Result> {
   if (input.scope !== "team" && input.scope !== "individual") return fail("Unknown scope.")
   const userId = input.scope === "team" ? null : input.userId
   if (input.scope === "individual" && (!userId || !UUID.test(userId))) return fail("Choose an advisor.")
-  const target = num(input.target)
-  const pct = num(input.commissionPercent)
-  const bonus = num(input.bonusAmount)
+  const enabled = input.enabled !== false
+  const target = enabled ? num(input.target) : 0
+  const pct = enabled ? num(input.commissionPercent) : 0
+  const bonus = enabled ? num(input.bonusAmount) : 0
   if (!(target >= 0) || !(pct >= 0 && pct <= 100) || !(bonus >= 0)) return fail("Enter valid, non-negative values.")
 
   const svc = createServiceClient()
   const month = `${input.month}-01`
+  const { closedThrough } = await loadPerformanceSettings(svc)
+  const closed = isClosedMonth(input.month, closedThrough)
+  const reason = String(input.adjustmentReason ?? "").trim().slice(0, 300)
+  if (closed && reason.length < 10)
+    return fail(`${input.month} is a closed period. Give an adjustment reason (at least 10 characters) to change it.`)
   if (userId) {
     const { data: p } = await svc.from("profiles").select("role").eq("id", userId).maybeSingle()
     if (p?.role !== "service_advisor") return fail("Targets can only be set for service advisors.")
@@ -65,7 +83,7 @@ export async function saveAdvisorTarget(input: TargetInput): Promise<Result> {
 
   let prevQ = svc
     .from("advisor_targets")
-    .select("id, target, commission_percent, bonus_amount")
+    .select("id, target, commission_percent, bonus_amount, enabled")
     .eq("scope", input.scope)
     .eq("category", input.category)
     .eq("month", month)
@@ -90,6 +108,8 @@ export async function saveAdvisorTarget(input: TargetInput): Promise<Result> {
       target,
       commission_percent: pct,
       bonus_amount: bonus,
+      enabled,
+      adjustment_reason: closed ? reason : null,
       note: String(input.note ?? "").trim().slice(0, 300) || null,
       created_by: ctx.userId,
     })
@@ -97,13 +117,15 @@ export async function saveAdvisorTarget(input: TargetInput): Promise<Result> {
     .single()
   if (error) return fail(error.message)
 
-  await logCurrent(prev ? "advisor_target.update" : "advisor_target.create", "advisor_target", row.id, {
+  const action = closed ? "advisor_target.closed_adjustment" : prev ? "advisor_target.update" : "advisor_target.create"
+  await logCurrent(action, "advisor_target", row.id, {
     scope: input.scope,
     user_id: userId,
     category: input.category,
     month: input.month,
     before: prev ?? null,
-    after: { target, commission_percent: pct, bonus_amount: bonus },
+    after: { target, commission_percent: pct, bonus_amount: bonus, enabled },
+    ...(closed ? { adjustment_reason: reason, closed_through: closedThrough } : {}),
   })
   refresh()
   return { ok: true }
@@ -120,14 +142,17 @@ export async function approveAdvisorCommission(input: {
   const ctx = await requirePermission("payroll.manage")
   if (!MONTH.test(input.month) || !UUID.test(input.userId) || !TARGET_CATEGORIES.includes(input.category))
     return fail("Invalid request.")
+  if (input.category === "addon")
+    return fail("Add-on commission is approved in the Add-on Sales dashboard, based on profit.")
 
   const range = monthRange(input.month)
-  const [targets, achieved] = await Promise.all([
+  const [targets, achieved, settings] = await Promise.all([
     loadTargets({ fromMonth: range.from, toMonth: range.from, userId: input.userId }),
     achievedFor(input.userId, input.category, range.from, range.to),
+    loadPerformanceSettings(),
   ])
-  const rule = targets.find((t) => t.scope === "individual" && t.user_id === input.userId && t.category === input.category)
-  if (!rule) return fail("No target is set for this advisor and month.")
+  const { rule } = resolveRule(targets, "individual", input.userId, input.category, settings.defaults)
+  if (!rule) return fail("This category is disabled or has no target for this advisor and month.")
   const p = progressFor(rule, achieved)
 
   const svc = createServiceClient()
@@ -175,8 +200,46 @@ async function achievedFor(userId: string, category: TargetCategory, from: strin
     const reqs = await loadReviewRequests({ from, toExclusive, advisorId: userId })
     return reqs.filter((r) => r.verified_at).length
   }
+  if (category === "addon") return 0
   const { rows } = await loadCollections({ from, toExclusive, advisorId: userId })
   return sumAmounts(rows)[category]
+}
+
+/* ---------------- Default targets & closed periods ---------------- */
+
+/** Company-wide defaults used when an advisor has no explicit target, plus the closed-through date. */
+export async function saveTargetDefaults(input: {
+  defaults: Partial<DefaultTargets>
+  closedThrough: string | null
+  reason?: string
+}): Promise<Result> {
+  await requirePermission("payroll.manage")
+  const defaults = normalizeDefaults(input.defaults)
+  for (const c of TARGET_CATEGORIES) {
+    const v = Number(input.defaults[c])
+    if (!Number.isFinite(v) || v < 0) return fail("Defaults must be non-negative numbers.")
+  }
+  const closedThrough = input.closedThrough?.trim() || null
+  if (closedThrough && !/^\d{4}-\d{2}-\d{2}$/.test(closedThrough)) return fail("Choose a valid closing date.")
+
+  const svc = createServiceClient()
+  const before = await loadPerformanceSettings(svc)
+  const reopening = Boolean(before.closedThrough) && (!closedThrough || closedThrough < String(before.closedThrough))
+  const reason = String(input.reason ?? "").trim().slice(0, 300)
+  if (reopening && reason.length < 10) return fail("Reopening a closed period needs a reason (at least 10 characters).")
+
+  const { error } = await svc
+    .from("settings")
+    .update({ advisor_default_targets: defaults, performance_closed_through: closedThrough })
+    .eq("id", 1)
+  if (error) return fail(error.message)
+  await logCurrent("performance_settings.targets", "performance_settings", "1", {
+    before: { defaults: before.defaults, closed_through: before.closedThrough },
+    after: { defaults, closed_through: closedThrough },
+    ...(reopening ? { reopen_reason: reason } : {}),
+  })
+  refresh()
+  return { ok: true }
 }
 
 /* ---------------- Settings & classification ---------------- */

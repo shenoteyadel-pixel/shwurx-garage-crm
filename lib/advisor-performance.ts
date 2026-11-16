@@ -5,10 +5,37 @@
 
 export const MONEY_CATEGORIES = ["labour", "used_parts", "new_parts"] as const
 export type MoneyCategory = (typeof MONEY_CATEGORIES)[number]
-export type TargetCategory = MoneyCategory | "reviews"
-export const TARGET_CATEGORIES: TargetCategory[] = ["labour", "used_parts", "new_parts", "reviews"]
+export type TargetCategory = MoneyCategory | "addon" | "reviews"
+export const TARGET_CATEGORIES: TargetCategory[] = ["labour", "used_parts", "new_parts", "addon", "reviews"]
+/** Categories that make up the Main Sales Target. Add-on and reviews are tracked separately. */
+export const MAIN_CATEGORIES: MoneyCategory[] = ["labour", "used_parts", "new_parts"]
 
-export const CATEGORY_LABEL: Record<TargetCategory | "addon", string> = {
+export type DefaultTargets = Record<TargetCategory, number>
+export const DEFAULT_TARGETS: DefaultTargets = {
+  labour: 50000,
+  used_parts: 20000,
+  new_parts: 30000,
+  addon: 10000,
+  reviews: 20,
+}
+
+export function normalizeDefaults(raw: unknown): DefaultTargets {
+  const out = { ...DEFAULT_TARGETS }
+  if (raw && typeof raw === "object") {
+    for (const key of TARGET_CATEGORIES) {
+      const v = Number((raw as Record<string, unknown>)[key])
+      if (Number.isFinite(v) && v >= 0) out[key] = v
+    }
+  }
+  return out
+}
+
+/** A month (YYYY-MM) is closed when it starts on or before the closed-through date. */
+export function isClosedMonth(month: string, closedThrough: string | null | undefined) {
+  return Boolean(closedThrough) && `${month}-01` <= String(closedThrough).slice(0, 10)
+}
+
+export const CATEGORY_LABEL: Record<TargetCategory, string> = {
   labour: "Labour Sales",
   used_parts: "Used Parts Sales",
   new_parts: "New Parts Sales",
@@ -250,12 +277,40 @@ export interface TargetLike extends TargetRule {
   user_id: string | null
   category: string
   month: string
+  enabled?: boolean
+}
+
+export type TargetSource = "custom" | "default" | "disabled" | "none"
+
+/**
+ * The rule that applies to one advisor (or the team) and category: an explicit target wins,
+ * a disabled explicit target switches the category off, otherwise individuals fall back to the
+ * company default (no commission on defaults until an admin sets one).
+ */
+export function resolveRule(
+  targets: TargetLike[],
+  scope: "individual" | "team",
+  userId: string | null,
+  category: TargetCategory,
+  defaults?: DefaultTargets,
+): { rule: TargetRule | undefined; source: TargetSource } {
+  const t = targets.find(
+    (x) => x.scope === scope && x.category === category && (scope === "team" || x.user_id === userId),
+  )
+  if (t) return t.enabled === false ? { rule: undefined, source: "disabled" } : { rule: t, source: "custom" }
+  if (scope === "individual" && defaults && defaults[category] > 0)
+    return { rule: { target: defaults[category], commission_percent: 0, bonus_amount: 0 }, source: "default" }
+  return { rule: undefined, source: "none" }
 }
 
 export interface CategoryCard extends Progress {
   category: TargetCategory
   hasTarget: boolean
+  source: TargetSource
   approved: number | null
+  today: number
+  /** Average needed per remaining day to reach the target; null once the month is over or met. */
+  dailyNeeded: number | null
 }
 
 export interface Scorecard {
@@ -264,30 +319,85 @@ export interface Scorecard {
   cards: CategoryCard[]
   estimated: number
   approved: number
+  mainTarget: number
+  mainAchieved: number
+  mainPercent: number
+}
+
+type PerCategory = Partial<Record<TargetCategory, number>>
+
+function makeCard(
+  category: TargetCategory,
+  resolved: { rule: TargetRule | undefined; source: TargetSource },
+  value: number,
+  today: number,
+  daysLeft: number,
+  approved: number | null,
+): CategoryCard {
+  const p = progressFor(resolved.rule, value)
+  // Add-on commission is paid on profit through the Add-on module, so the card never adds a second payment.
+  const commission = category === "addon" ? 0 : p.commission
+  const needed =
+    resolved.rule && daysLeft > 0 && p.remaining > 0
+      ? category === "reviews"
+        ? Math.ceil(p.remaining / daysLeft)
+        : r2(p.remaining / daysLeft)
+      : null
+  return {
+    ...p,
+    commission,
+    category,
+    hasTarget: Boolean(resolved.rule),
+    source: resolved.source,
+    approved,
+    today: r2(today),
+    dailyNeeded: needed,
+  }
 }
 
 /** One month's target-vs-actual per advisor and category. */
 export function buildScorecards(input: {
   advisors: { id: string; name: string }[]
-  rows: { advisor_id: string | null; amounts: CategoryAmounts }[]
+  rows: { advisor_id: string | null; day?: string; amounts: CategoryAmounts }[]
   verifiedByAdvisor: Map<string, number>
   targets: TargetLike[]
   approvals: { user_id: string; category: string; amount: number }[]
+  addonByAdvisor?: Map<string, number>
+  defaults?: DefaultTargets
+  todayKey?: string
+  todayExtras?: Map<string, PerCategory>
+  daysLeft?: number
 }): Scorecard[] {
+  const daysLeft = input.daysLeft ?? 0
   return input.advisors.map((a) => {
-    const achieved = sumAmounts(input.rows.filter((r) => r.advisor_id === a.id))
+    const mine = input.rows.filter((r) => r.advisor_id === a.id)
+    const achieved = sumAmounts(mine)
+    const todayMoney = sumAmounts(input.todayKey ? mine.filter((r) => r.day === input.todayKey) : [])
+    const extras = input.todayExtras?.get(a.id) ?? {}
     const cards = TARGET_CATEGORIES.map((category) => {
-      const rule = input.targets.find((t) => t.scope === "individual" && t.user_id === a.id && t.category === category)
-      const value = category === "reviews" ? (input.verifiedByAdvisor.get(a.id) ?? 0) : achieved[category]
+      const resolved = resolveRule(input.targets, "individual", a.id, category, input.defaults)
+      const value =
+        category === "reviews"
+          ? (input.verifiedByAdvisor.get(a.id) ?? 0)
+          : category === "addon"
+            ? (input.addonByAdvisor?.get(a.id) ?? 0)
+            : achieved[category]
+      const today = category === "reviews" || category === "addon" ? (extras[category] ?? 0) : todayMoney[category]
       const approval = input.approvals.find((x) => x.user_id === a.id && x.category === category)
-      return { ...progressFor(rule, value), category, hasTarget: Boolean(rule), approved: approval ? approval.amount : null }
+      return makeCard(category, resolved, value, today, daysLeft, approval ? approval.amount : null)
     })
+    const main = cards.filter((c) => (MAIN_CATEGORIES as string[]).includes(c.category) && c.hasTarget)
+    const mainTarget = r2(main.reduce((s, c) => s + c.target, 0))
+    const mainAchieved = r2(MAIN_CATEGORIES.reduce((s, c) => s + achieved[c], 0))
     return {
       advisorId: a.id,
       name: a.name,
       cards,
       estimated: r2(cards.reduce((s, c) => s + c.commission, 0)),
       approved: r2(cards.reduce((s, c) => s + (c.approved ?? 0), 0)),
+      mainTarget,
+      mainAchieved,
+      mainPercent: mainTarget > 0 ? Math.round((mainAchieved / mainTarget) * 1000) / 10 : 0,
     }
   })
 }
@@ -297,13 +407,51 @@ export function buildTeamCards(
   rows: { amounts: CategoryAmounts }[],
   verifiedTotal: number,
   targets: TargetLike[],
+  addonTotal = 0,
 ): CategoryCard[] {
   const achieved = sumAmounts(rows)
   return TARGET_CATEGORIES.map((category) => {
-    const rule = targets.find((t) => t.scope === "team" && t.category === category)
-    const value = category === "reviews" ? verifiedTotal : achieved[category]
-    return { ...progressFor(rule, value), category, hasTarget: Boolean(rule), approved: null }
+    const resolved = resolveRule(targets, "team", null, category)
+    const value = category === "reviews" ? verifiedTotal : category === "addon" ? addonTotal : achieved[category]
+    return makeCard(category, resolved, value, 0, 0, null)
   })
+}
+
+export interface LeaderboardEntry {
+  rank: number
+  advisorId: string
+  name: string
+  mainAchieved: number
+  mainTarget: number
+  mainPercent: number
+  addon: number
+  reviews: number
+}
+
+/** Ranked by Main Sales achievement against target, then by collected value. Add-on and reviews are shown, not ranked. */
+export function leaderboard(scorecards: Scorecard[]): LeaderboardEntry[] {
+  return [...scorecards]
+    .sort((a, b) => b.mainPercent - a.mainPercent || b.mainAchieved - a.mainAchieved || a.name.localeCompare(b.name))
+    .map((s, i) => ({
+      rank: i + 1,
+      advisorId: s.advisorId,
+      name: s.name,
+      mainAchieved: s.mainAchieved,
+      mainTarget: s.mainTarget,
+      mainPercent: s.mainPercent,
+      addon: s.cards.find((c) => c.category === "addon")?.achieved ?? 0,
+      reviews: s.cards.find((c) => c.category === "reviews")?.achieved ?? 0,
+    }))
+}
+
+/** Days left in the month including today; 0 for past months, the full month for future months. */
+export function daysLeftInMonth(month: string, todayKey: string) {
+  const [y, m] = month.split("-").map(Number)
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  const cur = todayKey.slice(0, 7)
+  if (cur > month) return 0
+  if (cur < month) return last
+  return last - Number(todayKey.slice(8, 10)) + 1
 }
 
 export interface BreakdownRow extends CategoryAmounts {

@@ -3,9 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Loader2, RotateCcw, UserCog, Wrench } from "lucide-react"
-import { Button, Card, Select, Textarea } from "@/components/ui"
+import { Building2, Loader2, RotateCcw, UserCog, Wallet, Wrench } from "lucide-react"
+import { Button, Card, Input, Select, Textarea } from "@/components/ui"
 import { createComebackJob, setComebackResponsibility } from "@/lib/actions-comeback"
+import { closeComebackPayment } from "@/lib/actions"
 import {
   COMEBACK_RESPONSIBILITIES,
   blamesAdvisor,
@@ -24,7 +25,23 @@ export type ComebackInfo = {
   technicianName: string | null
 }
 
-export function ComebackBanner({ jobId, info, isOwner }: { jobId: string; info: ComebackInfo; isOwner: boolean }) {
+export function ComebackBanner({
+  jobId,
+  info,
+  isOwner,
+  canClosePayment = false,
+  paidAt = null,
+  paymentMethod = null,
+  paidAmount = null,
+}: {
+  jobId: string
+  info: ComebackInfo
+  isOwner: boolean
+  canClosePayment?: boolean
+  paidAt?: string | null
+  paymentMethod?: string | null
+  paidAmount?: number | null
+}) {
   const router = useRouter()
   const [editing, setEditing] = React.useState(false)
   const [value, setValue] = React.useState(info.responsibility ?? "none")
@@ -133,7 +150,166 @@ export function ComebackBanner({ jobId, info, isOwner }: { jobId: string; info: 
           </div>
         </div>
       )}
+
+      <p className="mt-4 text-xs text-muted-foreground">
+        Comeback cars move through every stage freely — no approval, diagnosis or QC checks block them.
+      </p>
+
+      <ComebackPaymentClose
+        jobId={jobId}
+        canClose={canClosePayment}
+        paidAt={paidAt}
+        paymentMethod={paymentMethod}
+        paidAmount={paidAmount}
+      />
     </Card>
+  )
+}
+
+const PAYMENT_METHODS = ["Cash", "Card", "Bank transfer", "Payment link"]
+
+function ComebackPaymentClose({
+  jobId,
+  canClose,
+  paidAt,
+  paymentMethod,
+  paidAmount,
+}: {
+  jobId: string
+  canClose: boolean
+  paidAt: string | null
+  paymentMethod: string | null
+  paidAmount: number | null
+}) {
+  const router = useRouter()
+  const [mode, setMode] = React.useState<"garage" | "customer" | null>(null)
+  const [note, setNote] = React.useState("")
+  const [amount, setAmount] = React.useState("")
+  const [method, setMethod] = React.useState(PAYMENT_METHODS[0])
+  const [error, setError] = React.useState<string | null>(null)
+  const [needsInvoice, setNeedsInvoice] = React.useState(false)
+  const [pending, startTransition] = React.useTransition()
+
+  if (paidAt) {
+    const coveredByGarage = paymentMethod === "Covered by garage"
+    return (
+      <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+        <Wallet className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <span className="font-medium text-foreground">Payment closed</span>
+        <span className="text-muted-foreground">
+          {coveredByGarage
+            ? "— covered by garage (no charge)"
+            : `— paid by customer${paidAmount ? ` · AED ${paidAmount.toFixed(2)}` : ""}${paymentMethod ? ` · ${paymentMethod}` : ""}`}
+        </span>
+      </div>
+    )
+  }
+
+  if (!canClose) return null
+
+  function submit() {
+    if (!mode) return
+    setError(null)
+    setNeedsInvoice(false)
+    startTransition(async () => {
+      const parsed = amount.trim() ? Number(amount) : null
+      if (parsed != null && (Number.isNaN(parsed) || parsed < 0)) {
+        setError("Enter a valid amount.")
+        return
+      }
+      const res = await closeComebackPayment(jobId, mode, { amount: parsed, method, note })
+      if (!res.ok) {
+        setError(res.error)
+        setNeedsInvoice(Boolean(res.needsInvoice))
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="mt-4 grid gap-3 rounded-lg border border-border p-3">
+      <p className="text-sm font-semibold text-foreground">Close payment</p>
+      <div role="radiogroup" aria-label="Who pays for this comeback" className="grid gap-2 sm:grid-cols-2">
+        {(
+          [
+            { value: "garage", label: "Covered by garage", hint: "Our side — no charge to the customer, no invoice needed", icon: Building2 },
+            { value: "customer", label: "Customer pays", hint: "Normal invoice and payment", icon: Wallet },
+          ] as const
+        ).map((opt) => {
+          const Icon = opt.icon
+          const active = mode === opt.value
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => setMode(opt.value)}
+              className={cn(
+                "flex items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                active ? "border-primary bg-primary/10" : "border-border hover:bg-muted",
+              )}
+            >
+              <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>
+                <span className="block font-medium text-foreground">{opt.label}</span>
+                <span className="block text-xs text-muted-foreground">{opt.hint}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {mode === "garage" && (
+        <label className="grid gap-1 text-sm">
+          <span className="text-muted-foreground">Note (optional)</span>
+          <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Redo of brake job under our warranty" />
+        </label>
+      )}
+
+      {mode === "customer" && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-sm">
+            <span className="text-muted-foreground">Amount (AED, optional)</span>
+            <Input type="number" min="0" step="0.01" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-muted-foreground">Method</span>
+            <Select value={method} onChange={(e) => setMethod(e.target.value)}>
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </Select>
+          </label>
+        </div>
+      )}
+
+      {error && (
+        <p className="text-sm text-red-500">
+          {error}
+          {needsInvoice && (
+            <>
+              {" "}
+              <Link href={`/invoices/new?job=${jobId}`} className="underline underline-offset-2">
+                Create invoice
+              </Link>
+            </>
+          )}
+        </p>
+      )}
+
+      {mode && (
+        <div>
+          <Button size="sm" onClick={submit} disabled={pending}>
+            {pending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+            {mode === "garage" ? "Close as covered by garage" : "Record customer payment"}
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -137,10 +137,10 @@ async function assertWorkAuthorized(taskId: string) {
   const svc = createServiceClient()
   const { data } = await svc
     .from("technician_tasks")
-    .select("chargeable, jobs!inner(approval_status)")
+    .select("chargeable, jobs!inner(approval_status, comeback_of)")
     .eq("id", taskId)
-    .maybeSingle<{ chargeable: boolean; jobs: { approval_status: string | null } }>()
-  if (data?.chargeable && data.jobs?.approval_status !== "approved") {
+    .maybeSingle<{ chargeable: boolean; jobs: { approval_status: string | null; comeback_of: string | null } }>()
+  if (data?.chargeable && !data.jobs?.comeback_of && data.jobs?.approval_status !== "approved") {
     throw new Error("Customer approval is needed before chargeable work can start. Inspection and diagnosis tasks can go ahead.")
   }
 }

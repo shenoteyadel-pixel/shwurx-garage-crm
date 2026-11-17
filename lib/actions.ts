@@ -186,7 +186,8 @@ async function workGateForMove(
   jobId: string,
   stage: Stage,
 ): Promise<string | null> {
-  const { data: current } = await supabase.from("jobs").select("stage").eq("id", jobId).maybeSingle()
+  const { data: current } = await supabase.from("jobs").select("stage, comeback_of").eq("id", jobId).maybeSingle()
+  if (current?.comeback_of) return null
   const scope = requiredScopeForMove((current?.stage as Stage | undefined) ?? null, stage)
   if (!scope) return null
   const check = await checkWorkAuthorization(jobId, scope)
@@ -335,6 +336,69 @@ export async function markJobPaid(
   revalidatePath("/flow")
   revalidatePath("/history")
   revalidatePath("/invoices")
+  revalidatePath(`/jobs/${jobId}`)
+  return { ok: true }
+}
+
+const GARAGE_COVERED_METHOD = "Covered by garage"
+
+/**
+ * Closes payment on a comeback job either way:
+ * - "garage": the shop absorbs the cost. No invoice is needed; the job is
+ *   delivered with a zero amount and a gate pass is issued.
+ * - "customer": the customer pays. Uses the normal invoice-backed payment.
+ */
+export async function closeComebackPayment(
+  jobId: string,
+  mode: "garage" | "customer",
+  opts: { amount?: number | null; method?: string | null; note?: string | null } = {},
+): Promise<{ ok: true } | { ok: false; error: string; needsInvoice?: boolean }> {
+  const { supabase, ctx } = await guard("jobs.update_status")
+  const { data: job } = await supabase
+    .from("jobs")
+    .select("id, comeback_of, paid_at")
+    .eq("id", jobId)
+    .maybeSingle()
+  if (!job) return { ok: false, error: "Job not found or not accessible." }
+  if (!job.comeback_of) return { ok: false, error: "This option is only for comeback job cards." }
+  if (job.paid_at) return { ok: false, error: "Payment on this job is already closed." }
+
+  if (mode === "customer") return markJobPaid(jobId, { amount: opts.amount, method: opts.method })
+  if (mode !== "garage") return { ok: false, error: "Choose who pays." }
+
+  const { data: openInvoices } = await supabase
+    .from("invoices")
+    .select("id, total, amount_paid")
+    .eq("job_id", jobId)
+    .in("status", ["unpaid", "partial"])
+  const outstanding = (openInvoices ?? []).some((i) => (Number(i.total) || 0) - (Number(i.amount_paid) || 0) > 0.01)
+  if (outstanding) {
+    return {
+      ok: false,
+      error: "This job has an unpaid invoice. Cancel it first, or choose \"Customer pays\".",
+    }
+  }
+
+  const note = opts.note?.trim() || null
+  const nowIso = new Date().toISOString()
+  const moved = await transitionJobStage({
+    jobId,
+    toStage: "delivered",
+    actorId: ctx.userId,
+    actorRole: ctx.role,
+    source: "payment",
+    reason: note,
+    extraPatch: { paid_at: nowIso, paid_amount: 0, payment_method: GARAGE_COVERED_METHOD },
+  })
+  if (!moved.ok) return { ok: false, error: moved.error }
+  await onJobDelivered(supabase, jobId)
+  await issueGatePass(jobId, { amount: 0, method: GARAGE_COVERED_METHOD, issuedBy: ctx.userId })
+
+  await logAction(ctx, "job.comeback_close_garage", "job", jobId, { note })
+  revalidatePath("/crm")
+  revalidatePath("/flow")
+  revalidatePath("/history")
+  revalidatePath("/comebacks")
   revalidatePath(`/jobs/${jobId}`)
   return { ok: true }
 }

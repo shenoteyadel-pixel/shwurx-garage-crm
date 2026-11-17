@@ -58,6 +58,7 @@ type JobRow = {
   advisor_id: string | null
   qc_status: string | null
   stage_entered_at: string | null
+  comeback_of: string | null
 }
 
 export async function getStageRules(): Promise<Map<Stage, StageRule>> {
@@ -112,7 +113,7 @@ export async function transitionJobStage(input: TransitionInput): Promise<Transi
   const svc = createServiceClient()
   const { data: job, error: loadErr } = await svc
     .from("jobs")
-    .select("id, stage, complaint, diagnosis, technician_id, advisor_id, qc_status, stage_entered_at")
+    .select("id, stage, complaint, diagnosis, technician_id, advisor_id, qc_status, stage_entered_at, comeback_of")
     .eq("id", input.jobId)
     .maybeSingle<JobRow>()
   if (loadErr || !job) return { ok: false, error: "Job not found." }
@@ -123,7 +124,8 @@ export async function transitionJobStage(input: TransitionInput): Promise<Transi
   const isForward = STAGE_ORDER.indexOf(input.toStage) > STAGE_ORDER.indexOf(fromStage)
 
   let overriddenChecks: RequiredCheck[] = []
-  if (isForward && rule) {
+  // Comeback cars move freely through the flow: the shop already owns the fix.
+  if (isForward && rule && !job.comeback_of) {
     const failed = await evaluateChecks(job, rule.required_checks ?? [])
     if (failed.length) {
       const canOverride = OVERRIDE_ROLES.includes(input.actorRole)

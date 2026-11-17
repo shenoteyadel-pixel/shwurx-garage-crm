@@ -609,7 +609,17 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         )}
       </div>
 
-      {comebackInfo && <ComebackBanner jobId={job.id} info={comebackInfo} isOwner={isOwner} />}
+      {comebackInfo && (
+        <ComebackBanner
+          jobId={job.id}
+          info={comebackInfo}
+          isOwner={isOwner}
+          canClosePayment={sessionCtx?.permissions.has("jobs.update_status") ?? false}
+          paidAt={job.paid_at ?? null}
+          paymentMethod={job.payment_method ?? null}
+          paidAmount={job.paid_amount != null ? Number(job.paid_amount) : null}
+        />
+      )}
       {(laterComebacks?.length ?? 0) > 0 && (
         <p className="mb-4 text-sm text-amber-500">
           This car came back after this job:{" "}

@@ -465,6 +465,23 @@ function QuotationEditor({
   function remove(id: number) {
     setItems((prev) => prev.filter((_, i) => i !== id))
   }
+  function addLabourForPart(partIndex: number, preset: LabourPreset, hours: number) {
+    setItems((prev) => {
+      const part = prev[partIndex]
+      if (!part) return prev
+      const partName = part.name.trim()
+      const line: Item = {
+        ...emptyItem("labor"),
+        name: partName ? `${preset.name} — ${partName}` : preset.name,
+        detail: partName ? `Labour for: ${partName}` : "",
+        labour_rate: preset.rate,
+        labour_hours: preset.rate_type === "fixed" ? 1 : hours,
+        category: preset.category,
+        recommendation: part.recommendation,
+      }
+      return [...prev, line]
+    })
+  }
 
   async function save() {
     setSaving(true)
@@ -568,6 +585,8 @@ function QuotationEditor({
                     inclusive={inclusive}
                     onChange={(patch) => update(index, patch)}
                     onRemove={() => remove(index)}
+                    linkedHours={labourHoursForPart(items, it.name)}
+                    onAddLabour={(preset, hours) => addLabourForPart(index, preset, hours)}
                   />
                 ))}
                 {partRows.length === 0 && (
@@ -674,6 +693,7 @@ function QuotationEditor({
                 {t.discountTotal > 0 && <SummaryRow label="Discount applied" value={`− ${formatCurrency(t.discountTotal)}`} />}
                 <SummaryRow label="Subtotal (excl. VAT)" value={formatCurrency(t.subtotal)} />
               </div>
+              <HoursBreakdown items={items} />
               <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <span>VAT</span>
@@ -896,6 +916,8 @@ function PartRow({
   inclusive,
   onChange,
   onRemove,
+  linkedHours,
+  onAddLabour,
 }: {
   it: Item
   catalog: CatalogPart[]
@@ -903,6 +925,8 @@ function PartRow({
   inclusive: boolean
   onChange: (patch: Partial<Item>) => void
   onRemove: () => void
+  linkedHours: number
+  onAddLabour: (preset: LabourPreset, hours: number) => void
 }) {
   const { vat: lineVat, total } = lineParts(it, vat, inclusive)
   const locked = Boolean(it.catalog_revision_id)
@@ -992,7 +1016,129 @@ function PartRow({
         </select>
       </div>
 
+      <PartLabourEstimate linkedHours={linkedHours} onAdd={onAddLabour} />
+
       <LineFooter vat={vat} lineVat={lineVat} total={total} inclusive={inclusive} />
+    </div>
+  )
+}
+
+/* ---------------- Labour hours per part ---------------- */
+function presetDefaultHours(p: LabourPreset | undefined) {
+  if (!p) return 1
+  if (p.rate_type === "fixed") return 1
+  return p.default_hours && p.default_hours > 0 ? p.default_hours : 1
+}
+
+function labourHoursForPart(items: Item[], partName: string) {
+  const name = partName.trim()
+  if (!name) return 0
+  const suffix = ` — ${name}`
+  return items
+    .filter((i) => i.kind === "labor" && i.name.endsWith(suffix))
+    .reduce((s, i) => s + (Number(i.labour_hours) || 0), 0)
+}
+
+function PartLabourEstimate({
+  linkedHours,
+  onAdd,
+}: {
+  linkedHours: number
+  onAdd: (preset: LabourPreset, hours: number) => void
+}) {
+  const presets = React.useContext(LabourPresetsContext)
+  const [presetName, setPresetName] = React.useState(presets[0]?.name ?? "")
+  const preset = presets.find((p) => p.name === presetName) ?? presets[0]
+  const [hours, setHours] = React.useState(() => presetDefaultHours(presets[0]))
+  const fixed = preset?.rate_type === "fixed"
+  const selectId = React.useId()
+  const hoursId = React.useId()
+
+  if (!preset) return null
+
+  return (
+    <div className="mt-3 rounded-lg border border-dashed border-border bg-background/40 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-xs font-medium">
+          <Wrench className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> Labour for this part
+        </span>
+        {linkedHours > 0 && (
+          <span className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-primary">
+            {linkedHours} hrs estimated
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-40 flex-1">
+          <label htmlFor={selectId} className="mb-1 block text-[11px] text-muted-foreground">
+            Work type
+          </label>
+          <select
+            id={selectId}
+            value={preset.name}
+            onChange={(e) => {
+              const next = presets.find((p) => p.name === e.target.value)
+              setPresetName(e.target.value)
+              setHours(presetDefaultHours(next))
+            }}
+            className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+          >
+            {presets.map((p) => (
+              <option key={p.name} value={p.name}>
+                {`${p.name} (${formatCurrency(p.rate)}${p.rate_type === "fixed" ? " fixed" : "/hr"})`}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="w-24">
+          <label htmlFor={hoursId} className="mb-1 block text-[11px] text-muted-foreground">
+            Hours
+          </label>
+          <Input
+            id={hoursId}
+            type="number"
+            min={0}
+            step="0.5"
+            value={fixed ? 1 : hours}
+            disabled={fixed}
+            onChange={(e) => setHours(Math.max(0, Number(e.target.value) || 0))}
+            className="h-9 tabular-nums"
+          />
+        </div>
+        <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => onAdd(preset, hours)}>
+          <Plus className="h-3.5 w-3.5" /> Add labour
+        </Button>
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        Adds a labour line below for this part. You can edit its hours, rate and description at any time.
+      </p>
+    </div>
+  )
+}
+
+function HoursBreakdown({ items }: { items: Item[] }) {
+  const presets = React.useContext(LabourPresetsContext)
+  const groups = new Map<string, number>()
+  for (const i of items) {
+    if (i.kind !== "labor") continue
+    const hrs = Number(i.labour_hours) || 0
+    if (hrs <= 0) continue
+    const match = presets.find((p) => i.name === p.name || i.name.startsWith(`${p.name} — `))
+    const key = match?.name ?? (i.category?.trim() || "Other")
+    groups.set(key, (groups.get(key) ?? 0) + hrs)
+  }
+  if (groups.size === 0) return null
+  const totalHours = [...groups.values()].reduce((s, h) => s + h, 0)
+  return (
+    <div className="space-y-1.5 border-t border-border pt-3 text-sm">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Estimated hours</h4>
+      {[...groups.entries()].map(([name, hrs]) => (
+        <SummaryRow key={name} label={name} value={`${Math.round(hrs * 100) / 100} hrs`} />
+      ))}
+      <div className="flex items-center justify-between font-medium">
+        <span>Total hours</span>
+        <span className="tabular-nums">{`${Math.round(totalHours * 100) / 100} hrs`}</span>
+      </div>
     </div>
   )
 }

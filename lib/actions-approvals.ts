@@ -40,6 +40,7 @@ type SnapshotItem = {
   labour_hours: number
   labour_rate: number
   discount: number
+  lead_time_days?: number | null
   net: number // pre-VAT taxable base — RPC sums this and adds VAT on top
   vat: number
   gross: number
@@ -97,7 +98,7 @@ async function buildQuotationSnapshot(
   const { data: quotation } = await svc
     .from("quotations")
     .select(
-      "id, vat_rate, vat_inclusive, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, discount, category, recommendation, sort_order)",
+      "id, vat_rate, vat_inclusive, quotation_items(kind, name, part_number, detail, description, quantity, unit_price, labour_hours, labour_rate, discount, category, recommendation, sort_order, lead_time_days)",
     )
     .eq("job_id", jobId)
     .order("created_at", { ascending: false })
@@ -128,6 +129,7 @@ async function buildQuotationSnapshot(
       labour_hours: Number(i.labour_hours) || 0,
       labour_rate: Number(i.labour_rate) || 0,
       discount: Number(i.discount) || 0,
+      lead_time_days: i.lead_time_days == null ? null : Number(i.lead_time_days),
       net,
       vat,
       gross,
@@ -406,6 +408,7 @@ export async function createAdditionalWorkRequest(
       labour_hours?: number
       labour_rate?: number
       discount?: number
+      lead_time_days?: number | null
     }[]
   },
 ): Promise<{ ok: boolean; token?: string; url?: string; emailed?: boolean; error?: string }> {
@@ -443,6 +446,7 @@ export async function createAdditionalWorkRequest(
       labour_hours: Number(i.labour_hours) || 0,
       labour_rate: Number(i.labour_rate) || 0,
       discount: Number(i.discount) || 0,
+      lead_time_days: i.lead_time_days == null ? null : Number(i.lead_time_days),
       net,
       vat,
       gross,

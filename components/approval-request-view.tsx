@@ -103,6 +103,7 @@ const T = {
     previouslyApproved: "Already approved",
     approvedOn: "Approved",
     newItems: "Items awaiting your decision",
+    nothingNew: "Everything on this quotation is already approved. No new decision is needed.",
     priority: { required: "Critical", recommended: "Recommended", optional: "Optional" } as Record<Priority, string>,
     priorityHint: {
       required: "Safety-related or urgent. We strongly advise doing these now.",
@@ -184,6 +185,7 @@ const T = {
     previouslyApproved: "تمت الموافقة مسبقاً",
     approvedOn: "تمت الموافقة",
     newItems: "بنود بانتظار قرارك",
+    nothingNew: "جميع بنود عرض السعر معتمدة مسبقاً. لا حاجة لقرار جديد.",
     priority: { required: "حرج", recommended: "موصى به", optional: "اختياري" } as Record<Priority, string>,
     priorityHint: {
       required: "متعلق بالسلامة أو عاجل. ننصح بشدة بإنجازه الآن.",
@@ -268,14 +270,19 @@ export function ApprovalRequestView({
   trackingPath,
   priorApproved = [],
   alreadyPaid = 0,
+  alreadyApprovedKeys = [],
 }: {
   token: string
   data: Data
   trackingPath?: string | null
   priorApproved?: PriorApprovedItem[]
   alreadyPaid?: number
+  alreadyApprovedKeys?: string[]
 }) {
-  const items = data.snapshot?.items ?? []
+  const items = React.useMemo(() => {
+    const skip = new Set(alreadyApprovedKeys)
+    return (data.snapshot?.items ?? []).filter((i) => !skip.has(i.key))
+  }, [data.snapshot?.items, alreadyApprovedKeys])
   const isWhole = data.mode === "whole"
   const [lang, setLang] = React.useState<Lang>("en")
   const t = T[lang] as Dict
@@ -515,7 +522,11 @@ export function ApprovalRequestView({
         </Card>
       )}
 
-      {!isWhole && (
+      {!isWhole && items.length === 0 && (
+        <Card className="p-5 text-sm text-muted-foreground">{t.nothingNew}</Card>
+      )}
+
+      {!isWhole && items.length > 0 && (
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t.newItems}</h2>
           <Button variant="outline" size="sm" onClick={acceptAll}>

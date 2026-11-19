@@ -45,6 +45,12 @@ const lineItemSchema = z.object({
 })
 
 const invoiceSchema = z.object({
+  document_kind: z
+    .enum(["invoice", "quote"])
+    .nullable()
+    .describe(
+      "'quote' if this is a quotation / estimate / proforma / price offer / informal price list (titled Quotation, Quote, Estimate, Proforma, Offer, عرض سعر, or a WhatsApp/handwritten price list). 'invoice' only if it is a final Tax Invoice / Invoice / Bill / Cash Sale / receipt for goods already sold. null if unclear.",
+    ),
   supplier_name: z.string().nullable().describe("Supplier / vendor company name"),
   supplier_trn: z.string().nullable().describe("Supplier Tax Registration Number if shown"),
   supplier_phone: z.string().nullable().describe("Supplier phone / mobile / landline number if printed, else null"),
@@ -72,6 +78,7 @@ const FALLBACK_MODEL = "google/gemini-2.5-pro"
 const PROMPT = [
   "You are an accounts-payable clerk for a UAE automotive workshop.",
   "Read this supplier invoice / bill (it may be a photo, a scan, or a PDF, and may be in English or Arabic) and extract every field.",
+  "First classify the document in `document_kind`: a Quotation / Quote / Estimate / Proforma / price offer / informal price list is 'quote' even if it has a number, VAT and totals; only a final Tax Invoice / Invoice / Bill / Cash Sale / receipt is 'invoice'. Read the printed title — never call a quotation an invoice.",
   "Also capture the supplier's contact details (phone, email, address) when printed — these are used to create or update the supplier profile.",
   "Money values must be plain numbers with no currency symbols or thousands separators.",
   "Line items are the purchasable parts/products only — never include subtotal, discount, VAT, or grand-total summary rows as line items.",

@@ -490,7 +490,12 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
     supplierId = match?.id ?? null
   }
 
-  if (input.docType !== "quote" && !extracted?.invoice_number?.trim()) {
+  // A quotation uploaded on the invoices page must never be booked as a final
+  // invoice (that would add stock and payables), so the reader's verdict wins.
+  const docType: "invoice" | "quote" =
+    input.docType === "quote" || extracted?.document_kind === "quote" ? "quote" : "invoice"
+
+  if (docType !== "quote" && !extracted?.invoice_number?.trim()) {
     await discardUpload()
     return { ok: false, error: MISSING_INVOICE_NUMBER }
   }
@@ -519,7 +524,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
       currency: extracted?.currency || "AED",
       ...totals,
       status: "draft",
-      doc_type: input.docType === "quote" ? "quote" : "invoice",
+      doc_type: docType,
       blob_pathname: blobPathname,
       file_hash: fileHash,
       file_type: contentType || null,
@@ -548,7 +553,7 @@ async function runExtractAndCreateInvoice(input: UploadedInvoiceInput): Promise<
   try {
     await insertExtractedLines(supabase, inv.id, extracted?.line_items ?? [], settings)
 
-    if (input.docType !== "quote") {
+    if (docType !== "quote") {
       try {
         await linkInvoiceToOpenQuote(createServiceClient(), inv.id, supplierId, extracted?.supplier_name ?? null)
       } catch (e) {

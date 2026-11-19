@@ -145,8 +145,8 @@ const T = {
     clear: "Clear signature",
     terms:
       "I agree to the terms: approved work and ordered parts cannot be cancelled once started; delivery dates depend on parts arrival; additional findings will be sent for separate approval.",
-    confirmTotal: (amt: string, n: number) =>
-      `I confirm the amount of ${amt} (including VAT) for the ${n} item${n === 1 ? "" : "s"} I accepted.`,
+    confirmTotal: (n: number) =>
+      `I confirm the total shown in the summary above for the ${n} item${n === 1 ? "" : "s"} I accepted.`,
     submit: "Submit approval",
     submitting: "Submitting...",
     review: "Review & sign",
@@ -226,7 +226,7 @@ const T = {
     clear: "مسح التوقيع",
     terms:
       "أوافق على الشروط: لا يمكن إلغاء الأعمال المعتمدة أو القطع المطلوبة بعد البدء؛ مواعيد التسليم تعتمد على وصول القطع؛ أي أعمال إضافية سترسل لموافقة منفصلة.",
-    confirmTotal: (amt: string, n: number) => `أؤكد مبلغ ${amt} (شامل الضريبة) مقابل ${n} بند قبلته.`,
+    confirmTotal: (n: number) => `أؤكد الإجمالي الموضح في الملخص أعلاه مقابل ${n} بند قبلته.`,
     submit: "إرسال الموافقة",
     submitting: "جارٍ الإرسال...",
     review: "مراجعة وتوقيع",
@@ -526,11 +526,8 @@ export function ApprovalRequestView({
 
       {grouped.map((group) => (
         <section key={group.category} className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3 border-b border-border pb-2">
+          <div className="border-b border-border pb-2">
             <h3 className="text-sm font-semibold uppercase tracking-wide">{group.category}</h3>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {formatCurrency(group.items.reduce((s, i) => s + (isPricePending(i) ? 0 : i.net), 0))}
-            </span>
           </div>
           {group.items.map((it) => (
             <ItemCard
@@ -627,7 +624,7 @@ export function ApprovalRequestView({
                 checked={totalConfirmed}
                 onChange={(e) => setConfirmedTotal(e.target.checked ? roundedTotal : null)}
               />
-              <span>{t.confirmTotal(formatCurrency(roundedTotal), approvedCount)}</span>
+              <span>{t.confirmTotal(approvedCount)}</span>
             </label>
           )}
 
@@ -646,11 +643,8 @@ export function ApprovalRequestView({
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur md:hidden">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
-          <div className="leading-tight">
-            <div className="text-[11px] text-muted-foreground">
-              {unresolved > 0 && !isWhole ? t.unresolved(unresolved) : t.total}
-            </div>
-            <div className="text-lg font-bold tabular-nums">{formatCurrency(roundedTotal)}</div>
+          <div className="text-xs leading-snug text-muted-foreground">
+            {unresolved > 0 && !isWhole ? t.unresolved(unresolved) : `${approvedCount} / ${items.length}`}
           </div>
           <Button size="lg" onClick={() => signRef.current?.scrollIntoView({ behavior: "smooth" })}>
             {t.review}

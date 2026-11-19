@@ -125,7 +125,11 @@ const T = {
     qty: "Qty",
     discount: "Discount",
     summary: "Summary",
-    prevTotal: "Previously approved",
+    subtotal: "Subtotal (excl. VAT)",
+    total: "Total (incl. VAT)",
+    partsGroup: "Parts",
+    labourGroup: "Labour & Services",
+    prevTotal: "Previously approved (incl. VAT)",
     selectedNow: "Selected now (excl. VAT)",
     vat: "VAT",
     selectedTotal: "Selected now (incl. VAT)",
@@ -202,7 +206,11 @@ const T = {
     qty: "الكمية",
     discount: "خصم",
     summary: "الملخص",
-    prevTotal: "تمت الموافقة مسبقاً",
+    subtotal: "المجموع (بدون الضريبة)",
+    total: "الإجمالي (شامل الضريبة)",
+    partsGroup: "قطع الغيار",
+    labourGroup: "أجور العمل والخدمات",
+    prevTotal: "تمت الموافقة مسبقاً (شامل الضريبة)",
     selectedNow: "المختار الآن (بدون الضريبة)",
     vat: "ضريبة القيمة المضافة",
     selectedTotal: "المختار الآن (شامل الضريبة)",
@@ -305,13 +313,16 @@ export function ApprovalRequestView({
   const balanceDue = Math.max(0, grandApproved - alreadyPaid)
   const totalConfirmed = confirmedTotal !== null && confirmedTotal === roundedTotal
 
-  const grouped = React.useMemo(
-    () =>
-      PRIORITY_ORDER.map((p) => ({ priority: p, items: items.filter((i) => (i.recommendation || "required") === p) })).filter(
-        (g) => g.items.length,
-      ),
-    [items],
-  )
+  const grouped = React.useMemo(() => {
+    const map = new Map<string, SnapItem[]>()
+    for (const it of items) {
+      const cat = it.category?.trim() || (it.kind === "part" ? t.partsGroup : t.labourGroup)
+      const list = map.get(cat) ?? []
+      list.push(it)
+      map.set(cat, list)
+    }
+    return Array.from(map.entries()).map(([category, list]) => ({ category, items: list }))
+  }, [items, t])
 
   const expiresAt = data.expires_at ? new Date(data.expires_at) : null
   const locale = lang === "ar" ? "ar-AE" : "en-AE"
@@ -493,7 +504,7 @@ export function ApprovalRequestView({
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="tabular-nums">{formatCurrency(it.gross)}</span>
+                  <span className="tabular-nums">{formatCurrency(it.net)}</span>
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
                     <Check className="h-3 w-3" aria-hidden="true" />
                   </span>
@@ -514,11 +525,12 @@ export function ApprovalRequestView({
       )}
 
       {grouped.map((group) => (
-        <section key={group.priority} className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <span className={`h-2.5 w-2.5 rounded-full ${PRIORITY_STYLE[group.priority].dot}`} aria-hidden="true" />
-            <h3 className="text-sm font-semibold">{t.priority[group.priority]}</h3>
-            <span className="text-xs text-muted-foreground">{t.priorityHint[group.priority]}</span>
+        <section key={group.category} className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3 border-b border-border pb-2">
+            <h3 className="text-sm font-semibold uppercase tracking-wide">{group.category}</h3>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {formatCurrency(group.items.reduce((s, i) => s + (isPricePending(i) ? 0 : i.net), 0))}
+            </span>
           </div>
           {group.items.map((it) => (
             <ItemCard
@@ -550,19 +562,28 @@ export function ApprovalRequestView({
       <Card className="p-5">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t.summary}</h2>
         <div className="flex flex-col gap-1.5 text-sm">
-          {priorTotal > 0 && <Row label={t.prevTotal} value={formatCurrency(priorTotal)} />}
-          <Row label={t.selectedNow} value={formatCurrency(approvedNet)} />
+          <Row label={t.subtotal} value={formatCurrency(approvedNet)} />
           <Row label={`${t.vat} (${data.vat_rate}%)`} value={formatCurrency(approvedVat)} />
-          <Row label={t.selectedTotal} value={formatCurrency(roundedTotal)} />
-          <div className="mt-1 flex items-center justify-between border-t border-border pt-2 font-semibold">
-            <span>{t.totalApproved}</span>
-            <span className="tabular-nums">{formatCurrency(grandApproved)}</span>
+          <div
+            className={`mt-1 flex items-center justify-between border-t border-border pt-2 ${
+              priorTotal > 0 || alreadyPaid > 0 ? "font-semibold" : "text-lg font-bold"
+            }`}
+          >
+            <span>{t.total}</span>
+            <span className={`tabular-nums ${priorTotal > 0 || alreadyPaid > 0 ? "" : "text-primary"}`}>
+              {formatCurrency(roundedTotal)}
+            </span>
           </div>
-          {alreadyPaid > 0 && <Row label={t.alreadyPaid} value={`- ${formatCurrency(alreadyPaid)}`} />}
-          <div className="flex items-center justify-between pt-1 text-lg font-bold">
-            <span>{t.balanceDue}</span>
-            <span className="tabular-nums text-primary">{formatCurrency(balanceDue)}</span>
-          </div>
+          {(priorTotal > 0 || alreadyPaid > 0) && (
+            <>
+              {priorTotal > 0 && <Row label={t.prevTotal} value={`+ ${formatCurrency(priorTotal)}`} />}
+              {alreadyPaid > 0 && <Row label={t.alreadyPaid} value={`- ${formatCurrency(alreadyPaid)}`} />}
+              <div className="mt-1 flex items-center justify-between border-t border-border pt-2 text-lg font-bold">
+                <span>{t.balanceDue}</span>
+                <span className="tabular-nums text-primary">{formatCurrency(balanceDue)}</span>
+              </div>
+            </>
+          )}
           {!isWhole && unresolved > 0 && <p className="pt-1 text-xs text-amber-400">{t.unresolved(unresolved)}</p>}
         </div>
       </Card>
@@ -627,7 +648,7 @@ export function ApprovalRequestView({
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
           <div className="leading-tight">
             <div className="text-[11px] text-muted-foreground">
-              {unresolved > 0 && !isWhole ? t.unresolved(unresolved) : t.selectedTotal}
+              {unresolved > 0 && !isWhole ? t.unresolved(unresolved) : t.total}
             </div>
             <div className="text-lg font-bold tabular-nums">{formatCurrency(roundedTotal)}</div>
           </div>
@@ -657,8 +678,6 @@ function ItemCard({
   const pending = isPricePending(it)
   const style = PRIORITY_STYLE[it.recommendation] ?? PRIORITY_STYLE.required
   const lead = it.lead_time_days
-  const partsAmount = it.kind === "part" ? it.quantity * it.unit_price : 0
-  const labourAmount = it.kind === "labor" ? (it.labour_hours > 0 ? it.labour_hours * it.labour_rate : it.labour_rate) : 0
   const hasDetails = Boolean(it.detail) || it.discount > 0 || Boolean(it.part_number)
 
   return (
@@ -681,10 +700,11 @@ function ItemCard({
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${style.chip}`}>{t.priority[it.recommendation]}</span>
             {it.kind === "part" ? (
-              <span>
-                {t.qty} {it.quantity}
-                {!pending && ` × ${formatCurrency(it.unit_price)}`}
-              </span>
+              it.quantity > 1 && (
+                <span>
+                  {t.qty} {it.quantity}
+                </span>
+              )
             ) : (
               <span>
                 {t.labour}
@@ -726,12 +746,7 @@ function ItemCard({
           {pending ? (
             <span className="rounded-md bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-400">{t.pricePending}</span>
           ) : (
-            <div className="flex flex-col text-end leading-tight">
-              <span className="font-semibold tabular-nums">{formatCurrency(it.gross)}</span>
-              <span className="text-[11px] text-muted-foreground tabular-nums">
-                {it.kind === "part" ? `${t.part} ${formatCurrency(partsAmount)}` : `${t.labour} ${formatCurrency(labourAmount)}`}
-              </span>
-            </div>
+            <span className="font-semibold tabular-nums">{formatCurrency(it.net)}</span>
           )}
         </div>
       </div>

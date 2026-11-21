@@ -75,7 +75,7 @@ export const PRICE_ROLES = ["admin", "management", "advisor", "accounts", "parts
 
 export function canViewPrices(role: string | null | undefined): boolean {
   if (!role) return false
-  return role !== "technician"
+  return !["technician", "master_technician", "ep_manager"].includes(role)
 }
 
 export const QC_STATUSES = [

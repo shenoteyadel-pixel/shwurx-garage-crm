@@ -34,7 +34,7 @@ export default async function MyPayPage({ searchParams }: { searchParams: Promis
   // Service client bypasses payroll RLS, so every query below is pinned to the signed-in user's id.
   const svc = createServiceClient()
   const [profileRes, contractRes, payRes, lastPayRes, historyRes, attSettings, attRes, targetMap] = await Promise.all([
-    svc.from("profiles").select("id, full_name, role, job_title, employee_id").eq("id", userId).maybeSingle(),
+    svc.from("profiles").select("id, full_name, role, job_title, employee_id, employment_type").eq("id", userId).maybeSingle(),
     svc.from("employee_salaries").select("monthly_salary, start_date").eq("user_id", userId).maybeSingle(),
     svc
       .from("salary_payments")
@@ -113,6 +113,7 @@ export default async function MyPayPage({ searchParams }: { searchParams: Promis
         }
       : null,
     suggestedBase: Number(contractRes.data?.monthly_salary) || (last ? Number(last.base_salary) || 0 : 0),
+    freelance: (profileRes.data as any)?.employment_type === "freelance",
     suggestedAllowances: last ? Number(last.allowances) || 0 : 0,
     startDate,
     daysInMonth: days.length,

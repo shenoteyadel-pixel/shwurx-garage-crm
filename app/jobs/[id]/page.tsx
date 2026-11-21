@@ -37,6 +37,7 @@ import { ComebackBanner, CreateComebackButton, type ComebackInfo } from "@/compo
 import { normalizeChecklist, type JobType } from "@/lib/full-inspection-config"
 import { TechnicianJobCard } from "@/components/technician-job-card"
 import { TechPartsRequest } from "@/components/tech-parts-request"
+import { classifyLabour } from "@/lib/labour-report"
 import { AssignTaskPanel, type JobTask } from "@/components/technician/assign-task-panel"
 import { MasterTechCard } from "@/components/technician/master-tech-card"
 import { MASTER_ELIGIBLE_ROLES } from "@/lib/master-tech"
@@ -512,18 +513,30 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   // uploaded photos, so a parts/document shot can never become the vehicle image.
   const coverPhoto = job.cover_photo_url ?? null
 
-  // Prices-free lists for the technician job card
-  const techLabour = quoteItems
-    .filter((i) => i.kind === "labor")
-    .map((i) => ({ name: i.name, detail: i.detail }))
+  // Prices-free lists for the technician job card. The Electrical & Programming
+  // Manager only sees lines belonging to his two departments.
+  const isEpManager = role === "ep_manager"
+  const canAdviseHours = sessionCtx?.permissions.has("labour.advise") ?? false
+  const inEpDepartments = (i: any) => {
+    const dept = classifyLabour(i.category, i.name || i.description, i.detail, i.addon_type)
+    return dept === "programming" || dept === "electrical"
+  }
+  const techSource = isEpManager ? rawItems.filter(inEpDepartments) : rawItems
+  const techLabour = techSource
+    .filter((i: any) => i.kind === "labor" || i.kind === "service")
+    .map((i: any) => ({
+      id: i.id as string,
+      name: i.name || i.description || "",
+      detail: i.detail || "",
+      hours: Number(i.labour_hours ?? 0),
+    }))
   const techParts = [
-    ...quoteItems.filter((i) => i.kind === "part").map((i) => ({
-      name: i.name,
-      part_number: i.part_number,
-      quantity: i.quantity,
-    })),
-    ...(parts ?? []).map((p: any) => ({ name: p.part_name, part_number: null, quantity: p.quantity })),
+    ...techSource
+      .filter((i: any) => i.kind !== "labor" && i.kind !== "service")
+      .map((i: any) => ({ name: i.name || i.description || "", part_number: i.part_number || "", quantity: Number(i.quantity ?? 0) })),
+    ...(isEpManager ? [] : (parts ?? []).map((p: any) => ({ name: p.part_name, part_number: null, quantity: p.quantity }))),
   ]
+  const canRequestParts = sessionCtx?.permissions.has("parts.request") ?? false
 
   const qcMeta = QC_STATUSES.find((q) => q.value === (job.qc_status || "pending"))
 
@@ -837,6 +850,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 labour={techLabour}
                 parts={techParts}
                 trade={viewerTrade}
+                viewLabel={isEpManager ? "Electrical & Programming" : undefined}
+                canAdviseHours={canAdviseHours}
               />
               <JobPhotos
                 jobId={job.id}
@@ -868,7 +883,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                   />
                 </>
               )}
-              {!isInspectionOnly && (
+              {!isInspectionOnly && canRequestParts && (
                 <TechPartsRequest
                   jobId={job.id}
                   parts={(parts ?? []) as any}

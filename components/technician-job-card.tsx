@@ -1,8 +1,9 @@
 import { Card } from "@/components/ui"
 import { Wrench, Package, ClipboardList } from "lucide-react"
 import { tradeLabel, type Trade } from "@/lib/trades"
+import { LabourHoursAdvice } from "@/components/labour-hours-advice"
 
-type LabourItem = { name: string | null; detail: string | null }
+type LabourItem = { id?: string; name: string | null; detail: string | null; hours?: number }
 type PartItem = { name: string | null; part_number: string | null; quantity: number }
 
 export function TechnicianJobCard({
@@ -10,11 +11,15 @@ export function TechnicianJobCard({
   labour,
   parts,
   trade,
+  viewLabel,
+  canAdviseHours = false,
 }: {
   approved: boolean
   labour: LabourItem[]
   parts: PartItem[]
   trade?: Trade
+  viewLabel?: string
+  canAdviseHours?: boolean
 }) {
   return (
     <Card className="p-4 sm:p-5">
@@ -24,7 +29,7 @@ export function TechnicianJobCard({
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Job card — repair work</h2>
         </div>
         <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-          {trade ? `${tradeLabel(trade)} view` : "Technician view"} · no pricing
+          {viewLabel ?? (trade ? `${tradeLabel(trade)} view` : "Technician view")} · no pricing
         </span>
       </div>
 
@@ -42,10 +47,15 @@ export function TechnicianJobCard({
         {labour.length ? (
           <ul className="space-y-2">
             {labour.map((l, i) => (
-              <li key={i} className="rounded-lg border border-border bg-background/40 p-3">
-                <div className="font-medium text-foreground">{l.name || "Repair task"}</div>
-                {l.detail && (
-                  <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{l.detail}</p>
+              <li key={l.id ?? i} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background/40 p-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-foreground">{l.name || "Repair task"}</div>
+                  {l.detail && (
+                    <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{l.detail}</p>
+                  )}
+                </div>
+                {canAdviseHours && l.id && (
+                  <LabourHoursAdvice itemId={l.id} hours={l.hours ?? 0} locked={approved} />
                 )}
               </li>
             ))}

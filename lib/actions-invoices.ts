@@ -17,6 +17,7 @@ import { extractInvoice, ocrFailureMessage } from "@/lib/invoice-ocr"
 import { suggestSalePrice } from "@/lib/pricing"
 import { isInvoiceLinked } from "@/lib/quote-duplicates"
 import { linkInvoiceToOpenQuote, getJobApprovals, samePart } from "@/lib/quote-invoice"
+import { settleOpenQuotes } from "@/lib/quote-settle"
 import { reconcileJobParts } from "@/lib/job-parts-reconcile"
 import { reconcilePartsRequests } from "@/lib/parts-requests-reconcile"
 
@@ -1589,6 +1590,10 @@ async function applyConfirm(
   if (updErr) throw new Error(updErr.message)
 
   await logAction(ctx, "supplier_invoice_confirmed", "supplier_invoice", id)
+
+  if (!isQuote) {
+    await settleOpenQuotes(createServiceClient()).catch((e) => console.error("[invoice] quote settle failed", e))
+  }
 
   // Supplier quote priced → advisor sends the quotation; bill received →
   // mechanics can fit the parts. One message per job, listing its parts.

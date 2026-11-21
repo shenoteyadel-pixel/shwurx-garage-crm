@@ -9,6 +9,7 @@ export type Role =
   | "workshop_manager"
   | "workshop_supervisor"
   | "master_technician"
+  | "ep_manager"
   | "service_advisor"
   | "reception"
   | "technician"
@@ -52,6 +53,7 @@ export const ROLE_LIST: RoleMeta[] = [
   { value: "workshop_manager", team: "workshop", label: "Workshop Manager", description: "Runs the workshop: creates and assigns job cards, manages technicians and job flow.", home: "/flow", staff: true },
   { value: "workshop_supervisor", team: "workshop", label: "Workshop Supervisor", description: "Assigns and manages workshop jobs and technicians.", home: "/flow", staff: true },
   { value: "master_technician", team: "workshop", label: "Master Technician", description: "Leads assigned job cards: splits work into technician tasks, tracks progress and performs technical QC. No prices or invoices.", home: "/master", staff: true },
+  { value: "ep_manager", team: "workshop", label: "Electrical & Programming Manager", description: "Runs the electrical and programming section: leads those job cards, assigns electricians, arranges the work and sees their own section target and programming commission. No prices or invoices.", home: "/master", staff: true },
   { value: "service_advisor", team: "front_office", label: "Service Advisor", description: "Job card control only: customers, vehicles, job cards and their quotations/invoices at selling price. No reports, garage finances, purchase costs or profit.", home: "/jobs", staff: true },
   { value: "reception", team: "front_office", label: "Reception", description: "Front desk intake: registers customers, vehicles and opens job cards.", home: "/", staff: true },
   { value: "technician", team: "workshop", label: "Technician", description: "Workshop technicians (mechanic, denter, painter, electrician, detailer — set by job title). Works on assigned jobs: sees the customer request, records inspection, diagnosis and photos, and requests parts. No prices or invoices.", home: "/jobs", staff: true },

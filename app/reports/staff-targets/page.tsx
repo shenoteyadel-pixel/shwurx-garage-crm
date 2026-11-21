@@ -4,7 +4,8 @@ import { AppShell } from "@/components/app-shell"
 import { createServiceClient } from "@/lib/supabase/server"
 import { StaffTargetsClient, type TargetRow } from "@/components/staff-targets-client"
 import type { TargetKind } from "@/lib/actions-targets"
-import { loadComebackDeductions } from "@/lib/target-progress"
+import { loadComebackDeductions, loadSectionWork } from "@/lib/target-progress"
+import { departmentCommission } from "@/lib/salary-statement"
 
 export const metadata = { title: "Staff Targets · SHWURX Auto Service Center" }
 
@@ -35,7 +36,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
   const { month, from, to, next } = monthBounds((await searchParams).month)
   const svc = createServiceClient()
 
-  const [purchasesRes, salesRes, staffRes, targetsRes, comebackCuts] = await Promise.all([
+  const [purchasesRes, salesRes, staffRes, targetsRes, comebackCuts, section] = await Promise.all([
     svc
       .from("supplier_invoices")
       .select("created_by, total")
@@ -51,6 +52,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
     svc.from("profiles").select("id, full_name, role, job_title, is_active").neq("role", "customer"),
     svc.from("staff_targets").select("user_id, kind, monthly_target, commission_percent"),
     loadComebackDeductions(svc, from, next),
+    loadSectionWork(svc, from, to),
   ])
 
   const { data: workshopRows } = await svc
@@ -97,18 +99,36 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
     purchase: new Map(),
     sales: new Map(),
     technician: new Map(),
+    department: new Map(),
   }
   const commissions: Record<TargetKind, Map<string, number>> = {
     purchase: new Map(),
     sales: new Map(),
     technician: new Map(),
+    department: new Map(),
   }
   for (const t of targetsRes.data ?? []) {
     targets[t.kind as TargetKind]?.set(t.user_id, Number(t.monthly_target) || 0)
     commissions[t.kind as TargetKind]?.set(t.user_id, Number(t.commission_percent) || 0)
   }
 
-  function rows(kind: TargetKind, totals: Map<string, Acc>): TargetRow[] {
+  const sectionTotal = Math.round((section.programming + section.electrical) * 100) / 100
+  const departmentRows: TargetRow[] = [...targets.department.keys()].map((id) => {
+    const s = staffById.get(id)
+    const commission = commissions.department.get(id) ?? 0
+    return {
+      userId: id,
+      name: s?.name ?? "Former staff",
+      title: s?.title ?? "",
+      total: sectionTotal,
+      count: section.count,
+      target: targets.department.get(id) ?? 0,
+      commission,
+      note: `Programming ${section.programming.toLocaleString("en-US")} · Electrical ${section.electrical.toLocaleString("en-US")} · Commission earned ${departmentCommission(section.programming, commission).toLocaleString("en-US")} AED`,
+    }
+  })
+
+  function rows(kind: Exclude<TargetKind, "department">, totals: Map<string, Acc>): TargetRow[] {
     const cuts = kind === "purchase" ? new Map<string, Acc>() : comebackCuts[kind]
     const ids = new Set([...totals.keys(), ...targets[kind].keys(), ...cuts.keys()])
     return [...ids]
@@ -140,6 +160,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
         purchasers={rows("purchase", purchases)}
         advisors={rows("sales", sales)}
         technicians={rows("technician", technicianWork)}
+        departments={departmentRows}
         staff={staff.filter((s) => s.active).map(({ id, name }) => ({ id, name }))}
       />
     </AppShell>

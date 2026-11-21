@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { targetCommission, type TargetKind, type TargetLine } from "@/lib/salary-statement"
+import { departmentCommission, targetCommission, type TargetKind, type TargetLine } from "@/lib/salary-statement"
+import { classifyLabour } from "@/lib/labour-report"
 
 type Acc = { total: number; count: number }
 
@@ -75,6 +76,35 @@ export async function loadUpsellByJob(svc: SupabaseClient, jobIds: string[]): Pr
   return out
 }
 
+export type SectionWork = { programming: number; electrical: number; count: number }
+
+/** Invoiced electrical + programming labour (excl. VAT) in [from, to], skipping cancelled invoices and comebacks. */
+export async function loadSectionWork(svc: SupabaseClient, from: string, to: string): Promise<SectionWork> {
+  const { data } = await svc
+    .from("invoice_items")
+    .select("description, line_total, invoices!inner(issue_date, status, jobs(comeback_of))")
+    .eq("kind", "labour")
+    .neq("invoices.status", "cancelled")
+    .gte("invoices.issue_date", from)
+    .lte("invoices.issue_date", to)
+    .range(0, 9999)
+  const work: SectionWork = { programming: 0, electrical: 0, count: 0 }
+  for (const r of (data ?? []) as unknown as {
+    description: string | null
+    line_total: number | null
+    invoices: { jobs: { comeback_of: string | null } | null } | null
+  }[]) {
+    if (r.invoices?.jobs?.comeback_of) continue
+    const dept = classifyLabour(null, r.description)
+    if (dept !== "programming" && dept !== "electrical") continue
+    work[dept] += Number(r.line_total) || 0
+    work.count += 1
+  }
+  work.programming = Math.round(work.programming * 100) / 100
+  work.electrical = Math.round(work.electrical * 100) / 100
+  return work
+}
+
 /** Monthly target, achievement and commission per employee. Pass userId to limit the result to one person. */
 export async function loadTargetProgress(
   svc: SupabaseClient,
@@ -86,7 +116,7 @@ export async function loadTargetProgress(
   const to = `${month}-${String(new Date(y, mo, 0).getDate()).padStart(2, "0")}`
   const next = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`
 
-  let targetsQ = svc.from("staff_targets").select("user_id, kind, monthly_target, commission_percent").gt("monthly_target", 0)
+  let targetsQ = svc.from("staff_targets").select("user_id, kind, monthly_target, commission_percent").or("monthly_target.gt.0,kind.eq.department")
   if (userId) targetsQ = targetsQ.eq("user_id", userId)
   const { data: targetRows } = await targetsQ
   const result = new Map<string, TargetLine[]>()
@@ -114,7 +144,9 @@ export async function loadTargetProgress(
     loadComebackDeductions(svc, from, next),
   ])
 
-  const totals: Record<TargetKind, Map<string, Acc>> = { purchase: new Map(), sales: new Map(), technician: new Map() }
+  const section = targetRows.some((t) => t.kind === "department") ? await loadSectionWork(svc, from, to) : null
+
+  const totals: Record<TargetKind, Map<string, Acc>> = { purchase: new Map(), sales: new Map(), technician: new Map(), department: new Map() }
   const add = (kind: TargetKind, id: string | null | undefined, amount: unknown) => {
     if (!id) return
     const acc = totals[kind].get(id) ?? { total: 0, count: 0 }
@@ -146,6 +178,22 @@ export async function loadTargetProgress(
     const kind = t.kind as TargetKind
     const target = Number(t.monthly_target) || 0
     const percent = Number(t.commission_percent) || 0
+    if (kind === "department") {
+      const achieved = Math.round(((section?.programming ?? 0) + (section?.electrical ?? 0)) * 100) / 100
+      const list = result.get(t.user_id as string) ?? []
+      list.push({
+        kind,
+        target,
+        achieved,
+        gross: achieved,
+        count: section?.count ?? 0,
+        percent,
+        commission: departmentCommission(section?.programming ?? 0, percent),
+        commissionBase: section?.programming ?? 0,
+      })
+      result.set(t.user_id as string, list)
+      continue
+    }
     const acc = totals[kind]?.get(t.user_id as string) ?? { total: 0, count: 0 }
     const cut = kind === "purchase" ? { total: 0, count: 0 } : (deductions[kind].get(t.user_id as string) ?? { total: 0, count: 0 })
     const net = Math.max(0, acc.total - cut.total)

@@ -26,7 +26,7 @@ export interface StaffAttendance {
   overtimeMinutes: number
 }
 
-export type TargetKind = "purchase" | "sales" | "technician"
+export type TargetKind = "purchase" | "sales" | "technician" | "department"
 
 export interface TargetLine {
   kind: TargetKind
@@ -41,6 +41,8 @@ export interface TargetLine {
   /** Value of original jobs that came back this month and are charged to this person. */
   comebackDeduction?: number
   comebacks?: number
+  /** Department targets: invoiced programming work the flat commission is paid on. */
+  commissionBase?: number
 }
 
 export interface SalaryStaff {
@@ -92,6 +94,11 @@ export const r2 = (n: number) => Math.round(n * 100) / 100
 /** Commission is paid only once the target is passed, as a percentage of the amount above the target. */
 export function targetCommission(target: number, achieved: number, percent: number) {
   return target > 0 && percent > 0 && achieved > target ? r2(((achieved - target) * percent) / 100) : 0
+}
+
+/** Section managers earn a flat percent of every dirham of programming work, not only above target. */
+export function departmentCommission(programming: number, percent: number) {
+  return percent > 0 && programming > 0 ? r2((programming * percent) / 100) : 0
 }
 
 export function proratedBase(fullSalary: number, daysEmployed: number, daysInMonth: number) {

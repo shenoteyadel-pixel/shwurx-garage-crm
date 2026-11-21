@@ -24,7 +24,8 @@ const TEXT = {
     print: "Print",
     targets: "My targets",
     noTargets: "No target has been set for you yet. Your manager sets it in Staff Targets.",
-    kind: { purchase: "Purchases", sales: "Sales", technician: "Workshop work" } as Record<TargetKind, string>,
+    kind: { purchase: "Purchases", sales: "Sales", technician: "Workshop work", department: "Electrical & programming section" } as Record<TargetKind, string>,
+    departmentRule: "{p}% commission on programming work ({b})",
     achieved: "Achieved",
     target: "Target",
     remaining: "Remaining",
@@ -73,7 +74,8 @@ const TEXT = {
     print: "طباعة",
     targets: "أهدافي",
     noTargets: "لم يحدد لك هدف بعد. يحدده المدير من صفحة أهداف الموظفين.",
-    kind: { purchase: "المشتريات", sales: "المبيعات", technician: "أعمال الورشة" } as Record<TargetKind, string>,
+    kind: { purchase: "المشتريات", sales: "المبيعات", technician: "أعمال الورشة", department: "قسم الكهرباء والبرمجة" } as Record<TargetKind, string>,
+    departmentRule: "عمولة {p}% على أعمال البرمجة ({b})",
     achieved: "المحقق",
     target: "الهدف",
     remaining: "المتبقي",
@@ -237,7 +239,11 @@ export function MyPayView({
                   ) : null}
                   {tg.percent > 0 ? (
                     <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-border pt-2 text-xs">
-                      <span className="text-muted-foreground">{t.commissionRule.replace("{p}", String(tg.percent))}</span>
+                      <span className="text-muted-foreground">
+                        {tg.kind === "department"
+                          ? t.departmentRule.replace("{p}", String(tg.percent)).replace("{b}", money(tg.commissionBase ?? 0, L))
+                          : t.commissionRule.replace("{p}", String(tg.percent))}
+                      </span>
                       <span className={tg.commission > 0 ? "font-semibold text-primary tabular-nums" : "text-muted-foreground tabular-nums"}>
                         {t.commissionEarned}: {money(tg.commission, L)}
                       </span>

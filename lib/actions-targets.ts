@@ -8,8 +8,8 @@ import { z } from "zod"
 import { getShellUser } from "@/lib/shell-user"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 
-export type TargetKind = "purchase" | "sales" | "technician"
-const KINDS: TargetKind[] = ["purchase", "sales", "technician"]
+export type TargetKind = "purchase" | "sales" | "technician" | "department"
+const KINDS: TargetKind[] = ["purchase", "sales", "technician", "department"]
 const UUID = /^[0-9a-f-]{36}$/i
 const TARGET_MODEL = "anthropic/claude-sonnet-5"
 const HISTORY_MONTHS = 6
@@ -200,6 +200,7 @@ export async function suggestStaffTargets(month: string): Promise<{ ok: true; su
     purchase: new Map(),
     sales: new Map(),
     technician: new Map(),
+    department: new Map(),
   }
   const put = (kind: TargetKind, id: string | null, date: string | null, amount: unknown) => {
     if (!id || !date) return
@@ -218,7 +219,7 @@ export async function suggestStaffTargets(month: string): Promise<{ ok: true; su
     put("technician", r.jobs?.technician_id ?? null, r.issue_date, r.total)
   }
 
-  const suggestions: SuggestionMap = { purchase: {}, sales: {}, technician: {} }
+  const suggestions: SuggestionMap = { purchase: {}, sales: {}, technician: {}, department: {} }
   const promptLines: string[] = []
   for (const kind of KINDS) {
     for (const [id, byMonth] of buckets[kind]) {

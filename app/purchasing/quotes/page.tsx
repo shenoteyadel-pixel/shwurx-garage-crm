@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { loadProfileNames } from "@/lib/invoice-duplicates"
+import { settleOpenQuotes } from "@/lib/quote-settle"
 import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
 import { PurchasingTabs } from "@/components/purchasing-tabs"
@@ -22,6 +23,7 @@ export default async function SupplierQuotesPage() {
   const user = await getShellUser()
   const supabase = await createClient()
   const serviceDb = createServiceClient()
+  await settleOpenQuotes(serviceDb).catch((e) => console.error("[quotes] settle failed", e))
 
   const { data: quotes } = await supabase
     .from("supplier_invoices")

@@ -1,5 +1,6 @@
 import "server-only"
 import { createServiceClient } from "@/lib/supabase/server"
+import { settleOpenQuotes } from "@/lib/quote-settle"
 
 /**
  * SHWURX AI Control Center — deterministic analysis engine.
@@ -104,6 +105,7 @@ const SEVERITY_RANK: Record<Severity, number> = { critical: 0, high: 1, medium: 
  */
 export async function runAnalysis(): Promise<Analysis> {
   const db = createServiceClient()
+  await settleOpenQuotes(db).catch((e) => console.error("[analysis] quote settle failed", e))
 
   const [
     jobsRes,
@@ -121,7 +123,7 @@ export async function runAnalysis(): Promise<Analysis> {
   ] = await Promise.all([
     db.from("jobs").select("id, job_number, stage, approval_status, customer_name, vehicle_make, vehicle_model, plate_number, customer_id, vehicle_id, created_at, updated_at, estimated_completion"),
     db.from("invoices").select("id, invoice_number, job_id, customer_name, status, total, subtotal, amount_paid, issue_date, due_date, created_at"),
-    db.from("supplier_invoices").select("id, doc_number, supplier_id, supplier_name_raw, invoice_number, total, amount_paid, payment_status, status, invoice_date, created_at, deleted_at").is("deleted_at", null),
+    db.from("supplier_invoices").select("id, doc_number, doc_type, supplier_id, supplier_name_raw, invoice_number, total, amount_paid, payment_status, status, invoice_date, created_at, deleted_at").is("deleted_at", null),
     db.from("payments").select("id, direction, amount, paid_at").eq("direction", "in").gte("paid_at", daysAgo(30)),
     db.from("parts_requests").select("id, job_id, part_name, quantity, status, cost, created_at, updated_at").is("deleted_at", null),
     db.from("inventory_items").select("id, sku, name, quantity, reorder_level, cost_price, sale_price, updated_at").is("deleted_at", null),
@@ -184,6 +186,7 @@ export async function runAnalysis(): Promise<Analysis> {
 
   // Accounts payable: supplier invoices not fully paid.
   const payables = supplierInvoices
+    .filter((s) => s.doc_type !== "quote" && s.status === "confirmed")
     .map((s) => ({ ...s, outstanding: N(s.total) - N(s.amount_paid) }))
     .filter((s) => s.outstanding > 0.01)
     .sort((a, b) => b.outstanding - a.outstanding)

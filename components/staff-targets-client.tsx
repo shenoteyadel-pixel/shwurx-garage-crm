@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { Check, ShoppingCart, Sparkles, Trash2, UserCog, Wrench } from "lucide-react"
+import { Check, ShoppingCart, Sparkles, Trash2, UserCog, Wrench, Zap } from "lucide-react"
 import { formatCurrency as money } from "@/lib/utils"
 import { Card, GhostButton, PrimaryButton } from "@/components/ui"
 import { WorkshopTargetCard, type WorkshopTargetData } from "@/components/workshop-target-card"
@@ -30,6 +30,7 @@ export type TargetRow = {
   count: number
   target: number
   commission: number
+  note?: string
 }
 
 type Staff = { id: string; name: string }
@@ -56,6 +57,7 @@ export function StaffTargetsClient({
   purchasers,
   advisors,
   technicians,
+  departments = [],
   staff,
 }: {
   month: string
@@ -63,6 +65,7 @@ export function StaffTargetsClient({
   purchasers: TargetRow[]
   advisors: TargetRow[]
   technicians: TargetRow[]
+  departments?: TargetRow[]
   staff: Staff[]
 }) {
   const router = useRouter()
@@ -188,6 +191,15 @@ export function StaffTargetsClient({
         rows={technicians}
         staff={staff}
         suggestions={current?.map.technician}
+      />
+      <TargetSection
+        kind="department"
+        title="Electrical & Programming Section"
+        subtitle={`All programming and electrical labour on customer invoices in ${monthLabel(month)}. Commission % applies to programming work only.`}
+        countLabel="Invoices"
+        icon={<Zap className="size-5" aria-hidden />}
+        rows={departments}
+        staff={staff}
       />
     </div>
   )
@@ -448,6 +460,7 @@ function Row({
       <td className="px-4 py-3">
         <div className="font-medium">{row.name}</div>
         {row.title && <div className="text-xs capitalize text-muted-foreground">{row.title}</div>}
+        {row.note && <div className="mt-0.5 text-xs text-muted-foreground">{row.note}</div>}
       </td>
       <td className="px-4 py-3 text-right tabular-nums">{row.count}</td>
       <td className="px-4 py-3 text-right tabular-nums">

@@ -19,6 +19,7 @@
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
     "@types/web-push": "^3.6.4",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.8.0",
     "ai": "^7.0.92",
     "clsx": "^2.1.1",

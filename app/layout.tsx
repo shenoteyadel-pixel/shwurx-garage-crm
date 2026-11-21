@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono, IBM_Plex_Sans_Arabic } from "next/font/google"
+import { Analytics } from "@vercel/analytics/next"
 import { ThemeProvider } from "@/components/theme-provider"
 import { LanguageProvider } from "@/lib/i18n/provider"
 import { getServerLocale } from "@/lib/i18n/server"
@@ -46,6 +47,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {children}
           </LanguageProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   )

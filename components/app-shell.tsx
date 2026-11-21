@@ -88,7 +88,7 @@ const NAV_GROUPS = [
     label: "Workshop",
     items: [
       { href: "/advisor", label: "Advisor AI", icon: Bot, anyOf: ["jobs.view_all"] },
-      { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all"] },
+      { href: "/flow", label: "Car Flow", icon: Workflow, anyOf: ["jobs.view_all", "flow.view"] },
       { href: "/jobs", label: "Job Cards", icon: Car, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
       { href: "/technician", label: "My Tasks", icon: Wrench, anyOf: ["jobs.view_all", "jobs.view_assigned"] },
       { href: "/master", label: "Master Tech", icon: Wrench, anyOf: ["tasks.assign"] },

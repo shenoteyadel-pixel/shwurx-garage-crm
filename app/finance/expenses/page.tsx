@@ -40,7 +40,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       .order("expense_date", { ascending: false }),
     supabase
       .from("profiles")
-      .select("id, full_name, role, job_title, employee_id, created_at")
+      .select("id, full_name, role, job_title, employee_id, created_at, employment_type")
       .eq("is_active", true)
       .neq("role", "customer")
       .order("full_name"),
@@ -130,6 +130,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           }
         : null,
       suggestedBase: contractSalary.get(s.id) || (last ? Number(last.base_salary) || 0 : 0),
+      freelance: (s as any).employment_type === "freelance",
       suggestedAllowances: last ? Number(last.allowances) || 0 : 0,
       attendance: sum
         ? {

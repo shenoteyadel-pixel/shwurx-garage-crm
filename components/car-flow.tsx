@@ -33,7 +33,24 @@ type Job = JobCardData
 // Lets any card open the "collect payment" dialog for its job.
 const CollectPaymentContext = React.createContext<(job: Job) => void>(() => {})
 
-export function CarFlow({ jobs }: { jobs: Job[] }) {
+// null = every job can be opened; otherwise only the listed ids.
+const OpenableContext = React.createContext<Set<string> | null>(null)
+
+function useCanOpen(jobId: string) {
+  const openable = React.useContext(OpenableContext)
+  return !openable || openable.has(jobId)
+}
+
+export function CarFlow({ jobs, openableJobIds }: { jobs: Job[]; openableJobIds?: string[] }) {
+  const openable = React.useMemo(() => (openableJobIds ? new Set(openableJobIds) : null), [openableJobIds])
+  return (
+    <OpenableContext.Provider value={openable}>
+      <CarFlowBoard jobs={jobs} />
+    </OpenableContext.Provider>
+  )
+}
+
+function CarFlowBoard({ jobs }: { jobs: Job[] }) {
   const router = useRouter()
   const [items, setItems] = React.useState<Job[]>(jobs)
   const [dragId, setDragId] = React.useState<string | null>(null)
@@ -684,6 +701,7 @@ function FlowCard({
   onDragEnd: () => void
 }) {
   const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
+  const canOpen = useCanOpen(job.id)
   const stage = STAGE_MAP[job.stage] ?? {
     key: job.stage,
     label: String(job.stage ?? "Unknown"),
@@ -802,13 +820,19 @@ function FlowCard({
             </button>
           )}
 
-          <Link
-            href={`/jobs/${job.id}`}
-            className="block w-full rounded-md border border-border bg-background/60 py-1 text-center text-[11px] font-medium text-primary transition hover:bg-primary/10"
-            onClick={(e) => e.stopPropagation()}
-          >
-            Open job
-          </Link>
+          {canOpen ? (
+            <Link
+              href={`/jobs/${job.id}`}
+              className="block w-full rounded-md border border-border bg-background/60 py-1 text-center text-[11px] font-medium text-primary transition hover:bg-primary/10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Open job
+            </Link>
+          ) : (
+            <p className="w-full rounded-md border border-dashed border-border py-1 text-center text-[11px] text-muted-foreground">
+              Not assigned to you
+            </p>
+          )}
         </div>
       </div>
     </DragHandleCard>
@@ -827,6 +851,7 @@ function BayCard({
   onDragEnd: () => void
 }) {
   const vehicle = [job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ") || "Vehicle"
+  const canOpen = useCanOpen(job.id)
   return (
     <DragHandleCard job={job} pending={pending} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="flex flex-1 flex-col gap-1 rounded-md bg-card p-1.5">
@@ -854,13 +879,17 @@ function BayCard({
           <BrandLogo make={job.vehicle_make} size={14} className="shrink-0" />
           <span className="truncate text-[11px] font-medium">{vehicle}</span>
         </div>
-        <Link
-          href={`/jobs/${job.id}`}
-          className="truncate text-[10px] text-muted-foreground hover:text-primary"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {job.customer_name}
-        </Link>
+        {canOpen ? (
+          <Link
+            href={`/jobs/${job.id}`}
+            className="truncate text-[10px] text-muted-foreground hover:text-primary"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {job.customer_name}
+          </Link>
+        ) : (
+          <span className="truncate text-[10px] text-muted-foreground">{job.customer_name}</span>
+        )}
       </div>
     </DragHandleCard>
   )

@@ -89,7 +89,7 @@ export type Permission =
   | "customers.view" | "customers.create" | "customers.edit" | "customers.delete"
   | "vehicles.view" | "vehicles.create" | "vehicles.edit" | "vehicles.transfer" | "vehicles.delete"
   | "jobs.view_all" | "jobs.view_assigned" | "jobs.create" | "jobs.edit" | "jobs.update_status" | "jobs.assign" | "jobs.delete" | "jobs.qc_approve"
-  | "jobs.assign_master" | "jobs.override_master" | "tasks.assign"
+  | "jobs.assign_master" | "jobs.override_master" | "tasks.assign" | "flow.view" | "labour.advise"
   | "inspection.manage" | "diagnostics.manage" | "parts.request"
   | "quotations.view" | "quotations.create" | "quotations.edit" | "quotations.approve"
   | "invoices.view" | "invoices.create" | "invoices.edit"
@@ -147,6 +147,8 @@ export const PERMISSION_CATALOG: PermGroup[] = [
       { key: "jobs.assign_master", label: "Assign the Master Technician to a job card" },
       { key: "jobs.override_master", label: "Override another person's Master Technician assignment" },
       { key: "tasks.assign", label: "Split job cards into technician tasks" },
+      { key: "flow.view", label: "See the Car Flow board (opens assigned job cards only)" },
+      { key: "labour.advise", label: "Adjust labour hours on programming & electrical lines" },
       { key: "jobs.delete", label: "Delete job cards" },
     ],
   },

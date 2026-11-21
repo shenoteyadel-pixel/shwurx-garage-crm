@@ -1,4 +1,5 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
+import { requirePageAccess } from "@/lib/rbac/context"
 import { AppShell } from "@/components/app-shell"
 import { CarFlow } from "@/components/car-flow"
 import { SyncVisualsButton } from "@/components/sync-visuals-button"
@@ -19,7 +20,15 @@ export default async function FlowPage() {
     .eq("id", user!.id)
     .maybeSingle()
 
-  const { data: jobsRaw } = await supabase
+  const ctx = await requirePageAccess(["jobs.view_all", "flow.view"], "Car Flow")
+  const seesAllJobs = ctx.permissions.has("jobs.view_all")
+  // Board-only viewers see every car, but can open just the job cards RLS lets them read.
+  const boardClient = seesAllJobs ? supabase : createServiceClient()
+  const openableJobIds = seesAllJobs
+    ? undefined
+    : ((await supabase.from("jobs").select("id").is("deleted_at", null)).data ?? []).map((j) => j.id as string)
+
+  const { data: jobsRaw } = await boardClient
     .from("jobs")
     .select(
       "id, job_number, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, variant, color, body_type, plate_number, plate_emirate, plate_code, lift_bay, vehicle_reference_image_url, cover_photo_url, stage, approval_status, mileage, advisor_id, technician_id, estimated_completion, created_at, updated_at, paid_at, paid_amount, payment_method",
@@ -114,7 +123,7 @@ export default async function FlowPage() {
         ))}
       </div>
 
-      <CarFlow jobs={jobCards} />
+      <CarFlow jobs={jobCards} openableJobIds={openableJobIds} />
     </AppShell>
   )
 }

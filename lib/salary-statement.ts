@@ -60,6 +60,8 @@ export interface SalaryStaff {
   daysInMonth?: number
   daysEmployed?: number
   targets?: TargetLine[]
+  /** Freelancers' attendance is tracked only; it never deducts pay. */
+  freelance?: boolean
 }
 
 export interface PayrollRules {
@@ -138,8 +140,8 @@ export function statementFor(s: SalaryStaff, rules: PayrollRules): Statement {
   const lateMinutes = s.attendance?.lateMinutes ?? 0
   const base = proratedBase(s.suggestedBase, daysEmployed, daysInMonth)
   const commission = r2((s.targets ?? []).reduce((t, x) => t + x.commission, 0))
-  const absence = absenceDeduction(s.suggestedBase, absentDays, rules)
-  const late = rules.lateEnabled ? r2(s.attendance?.lateFee ?? 0) : 0
+  const absence = s.freelance ? 0 : absenceDeduction(s.suggestedBase, absentDays, rules)
+  const late = !s.freelance && rules.lateEnabled ? r2(s.attendance?.lateFee ?? 0) : 0
   const gross = r2(base + s.suggestedAllowances + commission)
   const deductions = Math.min(gross, r2(absence + late))
   return {

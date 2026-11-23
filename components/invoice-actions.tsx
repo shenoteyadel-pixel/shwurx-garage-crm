@@ -15,8 +15,10 @@ export function InvoiceActions({
   paymentLinkLabel,
   paymentLinkEnabled,
   publicToken,
+  isOwner = false,
 }: {
   invoiceId: string
+  isOwner?: boolean
   status: string
   balance: number
   paymentLinkUrl?: string | null
@@ -101,14 +103,19 @@ export function InvoiceActions({
           </Button>
         )}
         {status === "paid" && <span className="text-sm text-emerald-400">Fully paid.</span>}
-        <Button
-          variant="ghost"
-          className="ml-auto text-red-400 hover:bg-red-500/10"
-          disabled={cancelPending}
-          onClick={() => startCancel(async () => cancelInvoice(invoiceId))}
-        >
-          <Ban className="h-4 w-4" /> Cancel Invoice
-        </Button>
+        {isOwner && (
+          <Button
+            variant="ghost"
+            className="ml-auto text-red-400 hover:bg-red-500/10"
+            disabled={cancelPending}
+            onClick={() => {
+              if (!window.confirm("Cancel this invoice? The job can then be invoiced again.")) return
+              startCancel(async () => cancelInvoice(invoiceId))
+            }}
+          >
+            <Ban className="h-4 w-4" /> Cancel Invoice
+          </Button>
+        )}
       </Card>
 
       {paymentLinkUrl && balance > 0.01 && (

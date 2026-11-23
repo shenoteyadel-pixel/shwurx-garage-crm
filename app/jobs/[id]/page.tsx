@@ -223,10 +223,19 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .order("expense_date", { ascending: false })
   const { data: jobInvoices } = await supabase
     .from("invoices")
-    .select("id, invoice_number, status, issue_date, total, amount_paid")
+    .select("id, invoice_number, status, issue_date, total, amount_paid, created_by, created_at")
     .eq("job_id", id)
     .order("issue_date", { ascending: false })
   const invoiceIds = (jobInvoices ?? []).map((i) => i.id)
+  const invoiceCreatorIds = [...new Set((jobInvoices ?? []).map((i) => i.created_by).filter(Boolean))] as string[]
+  const { data: invoiceCreators } = invoiceCreatorIds.length
+    ? await supabase.from("profiles").select("id, full_name").in("id", invoiceCreatorIds)
+    : { data: [] as { id: string; full_name: string | null }[] }
+  const creatorName = new Map((invoiceCreators ?? []).map((p) => [p.id, p.full_name]))
+  const jobInvoiceRows: JobInvoice[] = (jobInvoices ?? []).map((i) => ({
+    ...i,
+    created_by_name: i.created_by ? creatorName.get(i.created_by) || "Unknown user" : null,
+  }))
   const { data: jobPayments } = invoiceIds.length
     ? await supabase
         .from("payments")
@@ -833,7 +842,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                         {depositPanel}
                         <JobBillingPanel
                           jobId={job.id}
-                          invoices={(jobInvoices ?? []) as JobInvoice[]}
+                          invoices={jobInvoiceRows}
                           payments={(jobPayments ?? []) as JobPayment[]}
                         />
                       </>

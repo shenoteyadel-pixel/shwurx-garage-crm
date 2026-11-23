@@ -8,6 +8,7 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 import { FREE_BADGE, isFree, warrantyLabel } from "@/lib/invoice-line"
 import { InvoiceActions } from "@/components/invoice-actions"
 import { InvoiceComments } from "@/components/invoice-comments"
+import { PaymentReceiptUpload } from "@/components/payment-receipt-upload"
 import { loadInvoiceComments } from "@/lib/invoice-comments"
 import { getSessionContext } from "@/lib/rbac/context"
 import { ArrowLeft, Pencil, Printer, UserRound } from "lucide-react"
@@ -47,6 +48,7 @@ export default async function InvoiceDetailPage({
   ])
   const creatorName = (creatorRes.data as { full_name: string | null } | null)?.full_name || "Unknown user"
   const isOwner = ctx?.role === "owner"
+  const canRecordPayments = ctx?.permissions.has("payments.record") ?? false
 
   const items = ((inv.invoice_items ?? []) as any[]).sort((a, b) => a.sort_order - b.sort_order)
   const payments = ((inv.payments ?? []) as any[]).filter((p) => p.direction === "in")
@@ -177,11 +179,19 @@ export default async function InvoiceDetailPage({
           <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Payments received</div>
           <div className="space-y-1.5 text-sm">
             {payments.map((p) => (
-              <div key={p.id} className="flex items-center justify-between">
+              <div key={p.id} className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-muted-foreground">
                   {formatDate(p.paid_at)} · {p.method} {p.reference ? `· ${p.reference}` : ""}
                 </span>
-                <span className="tabular-nums">{formatCurrency(p.amount)}</span>
+                <div className="flex items-center gap-3">
+                  <PaymentReceiptUpload
+                    invoiceId={id}
+                    paymentId={p.id}
+                    receiptPath={p.receipt_path ?? null}
+                    canUpload={canRecordPayments}
+                  />
+                  <span className="tabular-nums">{formatCurrency(p.amount)}</span>
+                </div>
               </div>
             ))}
           </div>

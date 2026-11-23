@@ -2,7 +2,7 @@
 
 import { logCurrent } from "@/lib/rbac/context"
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { requirePermission, requireAnyPermission, logAction, type SessionContext } from "@/lib/rbac/context"
@@ -710,6 +710,38 @@ export async function recordInvoicePayment(invoiceId: string, formData: FormData
   await logAction(ctx, "payment.record", "invoice", invoiceId, { amount })
   revalidatePath(`/invoices/${invoiceId}`)
   revalidatePath("/invoices")
+}
+
+/**
+ * Attach (or replace) the receipt on a customer payment that was already
+ * recorded, e.g. uploading the card slip after the invoice is marked paid.
+ */
+export async function attachInvoicePaymentReceipt(
+  invoiceId: string,
+  paymentId: string,
+  receiptPath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { ctx } = await guard("payments.record")
+  if (!receiptPath || !receiptPath.startsWith("payment-receipts/")) {
+    return { ok: false, error: "Invalid receipt file" }
+  }
+  // Service client: guard() verified payments.record, and some roles that can
+  // record payments cannot update payment rows under RLS.
+  const db = createServiceClient()
+  const { data: payment } = await db
+    .from("payments")
+    .select("id, invoice_id, direction")
+    .eq("id", paymentId)
+    .maybeSingle()
+  if (!payment || payment.invoice_id !== invoiceId || payment.direction !== "in") {
+    return { ok: false, error: "Payment not found on this invoice" }
+  }
+  const { error } = await db.from("payments").update({ receipt_path: receiptPath }).eq("id", paymentId)
+  if (error) return { ok: false, error: error.message }
+
+  await logAction(ctx, "payment.receipt_upload", "invoice", invoiceId, { payment_id: paymentId })
+  revalidatePath(`/invoices/${invoiceId}`)
+  return { ok: true }
 }
 
 const DEPOSIT_METHODS = new Set(["cash", "card", "bank", "cheque", "other"])

@@ -10,7 +10,7 @@ import { InvoiceActions } from "@/components/invoice-actions"
 import { InvoiceComments } from "@/components/invoice-comments"
 import { loadInvoiceComments } from "@/lib/invoice-comments"
 import { getSessionContext } from "@/lib/rbac/context"
-import { ArrowLeft, Printer } from "lucide-react"
+import { ArrowLeft, Pencil, Printer, UserRound } from "lucide-react"
 
 const STATUS: Record<string, string> = {
   draft: "border-neutral-500/30 bg-neutral-500/15 text-neutral-300",
@@ -20,8 +20,15 @@ const STATUS: Record<string, string> = {
   cancelled: "border-red-500/30 bg-red-500/15 text-red-300",
 }
 
-export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function InvoiceDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ already?: string }>
+}) {
   const { id } = await params
+  const { already } = await searchParams
   const user = await getShellUser()
   const supabase = await createClient()
 
@@ -31,7 +38,15 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
     .eq("id", id)
     .maybeSingle()
   if (!inv) notFound()
-  const [comments, ctx] = await Promise.all([loadInvoiceComments([id]), getSessionContext()])
+  const [comments, ctx, creatorRes] = await Promise.all([
+    loadInvoiceComments([id]),
+    getSessionContext(),
+    inv.created_by
+      ? supabase.from("profiles").select("full_name").eq("id", inv.created_by).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
+  const creatorName = (creatorRes.data as { full_name: string | null } | null)?.full_name || "Unknown user"
+  const isOwner = ctx?.role === "owner"
 
   const items = ((inv.invoice_items ?? []) as any[]).sort((a, b) => a.sort_order - b.sort_order)
   const payments = ((inv.payments ?? []) as any[]).filter((p) => p.direction === "in")
@@ -64,8 +79,32 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
             {(inv as any).jobs?.job_number ? ` · Job ${(inv as any).jobs.job_number}` : ""}
             {" · "}Issued {formatDate(inv.issue_date)}
           </p>
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+            <UserRound className="h-4 w-4" aria-hidden="true" />
+            Created by <span className="font-medium text-foreground">{creatorName}</span>
+            {inv.created_at ? ` on ${formatDate(inv.created_at)}` : ""}
+          </p>
         </div>
+        {isOwner && inv.status !== "cancelled" && (
+          <Link
+            href={`/invoices/${id}/edit`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
+          >
+            <Pencil className="h-4 w-4" /> Edit Invoice
+          </Link>
+        )}
       </div>
+
+      {already && (
+        <div
+          role="status"
+          className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed"
+        >
+          This job is already invoiced as <span className="font-mono font-semibold">{inv.invoice_number}</span>, created by{" "}
+          <span className="font-semibold">{creatorName}</span>.{" "}
+          {isOwner ? "Edit or cancel it below instead of creating a new one." : "Ask the owner to edit or cancel it if it needs changes."}
+        </div>
+      )}
 
       <Card className="mb-4 overflow-hidden">
         <div className="overflow-x-auto">
@@ -153,11 +192,12 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
         invoiceId={id}
         comments={comments}
         currentUserId={ctx?.userId ?? null}
-        isOwner={ctx?.role === "owner"}
+        isOwner={isOwner}
       />
 
       <InvoiceActions
         invoiceId={id}
+        isOwner={isOwner}
         status={inv.status}
         balance={balance}
         paymentLinkUrl={inv.payment_link_url}

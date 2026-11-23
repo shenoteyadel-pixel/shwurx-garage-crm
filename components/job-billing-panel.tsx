@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { Badge, Card } from "@/components/ui"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import { ReceiptText, Wallet } from "lucide-react"
+import { CheckCircle2, ReceiptText, Wallet } from "lucide-react"
 
 export type JobInvoice = {
   id: string
@@ -10,6 +10,8 @@ export type JobInvoice = {
   issue_date: string | null
   total: number | null
   amount_paid: number | null
+  created_at?: string | null
+  created_by_name?: string | null
 }
 
 export type JobPayment = {
@@ -44,6 +46,7 @@ export function JobBillingPanel({
   const paid = live.reduce((s, i) => s + (Number(i.amount_paid) || 0), 0)
   const balance = Math.max(0, billed - paid)
   const invoiceNo = new Map(invoices.map((i) => [i.id, i.invoice_number]))
+  const active = live[0]
 
   return (
     <>
@@ -52,13 +55,35 @@ export function JobBillingPanel({
           <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             <ReceiptText className="h-4 w-4" /> Invoices
           </h2>
-          <Link
-            href={`/invoices/new?job=${jobId}`}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-          >
-            <ReceiptText className="h-4 w-4" /> Create Invoice
-          </Link>
+          {active ? (
+            <Link
+              href={`/invoices/${active.id}`}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-sm font-medium text-emerald-500 hover:bg-emerald-500/25"
+            >
+              <CheckCircle2 className="h-4 w-4" /> Invoiced · <span className="font-mono">{active.invoice_number}</span>
+            </Link>
+          ) : (
+            <Link
+              href={`/invoices/new?job=${jobId}`}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              <ReceiptText className="h-4 w-4" /> Create Invoice
+            </Link>
+          )}
         </div>
+
+        {active && (
+          <p className="mb-4 text-pretty text-sm leading-relaxed text-muted-foreground">
+            This job is already invoiced
+            {active.created_by_name ? (
+              <>
+                {" "}by <span className="font-medium text-foreground">{active.created_by_name}</span>
+              </>
+            ) : null}
+            {active.created_at ? ` on ${formatDate(active.created_at)}` : ""}. Only the owner can edit or cancel it; once
+            cancelled, a new invoice can be created.
+          </p>
+        )}
 
         <dl className="mb-4 grid grid-cols-3 gap-3">
           <Stat label="Invoiced" value={formatCurrency(billed)} />
@@ -79,6 +104,9 @@ export function JobBillingPanel({
                   </Link>
                   <Badge className={STATUS[i.status] ?? STATUS.unpaid}>{i.status}</Badge>
                   <span className="text-muted-foreground">{i.issue_date ? formatDate(i.issue_date) : "—"}</span>
+                  {i.created_by_name && (
+                    <span className="text-xs text-muted-foreground">by {i.created_by_name}</span>
+                  )}
                   <span className="ml-auto tabular-nums">{formatCurrency(Number(i.total) || 0)}</span>
                   <span className={`w-28 text-right tabular-nums ${bal > 0.01 ? "text-amber-500" : "text-emerald-500"}`}>
                     {bal > 0.01 ? `${formatCurrency(bal)} due` : "Settled"}

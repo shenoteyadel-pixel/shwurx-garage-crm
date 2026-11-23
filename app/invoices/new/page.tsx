@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { getShellUser } from "@/lib/shell-user"
 import { AppShell } from "@/components/app-shell"
@@ -14,6 +15,17 @@ export default async function NewInvoicePage({
   const { job } = await searchParams
   const user = await getShellUser()
   const supabase = await createClient()
+
+  if (job) {
+    const { data: existing } = await supabase
+      .from("invoices")
+      .select("id")
+      .eq("job_id", job)
+      .neq("status", "cancelled")
+      .limit(1)
+      .maybeSingle()
+    if (existing) redirect(`/invoices/${existing.id}?already=1`)
+  }
 
   const { data: jobs } = await supabase
     .from("jobs")

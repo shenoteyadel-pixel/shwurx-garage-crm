@@ -559,6 +559,108 @@ export async function createInvoice(payload: {
   redirect(`/invoices/${inv.id}`)
 }
 
+/** Owner-only: rewrite an invoice's lines and totals in place, keeping its number and payments. */
+export async function updateInvoice(
+  invoiceId: string,
+  payload: {
+    customerName: string
+    customerMobile: string
+    customerTrn: string
+    vehicleDesc: string
+    plate: string
+    dueDate: string | null
+    discount: number
+    vatRate: number
+    notes: string
+    items: InvLine[]
+  },
+): Promise<{ error: string } | void> {
+  const { supabase, ctx } = await guard("invoices.edit")
+  if (ctx.role !== "owner") return { error: "Only the owner can edit an invoice." }
+
+  const { data: current } = await supabase
+    .from("invoices")
+    .select("id, invoice_number, status, amount_paid")
+    .eq("id", invoiceId)
+    .maybeSingle()
+  if (!current) return { error: "Invoice not found." }
+  if (current.status === "cancelled") return { error: "A cancelled invoice can't be edited." }
+
+  const vatRate = Number.isFinite(payload.vatRate) ? payload.vatRate : 5
+  const lines: InvLine[] = []
+  for (const raw of payload.items.filter((l) => l.description.trim())) {
+    const billing = raw.billing_type === "satisfaction" || raw.billing_type === "warranty" ? raw.billing_type : "normal"
+    const reason = (raw.free_reason ?? "").trim()
+    if (billing !== "normal" && !reason) return { error: `Add a reason for the free item "${raw.description.trim()}".` }
+    const wValue = Math.floor(Number(raw.warranty_value) || 0)
+    const wUnit = raw.warranty_unit === "days" || raw.warranty_unit === "months" ? raw.warranty_unit : null
+    if (wUnit && wValue <= 0) return { error: `Enter how many ${wUnit} of warranty for "${raw.description.trim()}".` }
+    lines.push({
+      ...raw,
+      billing_type: billing,
+      free_reason: billing === "normal" ? null : reason.slice(0, 300),
+      warranty_value: wUnit ? wValue : null,
+      warranty_unit: wUnit,
+    })
+  }
+  if (!lines.length) return { error: "Add at least one line item." }
+
+  const t = computeInvoice(lines, payload.discount || 0, vatRate)
+  const paid = Number(current.amount_paid) || 0
+  if (paid > t.total + 0.01) {
+    return { error: `The customer already paid ${paid.toFixed(2)}, which is more than the new total. Refund first or keep the total higher.` }
+  }
+  const status = paid >= t.total - 0.01 && t.total > 0 ? "paid" : paid > 0 ? "partial" : "unpaid"
+
+  const { error } = await supabase
+    .from("invoices")
+    .update({
+      customer_name: payload.customerName || null,
+      customer_mobile: payload.customerMobile || null,
+      customer_trn: payload.customerTrn || null,
+      vehicle_desc: payload.vehicleDesc || null,
+      plate: payload.plate || null,
+      due_date: payload.dueDate,
+      parts_total: t.partsTotal,
+      labour_total: t.labourTotal,
+      discount: payload.discount || 0,
+      subtotal: t.subtotal,
+      vat_rate: vatRate,
+      vat_amount: t.vat,
+      total: t.total,
+      notes: payload.notes || null,
+      status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", invoiceId)
+  if (error) return { error: error.message }
+
+  const { error: delErr } = await supabase.from("invoice_items").delete().eq("invoice_id", invoiceId)
+  if (delErr) return { error: delErr.message }
+  const { error: insErr } = await supabase.from("invoice_items").insert(
+    lines.map((l, idx) => ({
+      invoice_id: invoiceId,
+      kind: l.kind,
+      description: l.description,
+      quantity: l.quantity,
+      unit_price: l.unit_price,
+      line_total: chargeable(l) ? l.quantity * l.unit_price : 0,
+      sort_order: idx,
+      billing_type: l.billing_type ?? "normal",
+      free_reason: l.free_reason ?? null,
+      warranty_value: l.warranty_value ?? null,
+      warranty_unit: l.warranty_unit ?? null,
+    })),
+  )
+  if (insErr) return { error: insErr.message }
+
+  await logAction(ctx, "invoice.update", "invoice", invoiceId, { invoice_number: current.invoice_number, total: t.total })
+  await notifyActivity({ title: `Invoice ${current.invoice_number} edited`, link: `/invoices/${invoiceId}` })
+  revalidatePath(`/invoices/${invoiceId}`)
+  revalidatePath("/invoices")
+  redirect(`/invoices/${invoiceId}`)
+}
+
 export async function recordInvoicePayment(invoiceId: string, formData: FormData) {
   const { supabase, user, ctx } = await guard("payments.record")
   const amount = num(formData.get("amount"))
@@ -689,11 +791,19 @@ async function applyJobDeposits(
 }
 
 export async function cancelInvoice(invoiceId: string) {
-  const { supabase } = await guard("invoices.edit")
-  await supabase.from("invoices").update({ status: "cancelled" }).eq("id", invoiceId)
-  await notifyActivity({ title: "Invoice cancelled", link: `/invoices/${invoiceId}` })
+  const { supabase, ctx } = await guard("invoices.edit")
+  if (ctx.role !== "owner") throw new Error("Only the owner can cancel an invoice.")
+  const { data: inv } = await supabase
+    .from("invoices")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("id", invoiceId)
+    .select("invoice_number, job_id")
+    .maybeSingle()
+  await logAction(ctx, "invoice.cancel", "invoice", invoiceId, { invoice_number: inv?.invoice_number })
+  await notifyActivity({ title: `Invoice ${inv?.invoice_number ?? ""} cancelled`.trim(), link: `/invoices/${invoiceId}` })
   revalidatePath(`/invoices/${invoiceId}`)
   revalidatePath("/invoices")
+  if (inv?.job_id) revalidatePath(`/jobs/${inv.job_id}`)
 }
 
 /* ===================== Manual online payment link ===================== */

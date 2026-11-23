@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Card, Button, Input, Label, Select, Textarea } from "@/components/ui"
-import { createInvoice } from "@/lib/actions-crm"
+import { createInvoice, updateInvoice } from "@/lib/actions-crm"
 import { formatCurrency } from "@/lib/utils"
 import { Plus, Trash2 } from "lucide-react"
 import { BILLING_LABELS, isFree, type BillingType } from "@/lib/invoice-line"
@@ -39,7 +39,10 @@ type Prefill = {
   plate: string
   discount: number
   vatRate: number
-  items: { kind: "part" | "labour" | "fee"; description: string; quantity: number; unit_price: number }[]
+  customerTrn?: string
+  dueDate?: string
+  notes?: string
+  items: (Pick<Line, "kind" | "description" | "quantity" | "unit_price"> & Partial<Line>)[]
 }
 
 let counter = 0
@@ -57,20 +60,31 @@ const line = (p?: Partial<Line>): Line => ({
 
 const lineValue = (l: Line) => (Number(l.quantity) || 0) * (Number(l.unit_price) || 0)
 
-export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefill: Prefill | null; defaultVat: number }) {
+export function InvoiceForm({
+  jobs,
+  prefill,
+  defaultVat,
+  editInvoiceId,
+}: {
+  jobs: Job[]
+  prefill: Prefill | null
+  defaultVat: number
+  editInvoiceId?: string
+}) {
+  const editing = !!editInvoiceId
   const router = useRouter()
   const [pending, start] = useTransition()
 
   const [jobId, setJobId] = useState(prefill?.jobId ?? "")
   const [customerName, setCustomerName] = useState(prefill?.customerName ?? "")
   const [customerMobile, setCustomerMobile] = useState(prefill?.customerMobile ?? "")
-  const [customerTrn, setCustomerTrn] = useState("")
+  const [customerTrn, setCustomerTrn] = useState(prefill?.customerTrn ?? "")
   const [vehicleDesc, setVehicleDesc] = useState(prefill?.vehicleDesc ?? "")
   const [plate, setPlate] = useState(prefill?.plate ?? "")
-  const [dueDate, setDueDate] = useState("")
+  const [dueDate, setDueDate] = useState(prefill?.dueDate ?? "")
   const [discount, setDiscount] = useState(prefill?.discount ?? 0)
   const [vatRate, setVatRate] = useState(prefill?.vatRate ?? defaultVat)
-  const [notes, setNotes] = useState("")
+  const [notes, setNotes] = useState(prefill?.notes ?? "")
   const [formError, setFormError] = useState<{
     error: string
     existingInvoiceId?: string
@@ -105,8 +119,7 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
   function submit() {
     setFormError(null)
     start(async () => {
-      const res = await createInvoice({
-        jobId: jobId || null,
+      const common = {
         customerName,
         customerMobile,
         customerTrn,
@@ -126,7 +139,10 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
           warranty_value: l.warranty_unit ? Number(l.warranty_value) || 0 : null,
           warranty_unit: l.warranty_unit || null,
         })),
-      })
+      }
+      const res = editInvoiceId
+        ? await updateInvoice(editInvoiceId, common)
+        : await createInvoice({ ...common, jobId: jobId || null })
       if (res?.error) setFormError(res)
     })
   }
@@ -137,7 +153,7 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label htmlFor="job">Link to job (optional — prefills customer)</Label>
-            <Select id="job" value={jobId} onChange={(e) => onJobChange(e.target.value)}>
+            <Select id="job" value={jobId} disabled={editing} onChange={(e) => onJobChange(e.target.value)}>
               <option value="">— Manual invoice —</option>
               {jobs.map((j) => (
                 <option key={j.id} value={j.id}>
@@ -321,7 +337,7 @@ export function InvoiceForm({ jobs, prefill, defaultVat }: { jobs: Job[]; prefil
           Cancel
         </Button>
         <Button onClick={submit} disabled={pending || !customerName.trim() || missingReason || missingWarranty}>
-          {pending ? "Creating…" : "Create Invoice"}
+          {editing ? (pending ? "Saving…" : "Save Changes") : pending ? "Creating…" : "Create Invoice"}
         </Button>
       </div>
     </div>

@@ -40,7 +40,7 @@ import { TechPartsRequest } from "@/components/tech-parts-request"
 import { classifyLabour } from "@/lib/labour-report"
 import { AssignTaskPanel, type JobTask } from "@/components/technician/assign-task-panel"
 import { MasterTechCard } from "@/components/technician/master-tech-card"
-import { MASTER_ELIGIBLE_ROLES } from "@/lib/master-tech"
+import { MASTER_ELIGIBLE_ROLES, MASTER_TASK_TRADES, isMasterTeamMember } from "@/lib/master-tech"
 import { BrandLogo, VehicleVisual } from "@/components/vehicle-visual"
 import { RefreshVehicleImageButton } from "@/components/refresh-vehicle-image"
 import { STAGE_MAP, QC_STATUSES, canViewPrices, type Stage } from "@/lib/constants"
@@ -456,6 +456,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const canAssign = sessionCtx?.permissions.has("jobs.assign") ?? false
   const isJobMaster = Boolean(viewerId && job.master_technician_id === viewerId)
   const canAssignTasks = canAssign || (isJobMaster && (sessionCtx?.permissions.has("tasks.assign") ?? false))
+  const masterScoped = !canAssign && isJobMaster
   const canOverrideMaster = sessionCtx?.permissions.has("jobs.override_master") ?? false
   const canPickMaster =
     job.stage !== "delivered" &&
@@ -967,8 +968,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
           <StaffAssign
             jobId={job.id}
-            staff={(staff ?? []) as any}
-            advisorId={job.advisor_id}
+  staff={
+  (masterScoped
+  ? (staff ?? []).filter(
+  (s) => isMasterTeamMember(s) || s.id === job.advisor_id || jobTechs.some((t) => t.user_id === s.id),
+  )
+  : staff ?? []) as any
+  }
+  advisorId={job.advisor_id}
             technicianId={job.technician_id}
                   technicians={jobTechs}
                   canAssign={canAssignTasks && job.stage !== "delivered"}
@@ -987,9 +994,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
           <AssignTaskPanel
             jobId={job.id}
-            tasks={jobTasks}
-            technicians={(staff ?? []).filter((s) => MASTER_ELIGIBLE_ROLES.includes(s.role))}
-            canAssign={canAssignTasks}
+  tasks={jobTasks}
+  technicians={(staff ?? []).filter((s) =>
+  masterScoped ? isMasterTeamMember(s) : MASTER_ELIGIBLE_ROLES.includes(s.role),
+  )}
+  trades={masterScoped ? MASTER_TASK_TRADES : undefined}
+  canAssign={canAssignTasks}
             approved={job.approval_status === "approved"}
           />
 

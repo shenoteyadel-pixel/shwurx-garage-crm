@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache"
 import { put } from "@vercel/blob"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { requireSession, requirePermission, requireAnyPermission, ctxCan, logAction } from "@/lib/rbac/context"
-import { MASTER_ELIGIBLE_ROLES, assertTaskLead } from "@/lib/master-tech"
+import { MASTER_ELIGIBLE_ROLES, MASTER_TASK_TRADES, assertTaskLead, isMasterTeamMember } from "@/lib/master-tech"
 import { transitionJobStage } from "@/lib/workflow"
 import { STAGE_ORDER, type Stage } from "@/lib/constants"
 import { notifyJobAdvisor, notifyPermissionHolders, notifyPurchasers, notifyUserIds } from "@/lib/job-notify"
@@ -85,9 +85,18 @@ export async function assignTechnicianTask(jobId: string, formData: FormData): P
     if (job.stage === "delivered") return { ok: false, error: "This job is already delivered." }
     assertTaskLead(ctx, job.master_technician_id)
 
-    const { data: techs } = await svc.from("profiles").select("id, role, is_active").in("id", technicianIds)
+    const masterScoped = !ctxCan(ctx, "jobs.assign")
+    const trade = text(formData.get("trade"), 40)
+    if (masterScoped && trade && !MASTER_TASK_TRADES.includes(trade)) {
+      return { ok: false, error: "Dent and paint work is assigned by the workshop manager, not the Master Technician." }
+    }
+
+    const { data: techs } = await svc.from("profiles").select("id, role, job_title, is_active").in("id", technicianIds)
     const valid = new Set((techs ?? []).filter((t) => t.is_active && MASTER_ELIGIBLE_ROLES.includes(t.role)).map((t) => t.id))
     if (technicianIds.some((id) => !valid.has(id))) return { ok: false, error: "One of the chosen people is not an active technician." }
+    if (masterScoped && (techs ?? []).some((t) => !isMasterTeamMember(t))) {
+      return { ok: false, error: "The Master Technician can assign mechanical and electrical technicians only." }
+    }
 
     const { data: rows, error } = await svc
       .from("technician_tasks")
@@ -97,7 +106,7 @@ export async function assignTechnicianTask(jobId: string, formData: FormData): P
           technician_id: technicianId,
           title,
           description: text(formData.get("description"), 4000),
-          trade: text(formData.get("trade"), 40),
+          trade,
           priority: TASK_PRIORITIES.some((p) => p.value === priority) ? priority : "normal",
           deadline: deadline?.toISOString() ?? null,
           estimated_hours: estimatedHours,

@@ -7,6 +7,7 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui"
 import { TASK_PRIORITIES, formatDuration, liveSeconds } from "@/lib/technician-tasks"
 import { assignTechnicianTask } from "@/lib/actions-technician"
 import { TaskStatusBadge } from "@/components/technician/task-status-badge"
+import { TRADES as TRADE_OPTIONS, tradeFromTitle } from "@/lib/trades"
 
 export type JobTask = {
   id: string
@@ -29,13 +30,19 @@ export function AssignTaskPanel({
   technicians,
   canAssign,
   approved = true,
+  trades = TRADES,
 }: {
   jobId: string
   tasks: JobTask[]
   technicians: { id: string; full_name: string | null; job_title: string | null }[]
   canAssign: boolean
   approved?: boolean
+  trades?: string[]
 }) {
+  const groups = TRADE_OPTIONS.map((t) => ({
+    ...t,
+    people: technicians.filter((p) => tradeFromTitle(p.job_title) === t.value),
+  })).filter((g) => g.people.length)
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
   const [open, setOpen] = useState(false)
@@ -97,22 +104,31 @@ export function AssignTaskPanel({
           <fieldset className="flex flex-col gap-2 md:col-span-2">
             <legend className="mb-1 text-sm font-medium">Technicians</legend>
             <p className="text-xs text-muted-foreground">Pick one or more. Each person gets their own task and timer.</p>
-            <div className="flex flex-wrap gap-2">
-              {technicians.map((t) => (
-                <label
-                  key={t.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/10"
-                >
-                  <input type="checkbox" name="technician_id" value={t.id} className="accent-primary" />
-                  {t.full_name ?? "Unnamed"}
-                  {t.job_title ? <span className="text-muted-foreground">{t.job_title}</span> : null}
-                </label>
-              ))}
-            </div>
+            {groups.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No active technicians available for this work.</p>
+            ) : (
+              groups.map((g) => (
+                <div key={g.value} className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{g.label}</span>
+                  <div className="flex flex-wrap gap-2">
+                    {g.people.map((t) => (
+                      <label
+                        key={t.id}
+                        className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/10"
+                      >
+                        <input type="checkbox" name="technician_id" value={t.id} className="accent-primary" />
+                        {t.full_name ?? "Unnamed"}
+                        {t.job_title ? <span className="text-muted-foreground">{t.job_title}</span> : null}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
           </fieldset>
           <Field label="Trade" htmlFor="t-trade">
-            <Select id="t-trade" name="trade" defaultValue="Mechanical">
-              {TRADES.map((t) => (
+            <Select id="t-trade" name="trade" defaultValue={trades[0]}>
+              {trades.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </Select>

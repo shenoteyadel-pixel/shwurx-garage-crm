@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell"
 import { getShellUser } from "@/lib/shell-user"
 import { TaskStatusBadge } from "@/components/technician/task-status-badge"
 import { MasterTaskActions } from "@/components/technician/master-task-actions"
-import { MASTER_ELIGIBLE_ROLES } from "@/lib/master-tech"
+import { MASTER_ELIGIBLE_ROLES, isMasterTeamMember } from "@/lib/master-tech"
 import { formatDuration, liveSeconds, type TaskStatus } from "@/lib/technician-tasks"
 
 export const metadata = { title: "Master Technician · SHWURX Auto Service Center" }
@@ -54,11 +54,12 @@ export default async function MasterWorkspace({ searchParams }: { searchParams: 
           .in("job_id", jobIds)
           .order("deadline", { ascending: true, nullsFirst: false })
       : Promise.resolve({ data: [] as Task[] }),
-    svc.from("profiles").select("id, full_name, role").eq("is_active", true).in("role", MASTER_ELIGIBLE_ROLES).order("full_name"),
+    svc.from("profiles").select("id, full_name, role, job_title").eq("is_active", true).in("role", MASTER_ELIGIBLE_ROLES).order("full_name"),
   ])
   const tasks = (taskRows ?? []) as Task[]
-  const technicians = staff ?? []
-  const names = Object.fromEntries(technicians.map((s) => [s.id, s.full_name ?? "Technician"]))
+  const allTechnicians = staff ?? []
+  const technicians = isManager ? allTechnicians : allTechnicians.filter(isMasterTeamMember)
+  const names = Object.fromEntries(allTechnicians.map((s) => [s.id, s.full_name ?? "Technician"]))
   const advisorIds = [...new Set((jobs ?? []).map((j) => j.advisor_id).filter(Boolean))] as string[]
   const { data: advisorRows } = advisorIds.length
     ? await svc.from("profiles").select("id, full_name").in("id", advisorIds)

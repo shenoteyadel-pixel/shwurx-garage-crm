@@ -15,7 +15,7 @@ import { resolveVehicleImage } from "@/lib/vehicle-image"
 import { attachJobVehicleImage, attachVehicleMasterImage } from "@/lib/vehicle-image-attach"
 import { sanitizeMileage } from "@/lib/utils"
 import { requirePermission, requireSession, ctxCan, logAction, type SessionContext } from "@/lib/rbac/context"
-import { MASTER_ELIGIBLE_ROLES } from "@/lib/master-tech"
+import { MASTER_ELIGIBLE_ROLES, isMasterTeamMember } from "@/lib/master-tech"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { requireJobWork } from "@/lib/rbac/job-access"
 import type { Permission } from "@/lib/rbac/roles"
@@ -545,8 +545,11 @@ export async function addJobTechnician(jobId: string, userId: string, trade: Tra
   if (!jobId || !userId) throw new Error("Pick a technician")
   const { supabase, ctx, isMaster } = await guardJobTeam(jobId)
   if (isMaster) {
-    const { data: p } = await supabase.from("profiles").select("role, is_active").eq("id", userId).maybeSingle()
+    const { data: p } = await supabase.from("profiles").select("role, job_title, is_active").eq("id", userId).maybeSingle()
     if (!p?.is_active || !MASTER_ELIGIBLE_ROLES.includes(p.role)) throw new Error("Choose an active technician.")
+    if (!isMasterTeamMember(p) || (trade !== "mechanic" && trade !== "electrician")) {
+      throw new Error("The Master Technician can add mechanical and electrical technicians only.")
+    }
   }
   const safeTrade: Trade = TRADE_VALUES.includes(trade) ? trade : "mechanic"
   const { error } = await supabase

@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { Check, ShoppingCart, Sparkles, Trash2, UserCog, Wrench, Zap } from "lucide-react"
+import { Check, HardHat, ShoppingCart, Sparkles, Trash2, UserCog, Wrench, Zap } from "lucide-react"
 import { formatCurrency as money } from "@/lib/utils"
 import { Card, GhostButton, PrimaryButton } from "@/components/ui"
 import { WorkshopTargetCard, type WorkshopTargetData } from "@/components/workshop-target-card"
@@ -57,6 +57,7 @@ export function StaffTargetsClient({
   purchasers,
   advisors,
   technicians,
+  masters = [],
   departments = [],
   staff,
 }: {
@@ -65,6 +66,7 @@ export function StaffTargetsClient({
   purchasers: TargetRow[]
   advisors: TargetRow[]
   technicians: TargetRow[]
+  masters?: TargetRow[]
   departments?: TargetRow[]
   staff: Staff[]
 }) {
@@ -191,6 +193,15 @@ export function StaffTargetsClient({
         rows={technicians}
         staff={staff}
         suggestions={current?.map.technician}
+      />
+      <TargetSection
+        kind="master"
+        title="Master Technician"
+        subtitle={`Labour (excl. VAT, electrical & programming) from the whole technician team in ${monthLabel(month)}, minus labour on cars that came back. Commission % is paid on labour above the target.`}
+        countLabel="Jobs"
+        icon={<HardHat className="size-5" aria-hidden />}
+        rows={masters}
+        staff={staff}
       />
       <TargetSection
         kind="department"

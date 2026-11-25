@@ -4,8 +4,8 @@ import { AppShell } from "@/components/app-shell"
 import { createServiceClient } from "@/lib/supabase/server"
 import { StaffTargetsClient, type TargetRow } from "@/components/staff-targets-client"
 import type { TargetKind } from "@/lib/actions-targets"
-import { loadComebackDeductions, loadSectionWork } from "@/lib/target-progress"
-import { departmentCommission } from "@/lib/salary-statement"
+import { loadComebackDeductions, loadMasterWork, loadSectionWork } from "@/lib/target-progress"
+import { departmentCommission, targetCommission } from "@/lib/salary-statement"
 
 export const metadata = { title: "Staff Targets · SHWURX Auto Service Center" }
 
@@ -91,6 +91,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
     id: p.id as string,
     name: (p.full_name as string | null) || "Unnamed",
     title: (p.job_title as string | null) || (p.role as string),
+    role: p.role as string,
     active: p.is_active !== false,
   }))
   const staffById = new Map(staff.map((s) => [s.id, s]))
@@ -100,12 +101,14 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
     sales: new Map(),
     technician: new Map(),
     department: new Map(),
+    master: new Map(),
   }
   const commissions: Record<TargetKind, Map<string, number>> = {
     purchase: new Map(),
     sales: new Map(),
     technician: new Map(),
     department: new Map(),
+    master: new Map(),
   }
   for (const t of targetsRes.data ?? []) {
     targets[t.kind as TargetKind]?.set(t.user_id, Number(t.monthly_target) || 0)
@@ -128,7 +131,48 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
     }
   })
 
-  function rows(kind: Exclude<TargetKind, "department">, totals: Map<string, Acc>): TargetRow[] {
+  const masterIds = [
+    ...new Set([
+      ...staff.filter((s) => s.active && s.role === "master_technician").map((s) => s.id),
+      ...targets.master.keys(),
+    ]),
+  ]
+  const master = masterIds.length ? await loadMasterWork(svc, from, to, next, masterIds) : null
+  const teamTechTargets = [...targets.technician.values()].reduce((t, v) => t + v, 0)
+  const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 })
+  const masterRows: TargetRow[] = masterIds.map((id) => {
+    const s = staffById.get(id)
+    const gross = master?.labour ?? 0
+    const cut = master?.comebackCut ?? 0
+    const net = Math.max(0, gross - cut)
+    const target = targets.master.get(id) ?? 0
+    const percent = commissions.master.get(id) ?? 0
+    const own = master?.own.get(id)
+    const above = Math.max(0, net - target)
+    return {
+      userId: id,
+      name: s?.name ?? "Former staff",
+      title: s?.title ?? "",
+      total: net,
+      gross,
+      comebackDeduction: cut,
+      comebacks: master?.comebacks ?? 0,
+      count: master?.count ?? 0,
+      target,
+      commission: percent,
+      note: [
+        `His own cars: ${own?.count ?? 0} jobs · ${fmt(own?.labour ?? 0)} AED labour (included in the team total)`,
+        target > 0
+          ? `Above target: ${fmt(above)} AED → commission ${fmt(targetCommission(target, net, percent))} AED`
+          : "Set a target to start earning commission on labour above it",
+        teamTechTargets > 0 ? `Technicians' targets combined: ${fmt(teamTechTargets)} AED` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    }
+  })
+
+  function rows(kind: Exclude<TargetKind, "department" | "master">, totals: Map<string, Acc>): TargetRow[] {
     const cuts = kind === "purchase" ? new Map<string, Acc>() : comebackCuts[kind]
     const ids = new Set([...totals.keys(), ...targets[kind].keys(), ...cuts.keys()])
     return [...ids]
@@ -160,6 +204,7 @@ export default async function StaffTargetsPage({ searchParams }: { searchParams:
         purchasers={rows("purchase", purchases)}
         advisors={rows("sales", sales)}
         technicians={rows("technician", technicianWork)}
+        masters={masterRows}
         departments={departmentRows}
         staff={staff.filter((s) => s.active).map(({ id, name }) => ({ id, name }))}
       />

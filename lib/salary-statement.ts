@@ -26,7 +26,7 @@ export interface StaffAttendance {
   overtimeMinutes: number
 }
 
-export type TargetKind = "purchase" | "sales" | "technician" | "department"
+export type TargetKind = "purchase" | "sales" | "technician" | "department" | "master"
 
 export interface TargetLine {
   kind: TargetKind
@@ -43,6 +43,9 @@ export interface TargetLine {
   comebacks?: number
   /** Department targets: invoiced programming work the flat commission is paid on. */
   commissionBase?: number
+  /** Master technician targets: labour on cars he worked on himself (already inside the team total). */
+  ownWork?: number
+  ownCount?: number
 }
 
 export interface SalaryStaff {

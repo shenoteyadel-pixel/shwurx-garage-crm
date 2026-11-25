@@ -105,6 +105,113 @@ export async function loadSectionWork(svc: SupabaseClient, from: string, to: str
   return work
 }
 
+export type MasterWork = {
+  /** Workshop labour (excl. VAT, excl. electrical/programming) on invoices in the month, before comeback cuts. */
+  labour: number
+  count: number
+  comebackCut: number
+  comebacks: number
+  /** Labour on jobs the master technician worked on himself (already part of `labour`). */
+  own: Map<string, { labour: number; count: number }>
+}
+
+const isWorkshopLabour = (description: string | null) => {
+  const dept = classifyLabour(null, description)
+  return dept !== "programming" && dept !== "electrical"
+}
+
+/**
+ * Team labour a master technician is measured on: all workshop labour invoiced in [from, to] (comeback jobs skipped),
+ * minus the labour of original jobs that came back in [from, next) where the workshop was at fault (technician, both or undecided).
+ */
+export async function loadMasterWork(
+  svc: SupabaseClient,
+  from: string,
+  to: string,
+  next: string,
+  masterIds: string[],
+): Promise<MasterWork> {
+  const work: MasterWork = { labour: 0, count: 0, comebackCut: 0, comebacks: 0, own: new Map() }
+  const { data } = await svc
+    .from("invoice_items")
+    .select("description, line_total, invoices!inner(job_id, issue_date, status, jobs(comeback_of, technician_id))")
+    .eq("kind", "labour")
+    .neq("invoices.status", "cancelled")
+    .gte("invoices.issue_date", from)
+    .lte("invoices.issue_date", to)
+    .range(0, 9999)
+  const byJob = new Map<string, { labour: number; technicianId: string | null }>()
+  for (const r of (data ?? []) as unknown as {
+    description: string | null
+    line_total: number | null
+    invoices: { job_id: string | null; jobs: { comeback_of: string | null; technician_id: string | null } | null } | null
+  }[]) {
+    const jobId = r.invoices?.job_id
+    if (!jobId || r.invoices?.jobs?.comeback_of || !isWorkshopLabour(r.description)) continue
+    const job = byJob.get(jobId) ?? { labour: 0, technicianId: r.invoices?.jobs?.technician_id ?? null }
+    job.labour += Number(r.line_total) || 0
+    byJob.set(jobId, job)
+  }
+  for (const j of byJob.values()) work.labour += j.labour
+  work.count = byJob.size
+
+  if (masterIds.length && byJob.size) {
+    const jobIds = [...byJob.keys()]
+    const worked = new Map<string, Set<string>>()
+    const mark = (masterId: string, jobId: string) => {
+      const set = worked.get(masterId) ?? new Set<string>()
+      set.add(jobId)
+      worked.set(masterId, set)
+    }
+    for (const [jobId, j] of byJob) if (j.technicianId && masterIds.includes(j.technicianId)) mark(j.technicianId, jobId)
+    for (let i = 0; i < jobIds.length; i += 200) {
+      const { data: tasks } = await svc
+        .from("technician_tasks")
+        .select("job_id, technician_id")
+        .in("technician_id", masterIds)
+        .in("job_id", jobIds.slice(i, i + 200))
+      for (const t of tasks ?? []) if (t.technician_id && t.job_id) mark(t.technician_id, t.job_id)
+    }
+    for (const [masterId, set] of worked) {
+      let labour = 0
+      for (const jobId of set) labour += byJob.get(jobId)?.labour ?? 0
+      work.own.set(masterId, { labour: Math.round(labour * 100) / 100, count: set.size })
+    }
+  }
+
+  const { data: comebackRows } = await svc
+    .from("jobs")
+    .select("comeback_of, comeback_responsibility")
+    .not("comeback_of", "is", null)
+    .gte("created_at", from)
+    .lt("created_at", next)
+  const faulty = (comebackRows ?? []).filter((c) => !["customer", "parts", "advisor"].includes(c.comeback_responsibility ?? "none"))
+  if (faulty.length) {
+    const originalIds = [...new Set(faulty.map((c) => c.comeback_of as string))]
+    const { data: items } = await svc
+      .from("invoice_items")
+      .select("description, line_total, invoices!inner(job_id, status)")
+      .eq("kind", "labour")
+      .neq("invoices.status", "cancelled")
+      .in("invoices.job_id", originalIds)
+    const labourByOriginal = new Map<string, number>()
+    for (const r of (items ?? []) as unknown as { description: string | null; line_total: number | null; invoices: { job_id: string } | null }[]) {
+      if (!r.invoices?.job_id || !isWorkshopLabour(r.description)) continue
+      labourByOriginal.set(r.invoices.job_id, (labourByOriginal.get(r.invoices.job_id) ?? 0) + (Number(r.line_total) || 0))
+    }
+    for (const c of faulty) {
+      const value = labourByOriginal.get(c.comeback_of as string) ?? 0
+      if (value <= 0) continue
+      work.comebackCut += value
+      work.comebacks += 1
+    }
+  }
+
+  work.labour = Math.round(work.labour * 100) / 100
+  work.comebackCut = Math.round(work.comebackCut * 100) / 100
+  return work
+}
+
 /** Monthly target, achievement and commission per employee. Pass userId to limit the result to one person. */
 export async function loadTargetProgress(
   svc: SupabaseClient,
@@ -145,8 +252,16 @@ export async function loadTargetProgress(
   ])
 
   const section = targetRows.some((t) => t.kind === "department") ? await loadSectionWork(svc, from, to) : null
+  const masterIds = targetRows.filter((t) => t.kind === "master").map((t) => t.user_id as string)
+  const master = masterIds.length ? await loadMasterWork(svc, from, to, next, masterIds) : null
 
-  const totals: Record<TargetKind, Map<string, Acc>> = { purchase: new Map(), sales: new Map(), technician: new Map(), department: new Map() }
+  const totals: Record<TargetKind, Map<string, Acc>> = {
+    purchase: new Map(),
+    sales: new Map(),
+    technician: new Map(),
+    department: new Map(),
+    master: new Map(),
+  }
   const add = (kind: TargetKind, id: string | null | undefined, amount: unknown) => {
     if (!id) return
     const acc = totals[kind].get(id) ?? { total: 0, count: 0 }
@@ -190,6 +305,28 @@ export async function loadTargetProgress(
         percent,
         commission: departmentCommission(section?.programming ?? 0, percent),
         commissionBase: section?.programming ?? 0,
+      })
+      result.set(t.user_id as string, list)
+      continue
+    }
+    if (kind === "master") {
+      const gross = master?.labour ?? 0
+      const cut = master?.comebackCut ?? 0
+      const net = Math.max(0, gross - cut)
+      const own = master?.own.get(t.user_id as string)
+      const list = result.get(t.user_id as string) ?? []
+      list.push({
+        kind,
+        target,
+        achieved: Math.round(net * 100) / 100,
+        gross,
+        count: master?.count ?? 0,
+        percent,
+        commission: targetCommission(target, net, percent),
+        comebackDeduction: cut,
+        comebacks: master?.comebacks ?? 0,
+        ownWork: own?.labour ?? 0,
+        ownCount: own?.count ?? 0,
       })
       result.set(t.user_id as string, list)
       continue

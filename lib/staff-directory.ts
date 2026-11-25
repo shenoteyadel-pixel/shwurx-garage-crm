@@ -18,7 +18,7 @@ export type AssignableStaff = {
  */
 export async function getAssignableStaff(): Promise<AssignableStaff[]> {
   const ctx = await getSessionContext()
-  if (!ctx?.isStaff || !ctxCanAny(ctx, ["jobs.assign", "jobs.create", "jobs.edit"])) return []
+  if (!ctx?.isStaff || !ctxCanAny(ctx, ["jobs.assign", "jobs.create", "jobs.edit", "tasks.assign"])) return []
 
   const { data, error } = await createServiceClient()
     .from("profiles")

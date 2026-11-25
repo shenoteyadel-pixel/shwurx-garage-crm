@@ -14,7 +14,9 @@ import { inferBodyType } from "@/lib/vehicle"
 import { resolveVehicleImage } from "@/lib/vehicle-image"
 import { attachJobVehicleImage, attachVehicleMasterImage } from "@/lib/vehicle-image-attach"
 import { sanitizeMileage } from "@/lib/utils"
-import { requirePermission, logAction, type SessionContext } from "@/lib/rbac/context"
+import { requirePermission, requireSession, ctxCan, logAction, type SessionContext } from "@/lib/rbac/context"
+import { MASTER_ELIGIBLE_ROLES } from "@/lib/master-tech"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { requireJobWork } from "@/lib/rbac/job-access"
 import type { Permission } from "@/lib/rbac/roles"
 import { notifyUser, notifyByPermission, notifyOwners } from "@/lib/actions-notifications"
@@ -520,10 +522,32 @@ export async function assignStaff(jobId: string, field: "advisor_id" | "technici
   revalidatePath(`/jobs/${jobId}`)
 }
 
+/**
+ * Workshop managers can change any job team. The job's Master Technician can
+ * change the team of the open job they lead; RLS doesn't know about that role,
+ * so their writes go through the service client after this check.
+ */
+async function guardJobTeam(jobId: string): Promise<{ supabase: SupabaseClient; ctx: SessionContext; isMaster: boolean }> {
+  const ctx = await requireSession()
+  if (ctxCan(ctx, "jobs.assign")) return { supabase: (await createClient()) as unknown as SupabaseClient, ctx, isMaster: false }
+  if (ctxCan(ctx, "tasks.assign")) {
+    const svc = createServiceClient()
+    const { data: job } = await svc.from("jobs").select("master_technician_id, stage, deleted_at").eq("id", jobId).maybeSingle()
+    if (job && !job.deleted_at && job.stage !== "delivered" && job.master_technician_id === ctx.userId) {
+      return { supabase: svc as unknown as SupabaseClient, ctx, isMaster: true }
+    }
+  }
+  throw new Error("Only this job's Master Technician or a workshop manager can change the job team.")
+}
+
 /** Add a technician to the job team (several technicians can work on one car). */
 export async function addJobTechnician(jobId: string, userId: string, trade: Trade) {
-  const { supabase, ctx } = await guard("jobs.assign")
   if (!jobId || !userId) throw new Error("Pick a technician")
+  const { supabase, ctx, isMaster } = await guardJobTeam(jobId)
+  if (isMaster) {
+    const { data: p } = await supabase.from("profiles").select("role, is_active").eq("id", userId).maybeSingle()
+    if (!p?.is_active || !MASTER_ELIGIBLE_ROLES.includes(p.role)) throw new Error("Choose an active technician.")
+  }
   const safeTrade: Trade = TRADE_VALUES.includes(trade) ? trade : "mechanic"
   const { error } = await supabase
     .from("job_technicians")
@@ -549,7 +573,7 @@ export async function addJobTechnician(jobId: string, userId: string, trade: Tra
 }
 
 export async function removeJobTechnician(jobId: string, userId: string) {
-  const { supabase, ctx } = await guard("jobs.assign")
+  const { supabase, ctx } = await guardJobTeam(jobId)
   const { error } = await supabase.from("job_technicians").delete().eq("job_id", jobId).eq("user_id", userId)
   if (error) throw new Error(error.message)
   const { data: job } = await supabase.from("jobs").select("technician_id").eq("id", jobId).maybeSingle()

@@ -36,7 +36,7 @@ export default async function MasterWorkspace({ searchParams }: { searchParams: 
 
   let jobsQuery = svc
     .from("jobs")
-    .select("id, job_number, stage, plate_code, plate_number, vehicle_make, vehicle_model, master_technician_id, approval_status")
+    .select("id, job_number, stage, plate_code, plate_number, vehicle_make, vehicle_model, master_technician_id, advisor_id, approval_status")
     .is("deleted_at", null)
     .neq("stage", "delivered")
     .not("master_technician_id", "is", null)
@@ -59,6 +59,11 @@ export default async function MasterWorkspace({ searchParams }: { searchParams: 
   const tasks = (taskRows ?? []) as Task[]
   const technicians = staff ?? []
   const names = Object.fromEntries(technicians.map((s) => [s.id, s.full_name ?? "Technician"]))
+  const advisorIds = [...new Set((jobs ?? []).map((j) => j.advisor_id).filter(Boolean))] as string[]
+  const { data: advisorRows } = advisorIds.length
+    ? await svc.from("profiles").select("id, full_name").in("id", advisorIds)
+    : { data: [] as { id: string; full_name: string | null }[] }
+  const advisorNames = Object.fromEntries((advisorRows ?? []).map((a) => [a.id, a.full_name ?? "Advisor"]))
 
   // Team workload counts every open task in the workshop, not just mine, so the lead can balance fairly.
   const { data: openAll } = await svc
@@ -187,7 +192,8 @@ export default async function MasterWorkspace({ searchParams }: { searchParams: 
                           {jobLabel(j.id)} · {[j.vehicle_make, j.vehicle_model].filter(Boolean).join(" ")}
                         </Link>
                         <span className="text-sm text-muted-foreground">
-                          {jt.length ? `${done}/${jt.length} tasks done` : "No tasks yet — split the job"}
+                          {`Advisor: ${j.advisor_id ? advisorNames[j.advisor_id] ?? "—" : "Unassigned"} · `}
+                          {jt.length ? `${done}/${jt.length} tasks done` : "No tasks yet — open the job to add your team"}
                           {showAll && j.master_technician_id ? ` · ${names[j.master_technician_id] ?? "—"}` : ""}
                           {j.approval_status !== "approved" ? " · awaiting customer approval" : ""}
                         </span>

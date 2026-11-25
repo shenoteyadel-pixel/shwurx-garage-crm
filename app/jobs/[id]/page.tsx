@@ -970,8 +970,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             staff={(staff ?? []) as any}
             advisorId={job.advisor_id}
             technicianId={job.technician_id}
-            technicians={jobTechs}
-            canAssign={canAssign}
+                  technicians={jobTechs}
+                  canAssign={canAssignTasks && job.stage !== "delivered"}
             canChangeAdvisor={isOwner}
           />
 
